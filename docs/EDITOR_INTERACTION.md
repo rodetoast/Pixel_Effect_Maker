@@ -12,7 +12,7 @@ Project Canvas 크기가 바뀔 때는 재생을 멈추고 Effect·Particle Prev
 
 `_FocusWheelMixin.focusInEvent()`가 Mouse Focus 시 `setStyleSheet()`로 전체 SpinBox를 다시 polish하고 있었다. Windows 네이티브 Up/Down SubControl을 누르는 도중 스타일과 geometry가 재생성되어 Mouse Press/Release가 같은 SubControl에서 끝나지 않을 수 있는 구조였다. 포커스 StyleSheet, 내부 LineEdit event filter, Mouse Press override를 제거했다. Up/Down 버튼, 키보드, 텍스트 선택과 포커스 표시는 Qt 기본 구현이 담당한다.
 
-공통 클래스의 유일한 추가 책임은 SpinBox 또는 내부 editor가 포커스됐을 때만 Wheel을 기본 구현으로 전달하고, 포커스가 없으면 `event.ignore()`로 상위 ScrollArea에 넘기는 것이다. `QStyle.subControlRect()` 기반 테스트는 첫 클릭, 반복·빠른 클릭, 선택 텍스트, Down, 키보드, Wheel, 위젯 identity와 Auto Repeat를 검사한다. Windows 플랫폼 자동 테스트와 실제 96 DPI GUI에서 다섯 SpinBox를 확인했으며 120/144 DPI는 별도 수동 대상이다.
+`ScrollSafeSpinBox`와 `ScrollSafeDoubleSpinBox`는 포커스, 내부 LineEdit 포커스와 텍스트 선택 여부에 관계없이 일반 Wheel을 `event.ignore()`로 상위 ScrollArea에 넘긴다. Ctrl+Wheel은 명시적인 수치 조작으로 받아들이며 120 angle-delta마다 현재 `singleStep` 한 단계를 적용한다. 고해상도 장치의 부분 delta는 누적하고, 방향 전환·일반 Wheel 전환에서도 의도하지 않은 값 변경이 생기지 않게 관리한다. 직접 입력, Native Up/Down과 키보드 Up/Down은 Qt 기본 구현을 그대로 사용한다. 이전 `FocusWheelSpinBox` 이름은 외부 import 호환 Alias로 유지한다.
 
 ## UI 설정과 메뉴
 
@@ -22,12 +22,20 @@ Project Canvas 크기가 바뀔 때는 재생을 멈추고 Effect·Particle Prev
 
 활성 MainWindow, Timeline, Particle Panel, Resource Editor와 Interface Settings의 고정 문자열은 `LocalizationService`를 사용한다. FPS, PNG, GIF, Aseprite, X/Y, RGBA와 사용자 입력 이름은 번역하지 않는다. 아이콘·기호 버튼과 Undo/Redo에는 결과와 단축키를 설명하는 한국어·영어 Tooltip을 둔다.
 
+아이콘·기호 전용 버튼은 Tooltip을 필수로 하며, 텍스트 버튼도 이름을 반복하는 대신 동작 결과와 필요한 선택 조건을 설명한다. `tooltip_helper.apply_tooltip()`은 Qt 기본 `setToolTip()`과 주요 Action·Button의 `setStatusTip()`만 사용하며 Mouse/Hover Event를 가로채지 않는다. QAction이나 사용자 설정 명령의 현재 `QKeySequence`를 NativeText로 조합하므로 Keyboard Shortcut 변경 직후 이미 생성된 Tooltip도 갱신된다.
+
+Play/Pause와 Layer Show/Hide처럼 실제 역할이 바뀌는 조작은 상태 전환 경로에서 Tooltip을 다시 적용한다. 언어 변경은 각 화면의 기존 `retranslate` 경로를 통해 이미 생성된 Widget과 QAction까지 갱신한다. Tooltip 누락 감사 테스트는 모든 앱 소유 `QAbstractButton`을 검사하며, Qt가 내부 생성하는 MenuBar overflow와 Table corner 버튼만 구현 세부사항으로 명시적으로 제외한다.
+
 ## Undo/Redo
 
 MainWindow의 단일 `application_undo_stack`을 모든 Workspace가 공유한다. 새 프로젝트와 열기에서 Clear하고 저장 성공에서 Clean으로 표시한다. `EditorValueCommand`는 대상 ID·필드·이전값·새값만 보관하며 같은 Editor 변경을 600ms까지 병합한다. Gizmo는 Drag 중 모델을 실시간 갱신하고 Release에서 Command 하나를 만들며 Escape는 시작값을 복원한다.
 
-지원 범위는 Resource Position/Rotation/Scale/Opacity, Keyframe 추가·삭제, Full Rotation, Layer 이름·범위·가시성·Pivot, Asset/Output Pivot과 Gizmo, Effect Frame 추가·복제·삭제, Layer 추가·삭제·가시성, Particle Draft Settings다. Import, 프로젝트 열기, Bake, Export, Composition 생성·삭제와 Transform Generator Draft는 의도적으로 Undo 대상이 아니다.
+지원 범위는 Resource Position/Rotation/Scale/Opacity, Keyframe 추가·삭제, Full Rotation, Layer 이름·범위·가시성·Pivot, Asset/Output Pivot과 Gizmo, Effect Frame 추가·복제·삭제, Layer 추가·삭제·가시성, Composition Layer 경로와 Particle System Draft Settings다. Effect Canvas Handle은 Mouse Move 동안 임시 모델을 갱신하고 Release에서 Command 하나만 만들며 Escape는 Command 없이 시작값을 복원한다. Import, 프로젝트 열기, Bake, Export, Composition 생성·삭제와 Transform Generator Draft는 의도적으로 Undo 대상이 아니다.
+
+Full Rotation은 Loop Resource에서 마지막 프레임을 `±360 × turns × (N - 1) / N`으로 만들고, Non-loop에서는 `±360 × turns` 종점을 유지한다. 1프레임 Loop는 0° 키 하나만, 2프레임 Loop는 0°와 ±180°를 사용한다. 선택한 Effect Layer 삭제는 생성 모델과 렌더 출력 레이어를 한 명령으로 제거하며 Resource Composition 원본은 보존한다. 마지막 생성 레이어를 지우면 프로젝트 불변식을 위한 빈 일반 레이어를 두고 Undo 시 원래 모델·픽셀·선택을 복원한다.
 
 ## Gizmo
 
 Move의 이미지/중앙 영역은 Free, 빨간 X Handle은 X만, 초록 Y Handle은 Y만 정수 픽셀로 변경한다. Scale 모서리는 균등, X/Y Handle은 해당 축만 변경하며 최소 0.01이다. Rotate는 2D Z 회전만 제공하고 Shift는 15°로 스냅한다. Pivot→Rotate→Scale→Axis Move→Free Area 순으로 Hit-test하며 Handle 크기는 zoom과 무관한 화면 기준 픽셀이다.
+
+Effect Canvas는 선택된 Composition Layer의 Start/End와 선택된 Particle System의 Emission Origin, Direction, Expected Endpoint, Emission Shape를 직접 편집한다. Expected Endpoint는 Particle Renderer와 공유하는 degree·pixel/frame 단위 및 Speed/Lifetime 중간값으로 계산한다. Endpoint Drag는 Lifetime을 유지하고 Speed Range 폭을 보존하면서 중심 속도를 바꾼다. 가이드와 Ghost는 Canvas paint overlay이므로 Project compose, Bake와 Export 버퍼에 들어가지 않는다.

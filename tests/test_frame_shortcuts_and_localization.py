@@ -141,5 +141,6 @@ def test_properties_have_units_help_and_safe_wheel_behavior() -> None:
         Qt.ScrollPhase.ScrollUpdate, False,
     )
     QApplication.sendEvent(panel.output_frames, focused_event)
-    assert panel.output_frames.value() == original + 1
+    assert panel.output_frames.value() == original
+    assert not focused_event.isAccepted()
     panel.close()

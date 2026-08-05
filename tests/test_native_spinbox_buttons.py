@@ -105,7 +105,8 @@ def test_focus_wheel_policy_does_not_intercept_mouse_buttons(dialog):
     spinbox = dialog.width; dialog.create.setFocus(); spinbox.clearFocus(); before = spinbox.value()
     ignored = wheel(spinbox, 120); assert spinbox.value() == before and not ignored.isAccepted()
     click(spinbox, QStyle.SubControl.SC_SpinBoxUp); after_click = spinbox.value(); assert spinbox.hasFocus() or spinbox.lineEdit().hasFocus()
-    accepted = wheel(spinbox, 120); assert spinbox.value() == after_click + spinbox.singleStep() and accepted.isAccepted()
+    ignored_after_focus = wheel(spinbox, 120)
+    assert spinbox.value() == after_click and not ignored_after_focus.isAccepted()
     point = button_center(spinbox, QStyle.SubControl.SC_SpinBoxUp); target = dialog.childAt(spinbox.mapTo(dialog, point)); assert target in (spinbox, spinbox.lineEdit())
 
 

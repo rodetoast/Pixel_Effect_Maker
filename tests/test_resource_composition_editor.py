@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import numpy as np
+import pytest
 from PIL import Image
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -20,6 +21,27 @@ from app.ui.resource_editor_widget import AddPropertyDialog
 
 
 APPLICATION = QApplication.instance() or QApplication([])
+
+
+@pytest.mark.parametrize("frames,loop,expected", [(12, True, 330), (8, True, 315), (2, True, 180), (1, True, 0), (12, False, 360)])
+def test_full_rotation_uses_loop_safe_endpoint(tmp_path, frames, loop, expected):
+    window = MainWindow(service(tmp_path))
+    asset_path = tmp_path / f"rotation-{frames}-{loop}.png"
+    Image.new("RGBA", (1, 1), (255, 255, 255, 255)).save(asset_path)
+    window.import_resources([asset_path])
+    editor = window.resource_editor
+    editor._last_asset = ("source_asset", window.project.source_assets[0].id)
+    editor.create_composition("Rotation", 8, 8, 12, frames, loop)
+    layer = editor.add_selected_asset()
+    editor.add_full_rotation()
+    values = [key.value for key in layer.tracks["rotation"].keyframes]
+    assert values == ([0] if frames == 1 else [0, expected])
+    window.application_undo_stack.undo()
+    assert "rotation" not in layer.tracks
+    window.application_undo_stack.redo()
+    assert [key.value for key in layer.tracks["rotation"].keyframes] == values
+    window.dirty = False
+    window.close()
 
 
 def service(tmp_path):
@@ -89,7 +111,7 @@ def test_property_search_is_bilingual_and_full_rotation_directions(tmp_path):
     editor.create_composition("Spin", 16, 16, 12, 12, True)
     layer = editor.add_selected_asset()
     editor.add_full_rotation(clockwise=False, turns=2)
-    assert [key.value for key in layer.tracks["rotation"].keyframes] == [0, -720]
+    assert [key.value for key in layer.tracks["rotation"].keyframes] == [0, -660]
     window.dirty = False
     window.close()
 

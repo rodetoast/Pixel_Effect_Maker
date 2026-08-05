@@ -4,9 +4,10 @@ from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from app.models.source_asset import SourceAsset
-from app.ui.focus_wheel_widgets import FocusWheelDoubleSpinBox, FocusWheelSpinBox
+from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 
 from .asset_inspector_widget import asset_durations
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class NewResourceDialog(QDialog):
@@ -15,7 +16,7 @@ class NewResourceDialog(QDialog):
         self.localization = localization
         root = QVBoxLayout(self); self.form = QFormLayout()
         self.name = QLineEdit(Path(asset.name).stem if asset is not None else "Resource 1"); self.name.setObjectName("newResourceName")
-        self.width = FocusWheelSpinBox(); self.height = FocusWheelSpinBox(); self.fps = FocusWheelSpinBox(); self.frames = FocusWheelSpinBox(); self.duration = FocusWheelDoubleSpinBox(); self.loop = QCheckBox()
+        self.width = ScrollSafeSpinBox(); self.height = ScrollSafeSpinBox(); self.fps = ScrollSafeSpinBox(); self.frames = ScrollSafeSpinBox(); self.duration = ScrollSafeDoubleSpinBox(); self.loop = QCheckBox()
         self.length_unit=QComboBox();self.length_stack=QStackedWidget();self.length_stack.addWidget(self.frames);self.length_stack.addWidget(self.duration);self.length_info=QLabel();self.length_row=QWidget();length_layout=QVBoxLayout(self.length_row);length_layout.setContentsMargins(0,0,0,0);length_input=QHBoxLayout();length_input.addWidget(self.length_stack,1);length_input.addWidget(self.length_unit);length_layout.addLayout(length_input);length_layout.addWidget(self.length_info)
         for widget in (self.width, self.height): widget.setRange(1, 1024)
         self.fps.setRange(1, 120); self.frames.setRange(1, 512); self.duration.setRange(1/120, 60); self.duration.setDecimals(4);self.duration.setKeyboardTracking(False)
@@ -100,4 +101,4 @@ class NewResourceDialog(QDialog):
         current=self.length_unit.currentData();self.length_unit.blockSignals(True);self.length_unit.clear();self.length_unit.addItem(t("v2.frames"),"frames");self.length_unit.addItem(t("v2.seconds"),"seconds");self.length_unit.setCurrentIndex(1 if current=="seconds" else 0);self.length_unit.blockSignals(False)
         for widget, key in ((self.name,"composition.name"),(self.width,"composition.width"),(self.height,"composition.height"),(self.fps,"composition.fps"),(self.length_row,"v2.length"),(self.loop,"composition.loop")):
             self.form.labelForField(widget).setText(t(key))
-        self.create.setText(t("v2.create")); self.cancel.setText(t("v2.cancel"));self._unit_changed()
+        self.create.setText(t("v2.create")); self.cancel.setText(t("v2.cancel"));apply_tooltip(self.length_unit,self.localization,"tooltip.dialog.resource_length",status=False);apply_tooltip(self.frames,self.localization,"tooltip.dialog.resource_length",status=False);apply_tooltip(self.duration,self.localization,"tooltip.dialog.resource_length",status=False);apply_tooltip(self.create,self.localization,"tooltip.dialog.create_resource");self._unit_changed()

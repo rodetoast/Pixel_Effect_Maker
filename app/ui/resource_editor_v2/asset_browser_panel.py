@@ -1,5 +1,6 @@
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class AssetBrowserPanel(QWidget):
@@ -94,3 +95,6 @@ class AssetBrowserPanel(QWidget):
         self.resources_label.setText(t("v2.resources"))
         self.import_button.setText(t("resource.import"))
         self.delete_asset_button.setText(t("v2.delete_asset")); self.delete_resource_button.setText(t("v2.delete_resource"))
+        apply_tooltip(self.import_button,localization,"tooltip.resource.import")
+        apply_tooltip(self.delete_asset_button,localization,"tooltip.resource.delete_asset")
+        apply_tooltip(self.delete_resource_button,localization,"tooltip.resource.delete")

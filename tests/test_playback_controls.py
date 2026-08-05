@@ -112,7 +112,7 @@ def test_playback_test_project_replacement_is_safe(tmp_path, monkeypatch) -> Non
     window.create_playback_test()
     assert window.project.name == "Playback Test"
     assert len(window.project.frames) == 8
-    assert window.timeline.table.columnCount() == 8
+    assert window.timeline.table.columnCount() == 8 + window.timeline.FRAME_COLUMN_OFFSET
     assert window.dirty
     window.dirty = False
     window.close()
@@ -133,6 +133,6 @@ def test_timeline_has_no_large_title_but_keeps_controls(tmp_path) -> None:
     visible_text = [label.text() for label in window.timeline.findChildren(QLabel)]
     assert "Layer × Frame Timeline" not in visible_text
     assert window.timeline.table.rowCount() == 1
-    assert window.timeline.table.columnCount() == 1
+    assert window.timeline.table.columnCount() == 1 + window.timeline.FRAME_COLUMN_OFFSET
     assert window.timeline.play_button is not None
     window.close()

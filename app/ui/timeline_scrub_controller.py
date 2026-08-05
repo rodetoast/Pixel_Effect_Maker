@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, QObject, Qt
 
 
 class TimelineScrubController(QObject):
-    def __init__(self, table, select: Callable[[int, int], None], start: Callable[[], None], parent=None):
+    def __init__(self, table, select: Callable[[int, int], None], start: Callable[[], None], parent=None, first_column: int = 0):
         super().__init__(parent or table)
         self.table = table
         self.viewport = table.viewport()
@@ -16,6 +16,7 @@ class TimelineScrubController(QObject):
         self.start = start
         self.scrubbing = False
         self.last_column = -1
+        self.first_column = max(0, int(first_column))
         self.viewport.installEventFilter(self)
 
     def _cell(self, position):
@@ -23,11 +24,13 @@ class TimelineScrubController(QObject):
             return None
         column = self.table.columnAt(round(position.x()))
         if column < 0:
-            column = 0 if position.x() < 0 else self.table.columnCount() - 1
+            column = self.first_column if position.x() < 0 else self.table.columnCount() - 1
         row = self.table.rowAt(round(position.y()))
         if row < 0:
             row = max(0, self.table.currentRow())
-        return row, max(0, min(column, self.table.columnCount() - 1))
+        if column < self.first_column:
+            return None
+        return row, max(self.first_column, min(column, self.table.columnCount() - 1))
 
     def _select(self, position):
         cell = self._cell(position)

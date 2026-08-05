@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from app.models.project import Project
 from app.models.source_asset import SourceAsset
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class EffectLibraryPanel(QWidget):
@@ -30,6 +31,9 @@ class EffectLibraryPanel(QWidget):
     clip_selected = Signal(str)
     particle_selected = Signal(str)
     add_particle_requested = Signal(str)
+    add_particle_from_resource_requested = Signal(str, str)
+    add_composition_requested = Signal(str)
+    composition_selected = Signal(str)
     resource_open_requested = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -69,16 +73,23 @@ class EffectLibraryPanel(QWidget):
         generator_layout.addWidget(self.delete_generator_button)
         layout.addWidget(self.generator_group, 1)
 
-        self.clip_group = QGroupBox("Animation Clips")
+        self.clip_group = QGroupBox("Animated Resources")
         clip_layout = QVBoxLayout(self.clip_group)
-        self.create_clip_button = QPushButton("Create Animation Clip")
+        self.create_clip_button = QPushButton("Create Animated Resource")
         self.clip_list = QListWidget(); self.clip_list.setObjectName("animationClipList")
         clip_layout.addWidget(self.create_clip_button); clip_layout.addWidget(self.clip_list)
         layout.addWidget(self.clip_group, 1)
 
-        self.particle_group = QGroupBox("Particle Emitters")
+        self.composition_group = QGroupBox("Composition Layers")
+        composition_layout = QVBoxLayout(self.composition_group)
+        self.add_composition_button = QPushButton("Add Composition Layer")
+        self.composition_list = QListWidget(); self.composition_list.setObjectName("compositionLayerList")
+        composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list)
+        layout.addWidget(self.composition_group, 1)
+
+        self.particle_group = QGroupBox("Particle Systems")
         particle_layout = QVBoxLayout(self.particle_group)
-        self.add_particle_button = QPushButton("Add Particle Emitter")
+        self.add_particle_button = QPushButton("Add Particle System")
         self.particle_list = QListWidget(); self.particle_list.setObjectName("particleEmitterList")
         particle_layout.addWidget(self.add_particle_button); particle_layout.addWidget(self.particle_list)
         layout.addWidget(self.particle_group, 1)
@@ -91,8 +102,10 @@ class EffectLibraryPanel(QWidget):
         self.delete_generator_button.clicked.connect(self._request_delete_generator)
         self.create_clip_button.clicked.connect(self._request_create_clip)
         self.add_particle_button.clicked.connect(self._request_add_particle)
+        self.add_composition_button.clicked.connect(self._request_add_composition)
         self.clip_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "clip"))
         self.particle_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "particle"))
+        self.composition_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "composition"))
         self.asset_list.itemDoubleClicked.connect(lambda item:self.resource_open_requested.emit("source_asset",str(item.data(Qt.ItemDataRole.UserRole))))
         self.clip_list.itemDoubleClicked.connect(lambda item:self.resource_open_requested.emit("animation_clip",str(item.data(Qt.ItemDataRole.UserRole))))
         self._configure_help()
@@ -115,14 +128,24 @@ class EffectLibraryPanel(QWidget):
         self.title_label.setText(t("effects.library.title"))
         self.source_group.setTitle(t("effects.sources"))
         self.generator_group.setTitle(t("effects.legacy_clip_generators"))
-        self.clip_group.setTitle(t("effects.animation_clips"))
-        self.particle_group.setTitle(t("effects.particle_emitters"))
+        self.clip_group.setTitle(t("effects.animated_resources"))
+        self.composition_group.setTitle(t("effect.composition_layers"))
+        self.particle_group.setTitle(t("effect.particle_systems"))
         self.create_clip_button.setText(t("effects.create_clip"))
-        self.add_particle_button.setText(t("effects.add_particle"))
+        self.add_composition_button.setText(t("effect.add_composition_layer"))
+        self.add_particle_button.setText(t("effect.add_particle_system"))
         self.import_button.setText(t("effects.import"))
         self.add_emitter_button.setText(t("effects.add_emitter"))
         self.delete_asset_button.setText(t("effects.delete_source"))
         self.delete_generator_button.setText(t("effects.delete_generator"))
+        help_keys = {
+            self.import_button: "tooltip.effect.import", self.asset_list: "tooltip.effect.source_list",
+            self.add_emitter_button: "tooltip.effect.add_transform", self.delete_asset_button: "tooltip.effect.delete_source",
+            self.delete_generator_button: "tooltip.effect.delete_generator", self.create_clip_button: "tooltip.effect.create_clip",
+            self.add_particle_button: "tooltip.effect.add_particle",
+            self.add_composition_button: "tooltip.effect.add_composition_layer",
+        }
+        for widget,key in help_keys.items():apply_tooltip(widget,localization,key)
         if self.current_asset_id() is None:
             self.source_preview.setText(t("effects.no_source"))
 
@@ -135,25 +158,26 @@ class EffectLibraryPanel(QWidget):
     def refresh(self, project: Project) -> None:
         selected_asset = self.current_asset_id()
         selected_generator = self.current_generator_id()
-        selected_clip = self.current_clip_id(); selected_particle = self.current_particle_id()
+        selected_clip = self.current_clip_id(); selected_particle = self.current_particle_id(); selected_composition = self.current_composition_id()
         self.asset_list.blockSignals(True)
         self.generator_list.blockSignals(True)
         self.asset_list.clear()
         self.generator_list.clear()
-        self.clip_list.blockSignals(True); self.particle_list.blockSignals(True)
-        self.clip_list.clear(); self.particle_list.clear()
+        self.clip_list.blockSignals(True); self.particle_list.blockSignals(True); self.composition_list.blockSignals(True)
+        self.clip_list.clear(); self.particle_list.clear(); self.composition_list.clear()
         for asset in project.source_assets:
             self.asset_list.addItem(self._item(asset.id, asset.name))
         for generator in project.generators:
             self.generator_list.addItem(self._item(generator.id, generator.name))
         for clip in project.animation_clips: self.clip_list.addItem(self._item(clip.id, clip.name))
         for emitter in project.particle_emitters: self.particle_list.addItem(self._item(emitter.id, emitter.name))
+        for layer in project.effect_composition_layers: self.composition_list.addItem(self._item(layer.id, layer.name))
         self._restore_selection(self.asset_list, selected_asset)
         self._restore_selection(self.generator_list, selected_generator)
-        self._restore_selection(self.clip_list, selected_clip); self._restore_selection(self.particle_list, selected_particle)
+        self._restore_selection(self.clip_list, selected_clip); self._restore_selection(self.particle_list, selected_particle); self._restore_selection(self.composition_list, selected_composition)
         self.asset_list.blockSignals(False)
         self.generator_list.blockSignals(False)
-        self.clip_list.blockSignals(False); self.particle_list.blockSignals(False)
+        self.clip_list.blockSignals(False); self.particle_list.blockSignals(False); self.composition_list.blockSignals(False)
         self.add_emitter_button.setEnabled(bool(project.source_assets))
         self.add_emitter_button.setVisible(False)
         self.generator_group.setVisible(bool(project.generators))
@@ -162,7 +186,10 @@ class EffectLibraryPanel(QWidget):
             self.current_generator_id() is not None
         )
         self.create_clip_button.setEnabled(self.current_generator_id() is not None)
-        self.add_particle_button.setEnabled(bool(project.animation_clips))
+        self.add_particle_button.setEnabled(bool(project.animation_clips or project.resource_compositions))
+        self._resource_composition_ids = [item.id for item in project.resource_compositions]
+        self.add_composition_button.setEnabled(bool(project.resource_compositions))
+        self._resource_composition_ids = [item.id for item in project.resource_compositions]
         asset = next(
             (item for item in project.source_assets if item.id == self.current_asset_id()),
             None,
@@ -198,13 +225,20 @@ class EffectLibraryPanel(QWidget):
     def current_particle_id(self) -> str | None:
         item = self.particle_list.currentItem(); return None if item is None else str(item.data(Qt.ItemDataRole.UserRole))
 
+    def current_composition_id(self) -> str | None:
+        item = self.composition_list.currentItem(); return None if item is None else str(item.data(Qt.ItemDataRole.UserRole))
+
     def _typed_changed(self, current, kind: str) -> None:
         if current is None: return
         identifier = str(current.data(Qt.ItemDataRole.UserRole))
-        for widget in (self.asset_list, self.generator_list, self.clip_list, self.particle_list):
-            if (kind == "clip" and widget is self.clip_list) or (kind == "particle" and widget is self.particle_list): continue
+        for widget in (self.asset_list, self.generator_list, self.clip_list, self.particle_list, self.composition_list):
+            if (kind == "clip" and widget is self.clip_list) or (kind == "particle" and widget is self.particle_list) or (kind == "composition" and widget is self.composition_list): continue
             widget.clearSelection()
-        (self.clip_selected if kind == "clip" else self.particle_selected).emit(identifier)
+        (self.clip_selected if kind == "clip" else self.particle_selected if kind == "particle" else self.composition_selected).emit(identifier)
+
+    def _request_add_composition(self) -> None:
+        identifiers = getattr(self, "_resource_composition_ids", [])
+        if identifiers: self.add_composition_requested.emit(identifiers[0])
 
     def _request_create_clip(self) -> None:
         identifier = self.current_generator_id()
@@ -213,7 +247,8 @@ class EffectLibraryPanel(QWidget):
     def _request_add_particle(self) -> None:
         identifier = self.current_clip_id()
         if identifier is None and self.clip_list.count(): identifier = str(self.clip_list.item(0).data(Qt.ItemDataRole.UserRole))
-        if identifier: self.add_particle_requested.emit(identifier)
+        if identifier:self.add_particle_requested.emit(identifier)
+        elif getattr(self,"_resource_composition_ids",[]):self.add_particle_from_resource_requested.emit("resource_composition",self._resource_composition_ids[0])
 
     def _asset_changed(self, current: QListWidgetItem | None, previous) -> None:
         self.delete_asset_button.setEnabled(current is not None)

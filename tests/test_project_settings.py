@@ -44,7 +44,8 @@ def test_project_settings_dialog_defaults(tmp_path) -> None:
     dialog = window.create_project_settings_dialog()
     settings = dialog.settings()
     assert settings == values_for(window)
-    assert dialog.anchor_buttons.checkedButton().toolTip() == "Center"
+    assert "Center" in dialog.anchor_buttons.checkedButton().toolTip()
+    assert dialog.anchor_buttons.checkedButton().toolTip() != "Center"
     assert dialog.canvas_only_radio.isChecked()
     assert dialog.apply_button.isEnabled()
     window.close()

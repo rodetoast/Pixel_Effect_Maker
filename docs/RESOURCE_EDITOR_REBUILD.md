@@ -73,7 +73,8 @@ PNG 선택
 → Composition과 Layer 자동 생성·선택
 → Full Rotation
 → Enter 재생
-→ Use This Resource in Effect
+→ 이펙트에 추가…
+→ 컴포지션 레이어로 직접 배치 또는 파티클 시스템 리소스로 사용
 ```
 
 ## Legacy 처리와 제한
@@ -84,7 +85,7 @@ Legacy 모델과 기존 UI 파일은 데이터·테스트 호환을 위해 삭�
 
 - Asset List에 테스트 호환용으로 넣었던 숨김·빈 `QListWidgetItem`을 완전히 제거했다. 목록 행 수는 실제 Asset 수와 항상 같다.
 - Position/Rotation/Scale/Opacity의 단일 가로 행을 Property Card로 교체했다. Card는 제목·삭제 헤더, X/Y 또는 값 Form, easing·Keyframe Footer를 세로로 배치한다.
-- Layer Inspector는 가로 Scroll을 사용하지 않고 content 폭을 viewport에 동기화한다. 기즈모 버튼은 2×2 Grid이며 `Use This Resource in Effect`은 viewport 폭을 채운다.
+- Layer Inspector는 가로 Scroll을 사용하지 않고 content 폭을 viewport에 동기화한다. 기즈모 버튼은 2×2 Grid이며 `이펙트에 추가…`는 컴포지션 레이어/파티클 시스템 선택 메뉴를 연다.
 - Horizontal Splitter는 Asset Browser 180~320px, Canvas 최소 320px, Inspector 최소 300px을 보장한다. Vertical Splitter에서 Timeline 기본 높이는 약 190px이며 Asset Inspect 상태에서는 완전히 숨긴다.
 - Splitter 위치는 `ui/resource_editor_v2_horizontal_splitter`, `ui/resource_editor_v2_vertical_splitter`에 별도로 저장하며 잘못된 값은 비례 기본값으로 복구한다.
 - 기존 선택 polygon이 전체 Asset 폭·높이를 사용하던 것을 불투명 픽셀의 alpha bounds로 변경했다. Animated Asset은 안정적인 전체 프레임 union bounds를 사용하고 완전 투명 Asset은 전체 크기로 fallback한다. Renderer, Pivot과 원본 픽셀은 변경하지 않는다.

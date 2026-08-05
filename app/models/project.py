@@ -14,6 +14,7 @@ from .effect_generator import TransformEmitter
 from .animation_clip import AnimationClipAsset
 from .particle_emitter import ParticleEmitter
 from .resource_composition import ResourceComposition
+from .effect_composition_layer import EffectCompositionLayer
 
 FORMAT_VERSION = 5
 
@@ -38,6 +39,7 @@ class Project:
     animation_clips: list[AnimationClipAsset] = field(default_factory=list)
     particle_emitters: list[ParticleEmitter] = field(default_factory=list)
     resource_compositions: list[ResourceComposition] = field(default_factory=list)
+    effect_composition_layers: list[EffectCompositionLayer] = field(default_factory=list)
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
@@ -88,6 +90,9 @@ class Project:
         for emitter in self.particle_emitters:
             if emitter.generated_layer_id == layer.id:
                 emitter.generated_layer_id = None
+        for composition_layer in self.effect_composition_layers:
+            if composition_layer.generated_layer_id == layer.id:
+                composition_layer.generated_layer_id = None
         for frame in self.frames:
             frame.layer_pixels.pop(layer.id, None)
 
@@ -159,6 +164,7 @@ class Project:
             "animation_clips": [clip.to_dict() for clip in self.animation_clips],
             "particle_emitters": [emitter.to_dict() for emitter in self.particle_emitters],
             "resource_compositions": [composition.to_dict() for composition in self.resource_compositions],
+            "effect_composition_layers": [layer.to_dict() for layer in self.effect_composition_layers],
         }
 
     @classmethod
@@ -198,6 +204,7 @@ class Project:
                 project.particle_emitters = [ParticleEmitter.from_dict(item) for item in data.get("particle_emitters", [])]
             if int(version) >= 5:
                 project.resource_compositions = [ResourceComposition.from_dict(item) for item in data.get("resource_compositions", [])]
+                project.effect_composition_layers = [EffectCompositionLayer.from_dict(item) for item in data.get("effect_composition_layers", [])]
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(f"invalid project data: {exc}") from exc
         if not project.layers or not project.frames:
@@ -241,6 +248,13 @@ class Project:
             if emitter.generated_layer_id is not None and emitter.generated_layer_id not in layer_ids:
                 raise ProjectError("particle emitter references an unknown generated layer")
         if len({c.id for c in project.resource_compositions})!=len(project.resource_compositions):raise ProjectError("resource composition IDs must be unique")
+        if len({item.id for item in project.effect_composition_layers}) != len(project.effect_composition_layers):
+            raise ProjectError("Composition Layer IDs must be unique")
+        for effect_layer in project.effect_composition_layers:
+            if effect_layer.resource_composition_id not in composition_ids:
+                raise ProjectError("Composition Layer references an unknown Resource Composition")
+            if effect_layer.generated_layer_id is not None and effect_layer.generated_layer_id not in layer_ids:
+                raise ProjectError("Composition Layer references an unknown generated layer")
         for composition in project.resource_compositions:
             for layer in composition.layers:
                 valid=asset_ids if layer.source_type=="source_asset" else clip_ids

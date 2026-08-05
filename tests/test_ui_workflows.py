@@ -86,16 +86,16 @@ def test_timeline_uses_continuous_position_headers(application) -> None:
     timeline = TimelineWidget()
     timeline.refresh(project, selected_layer=0, selected_frame=1)
     assert timeline.table.rowCount() == 2
-    assert timeline.table.columnCount() == 3
+    assert timeline.table.columnCount() == 5
     assert [
-        timeline.table.horizontalHeaderItem(index).text() for index in range(3)
-    ] == ["1", "2", "3"]
+        timeline.table.horizontalHeaderItem(index).text() for index in range(5)
+    ] == ["", "Layer", "1", "2", "3"]
 
     project.delete_frame(1)
     timeline.refresh(project, selected_layer=0, selected_frame=1)
     assert [
-        timeline.table.horizontalHeaderItem(index).text() for index in range(2)
-    ] == ["1", "2"]
+        timeline.table.horizontalHeaderItem(index).text() for index in range(4)
+    ] == ["", "Layer", "1", "2"]
 
 
 def test_timeline_cell_selects_layer_and_frame(application) -> None:
@@ -106,7 +106,7 @@ def test_timeline_cell_selects_layer_and_frame(application) -> None:
     timeline.refresh(project)
     selected: list[tuple[int, int]] = []
     timeline.cell_selected.connect(lambda layer, frame: selected.append((layer, frame)))
-    timeline.table.setCurrentCell(0, 1)
+    timeline.table.setCurrentCell(0, timeline.FRAME_COLUMN_OFFSET + 1)
     assert selected[-1] == (1, 1)
     assert timeline.selection_label.text() == "Glow · Frame 2"
 
@@ -119,7 +119,7 @@ def test_main_window_synchronizes_selected_cell(application, tmp_path) -> None:
     window.select_cell(1, 1)
     assert (window.layer_index, window.frame_index) == (1, 1)
     assert (window.canvas.layer_index, window.canvas.frame_index) == (1, 1)
-    assert window.timeline.table.currentColumn() == 1
+    assert window.timeline.table.currentColumn() == window.timeline.FRAME_COLUMN_OFFSET + 1
     window.close()
 
 

@@ -22,6 +22,7 @@ from app.shortcuts import (
     ShortcutConfigurationError,
     validate_shortcuts,
 )
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class KeyboardShortcutsDialog(QDialog):
@@ -115,6 +116,9 @@ class KeyboardShortcutsDialog(QDialog):
         self.apply_button.setText(t("shortcut.apply"))
         self.primary_header.setText(t("shortcut.primary"))
         self.alternate_header.setText(t("shortcut.alternate"))
+        for editor in self.editors.values():apply_tooltip(editor,self.localization,"tooltip.dialog.shortcut_primary",status=False)
+        for editor in self.alternate_editors.values():apply_tooltip(editor,self.localization,"tooltip.dialog.shortcut_alternate",status=False)
+        apply_tooltip(self.restore_button,self.localization,"tooltip.dialog.restore_shortcuts");apply_tooltip(self.apply_button,self.localization,"tooltip.dialog.apply_shortcuts")
 
     def current_shortcuts(self) -> dict[str, list[str]]:
         return {

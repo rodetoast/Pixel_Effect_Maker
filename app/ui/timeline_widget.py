@@ -9,16 +9,19 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QStyle,
 )
 
 from app.models.project import Project
 from app.ui.timeline_scrub_controller import TimelineScrubController
+from app.ui.tooltip_helper import apply_tooltip
+from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 
 
 class TimelineWidget(QWidget):
@@ -30,10 +33,14 @@ class TimelineWidget(QWidget):
     delete_requested = Signal()
     add_layer_requested = Signal()
     delete_layer_requested = Signal()
+    delete_layer_context_requested = Signal(int)
     play_requested = Signal()
     fps_changed = Signal(int)
     layer_visibility_requested = Signal(int, bool)
     scrub_started = Signal()
+    VISIBILITY_COLUMN = 0
+    NAME_COLUMN = 1
+    FRAME_COLUMN_OFFSET = 2
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -41,6 +48,10 @@ class TimelineWidget(QWidget):
         self._playing = False
         self._preview = False
         self._display_frame_count = 1
+        self._current_frame = 0
+        self._play_shortcuts = []
+        self._previous_shortcuts = []
+        self._next_shortcuts = []
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
@@ -56,20 +67,21 @@ class TimelineWidget(QWidget):
             ("⧉ Frame", self.duplicate_requested, "Duplicate selected frame"),
             ("− Frame", self.delete_requested, "Delete selected frame"),
             ("+ Layer", self.add_layer_requested, "Add layer"),
-            ("− Layer", self.delete_layer_requested, "Delete selected layer"),
+            ("Delete Selected Layer", self.delete_layer_requested, "Delete selected layer"),
         ):
             button = QPushButton(label)
             button.setToolTip(tooltip)
             button.clicked.connect(signal)
             toolbar.addWidget(button)
             self.edit_buttons.append(button)
+        self.delete_layer_button = self.edit_buttons[-1]
 
         self.play_button = QPushButton("▶")
         self.play_button.clicked.connect(self.play_requested)
         toolbar.addWidget(self.play_button)
         self.fps_label = QLabel("FPS")
         toolbar.addWidget(self.fps_label)
-        self.fps_spin = QSpinBox()
+        self.fps_spin = ScrollSafeSpinBox()
         self.fps_spin.setRange(1, 120)
         self.fps_spin.valueChanged.connect(self.fps_changed)
         toolbar.addWidget(self.fps_spin)
@@ -88,10 +100,14 @@ class TimelineWidget(QWidget):
             QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.currentCellChanged.connect(self._on_current_cell_changed)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.scrub_controller = TimelineScrubController(
-            self.table, self._scrub_to, self.scrub_started.emit, self
+            self.table, self._scrub_to, self.scrub_started.emit, self,
+            first_column=self.FRAME_COLUMN_OFFSET,
         )
-        self.table.verticalHeader().sectionClicked.connect(self._toggle_visibility)
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
 
     def _scrub_to(self, row: int, column: int) -> None:
@@ -100,8 +116,11 @@ class TimelineWidget(QWidget):
     def set_frame_cell_width(self, width: int) -> None:
         self.frame_cell_width = max(20, min(96, int(width)))
         self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
-        for column in range(self.table.columnCount()):
+        for column in range(self.FRAME_COLUMN_OFFSET, self.table.columnCount()):
             self.table.setColumnWidth(column, self.frame_cell_width)
+        if self.table.columnCount() >= self.FRAME_COLUMN_OFFSET:
+            self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
+            self.table.setColumnWidth(self.NAME_COLUMN, 160)
 
     def _toggle_visibility(self, row: int) -> None:
         if self._project is None:return
@@ -109,41 +128,71 @@ class TimelineWidget(QWidget):
         if 0<=index<len(self._project.layers):
             layer=self._project.layers[index]; self.layer_visibility_requested.emit(index,not layer.visible)
 
+    def _on_cell_clicked(self, row: int, column: int) -> None:
+        if column == self.VISIBILITY_COLUMN:
+            self._toggle_visibility(row)
+
+    def _show_context_menu(self, position) -> None:
+        if self._project is None:
+            return
+        index = self.table.indexAt(position)
+        if not index.isValid() or index.column() != self.NAME_COLUMN:
+            return
+        layer_index = len(self._project.layers) - 1 - index.row()
+        self.table.setCurrentCell(index.row(), self.NAME_COLUMN)
+        localization = getattr(self, "_localization", None)
+        label = localization.text("action.delete_layer") if localization else "Delete Selected Effect Layer"
+        menu = QMenu(self.table)
+        action = menu.addAction(label)
+        action.setEnabled(self.delete_layer_button.isEnabled())
+        if menu.exec(self.table.viewport().mapToGlobal(position)) is action:
+            self.delete_layer_context_requested.emit(layer_index)
+
+    def set_delete_layer_enabled(self, enabled: bool) -> None:
+        self.delete_layer_button.setEnabled(enabled)
+        localization = getattr(self, "_localization", None)
+        if localization:
+            apply_tooltip(
+                self.delete_layer_button,
+                localization,
+                "tooltip.timeline.delete_layer" if enabled else "tooltip.main.select_layer_to_delete",
+            )
+
     def retranslate_ui(self, localization) -> None:
         self._localization = localization
-        labels = (
-            ("+ Frame", "Add an empty frame after the current frame."),
-            ("⧉ Frame", "Duplicate the selected frame."),
-            ("− Frame", "Delete the selected frame."),
-            ("+ Layer", "Add a new layer."),
-            ("− Layer", "Delete the selected layer."),
-        )
-        if localization.language == "ko":
-            labels = (
-                ("+ 프레임", "현재 프레임 뒤에 빈 프레임을 추가합니다."),
-                ("⧉ 프레임", "선택한 프레임을 복제합니다."),
-                ("− 프레임", "선택한 프레임을 삭제합니다."),
-                ("+ 레이어", "새 레이어를 추가합니다."),
-                ("− 레이어", "선택한 레이어를 삭제합니다."),
-            )
-        for button, (text, tooltip) in zip(self.edit_buttons, labels, strict=True):
+        texts = ("+ Frame", "⧉ Frame", "− Frame", "+ Layer", "Delete Selected Layer") if localization.language == "en" else ("+ 프레임", "⧉ 프레임", "− 프레임", "+ 레이어", "선택한 레이어 삭제")
+        keys = ("tooltip.timeline.add_frame", "tooltip.timeline.duplicate_frame", "tooltip.timeline.delete_frame", "tooltip.timeline.add_layer", "tooltip.timeline.delete_layer")
+        shortcut_keys = ("new_empty_frame", "new_frame", None, "new_layer", None)
+        for button, text, key, shortcut_key in zip(self.edit_buttons, texts, keys, shortcut_keys, strict=True):
             button.setText(text)
-            button.setToolTip(tooltip)
-            button.setStatusTip(tooltip)
-        self.fps_spin.setToolTip("Animation frames per second." if localization.language == "en" else "초당 재생 프레임 수입니다.")
-        self.table.setToolTip("Select a layer and frame cell." if localization.language == "en" else "레이어와 프레임 교차 셀을 선택합니다.")
+            shortcuts = getattr(self, "_configured_shortcuts", {}).get(shortcut_key, []) if shortcut_key else None
+            apply_tooltip(button, localization, key, shortcuts)
+        apply_tooltip(self.fps_spin, localization, "tooltip.timeline.fps")
+        apply_tooltip(self.table, localization, "tooltip.timeline.table", status=False)
+        self._update_play_tooltip()
+        header = self.table.horizontalHeaderItem(self.NAME_COLUMN)
+        if header is not None: header.setText(localization.text("timeline.layer"))
+
+    def set_shortcuts(self, play, previous, next_, configured=None) -> None:
+        self._play_shortcuts, self._previous_shortcuts, self._next_shortcuts = play, previous, next_
+        self._configured_shortcuts = configured or {}
+        if hasattr(self, "_localization"):
+            self.retranslate_ui(self._localization)
+
+    def _update_play_tooltip(self) -> None:
+        localization = getattr(self, "_localization", None)
+        if localization:
+            apply_tooltip(self.play_button, localization, "tooltip.timeline.pause" if self._playing else "tooltip.timeline.play", self._play_shortcuts)
 
     def set_playing(self, playing: bool) -> None:
         """Synchronize the button display with the main playback QAction."""
         self._playing = playing
         self.play_button.setText("■" if playing else "▶")
-        self.play_button.setToolTip(
-            "Stop animation" if playing else "Play animation"
-        )
+        self._update_play_tooltip()
         if self._project is not None:
             self.update_playback_status(
                 playing,
-                max(0, self.table.currentColumn()),
+                self._current_frame,
                 self._display_frame_count,
                 self._project.fps,
                 preview=self._preview,
@@ -191,8 +240,14 @@ class TimelineWidget(QWidget):
             return
         if not (0 <= column < self.table.columnCount()):
             return
-        self._update_selection_label(layer_index, column)
-        self.cell_selected.emit(layer_index, column)
+        if column == self.VISIBILITY_COLUMN:
+            return
+        frame_index = self._current_frame if column == self.NAME_COLUMN else column - self.FRAME_COLUMN_OFFSET
+        if not (0 <= frame_index < self._display_frame_count):
+            return
+        self._current_frame = frame_index
+        self._update_selection_label(layer_index, frame_index)
+        self.cell_selected.emit(layer_index, frame_index)
 
     def refresh(
         self,
@@ -210,17 +265,26 @@ class TimelineWidget(QWidget):
         frame_count = display_frame_count or len(project.frames)
         self._display_frame_count = frame_count
         self._preview = preview
-        self.table.setColumnCount(frame_count)
+        localization = getattr(self, "_localization", None)
+        self.table.setColumnCount(frame_count + self.FRAME_COLUMN_OFFSET)
         self.table.setHorizontalHeaderLabels(
-            [str(index) for index in range(1, frame_count + 1)]
-        )
-        self.table.setVerticalHeaderLabels(
-            [
-                f"{'◉' if layer.visible else '○'}  {layer.name}"
-                for layer in reversed(project.layers)
-            ]
+            ["", localization.text("timeline.layer") if localization else "Layer"] + [str(index) for index in range(1, frame_count + 1)]
         )
         for display_row, layer in enumerate(reversed(project.layers)):
+            visibility = QTableWidgetItem()
+            visibility.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            visibility.setIcon(self.style().standardIcon(
+                QStyle.StandardPixmap.SP_DialogYesButton if layer.visible
+                else QStyle.StandardPixmap.SP_DialogNoButton
+            ))
+            if localization:
+                visibility.setToolTip(localization.text(
+                    "tooltip.visibility.hide" if layer.visible else "tooltip.visibility.show"
+                ))
+            self.table.setItem(display_row, self.VISIBILITY_COLUMN, visibility)
+            name_item = QTableWidgetItem(layer.name)
+            name_item.setToolTip(layer.name)
+            self.table.setItem(display_row, self.NAME_COLUMN, name_item)
             for frame_index in range(frame_count):
                 frame = (
                     project.frames[frame_index]
@@ -234,7 +298,11 @@ class TimelineWidget(QWidget):
                 item.setToolTip(
                     f"{layer.name} · Frame {frame_index + 1}"
                 )
-                self.table.setItem(display_row, frame_index, item)
+                self.table.setItem(display_row, frame_index + self.FRAME_COLUMN_OFFSET, item)
+        self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
+        self.table.setColumnWidth(self.NAME_COLUMN, 160)
+        for column in range(self.FRAME_COLUMN_OFFSET, self.table.columnCount()):
+            self.table.setColumnWidth(column, self.frame_cell_width)
         self.table.blockSignals(False)
         self.set_current_cell(
             project,
@@ -261,7 +329,8 @@ class TimelineWidget(QWidget):
         frame_index = max(0, min(frame_index, frame_count - 1))
         display_row = len(project.layers) - 1 - layer_index
         self.table.blockSignals(True)
-        self.table.setCurrentCell(display_row, frame_index)
+        self._current_frame = frame_index
+        self.table.setCurrentCell(display_row, frame_index + self.FRAME_COLUMN_OFFSET)
         self.table.blockSignals(False)
         self._highlight_frame_column(frame_index)
         current_item = self.table.currentItem()
@@ -292,4 +361,6 @@ class TimelineWidget(QWidget):
             for column in range(self.table.columnCount()):
                 item = self.table.item(row, column)
                 if item is not None:
-                    item.setBackground(highlight if column == frame_index else clear)
+                    item.setBackground(
+                        highlight if column == frame_index + self.FRAME_COLUMN_OFFSET else clear
+                    )

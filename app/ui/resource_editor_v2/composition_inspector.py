@@ -4,7 +4,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QFormLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from app.models.property_registry import search_properties
-from app.ui.focus_wheel_widgets import FocusWheelDoubleSpinBox, FocusWheelSpinBox
+from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class PropertySearchDialog(QDialog):
@@ -31,7 +32,7 @@ class CompositionInspector(QWidget):
     changed=Signal(object,object); use_requested=Signal()
 
     def __init__(self,parent=None):
-        super().__init__(parent); layout=QVBoxLayout(self); self.title=QLabel(); self.name=QLineEdit(); self.info=QLabel(); self.pivot_x=FocusWheelDoubleSpinBox(); self.pivot_y=FocusWheelDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.form=QFormLayout(); self.form.addRow(" ",self.name); self.form.addRow(" ",self.pivot_x); self.form.addRow(" ",self.pivot_y); self.center=QPushButton(); self.use=QPushButton(); self.use.setObjectName("useResourceInEffectButton"); self.use.setDefault(True)
+        super().__init__(parent); layout=QVBoxLayout(self); self.title=QLabel(); self.name=QLineEdit(); self.info=QLabel(); self.pivot_x=ScrollSafeDoubleSpinBox(); self.pivot_y=ScrollSafeDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.form=QFormLayout(); self.form.addRow(" ",self.name); self.form.addRow(" ",self.pivot_x); self.form.addRow(" ",self.pivot_y); self.center=QPushButton(); self.use=QPushButton(); self.use.setObjectName("useResourceInEffectButton"); self.use.setDefault(True)
         layout.addWidget(self.title); layout.addWidget(self.info); layout.addLayout(self.form); layout.addWidget(self.center); layout.addWidget(self.use); layout.addStretch(); self.composition=None; self._loading=False; self.localization=None
         self.name.editingFinished.connect(self._apply); self.pivot_x.valueChanged.connect(self._apply); self.pivot_y.valueChanged.connect(self._apply); self.center.clicked.connect(self._center); self.use.clicked.connect(self.use_requested)
 
@@ -51,14 +52,14 @@ class CompositionInspector(QWidget):
         if self.composition: self.pivot_x.setValue(self.composition.width/2); self.pivot_y.setValue(self.composition.height/2)
 
     def retranslate(self,localization):
-        self.localization=localization;t=localization.text; self.title.setText(t("v2.composition_inspector")); self.form.labelForField(self.name).setText(t("composition.name")); self.form.labelForField(self.pivot_x).setText(t("v2.output_pivot_x")); self.form.labelForField(self.pivot_y).setText(t("v2.output_pivot_y")); self.center.setText(t("v2.center_output_pivot")); self.use.setText(t("v2.use_in_effect")); self.use.setToolTip(t("v2.use_in_effect_tip"));self.set_composition(self.composition)
+        self.localization=localization;t=localization.text; self.title.setText(t("v2.composition_inspector")); self.form.labelForField(self.name).setText(t("composition.name")); self.form.labelForField(self.pivot_x).setText(t("v2.output_pivot_x")); self.form.labelForField(self.pivot_y).setText(t("v2.output_pivot_y")); self.center.setText(t("v2.center_output_pivot")); self.use.setText(t("v2.use_in_effect"));apply_tooltip(self.pivot_x,localization,"tooltip.resource.output_pivot",status=False);apply_tooltip(self.pivot_y,localization,"tooltip.resource.output_pivot",status=False);apply_tooltip(self.center,localization,"tooltip.resource.center_output");apply_tooltip(self.use,localization,"tooltip.resource.use");self.set_composition(self.composition)
 
 
 class LayerInspector(QScrollArea):
     changed=Signal(object,object); mode_changed=Signal(str); add_property_requested=Signal(); full_rotation_requested=Signal(); center_pivot_requested=Signal(); use_requested=Signal(); keyframe_requested=Signal(str,object,str); property_value_requested=Signal(str,object); remove_property_requested=Signal(str)
 
     def __init__(self,parent=None):
-        super().__init__(parent); self.setWidgetResizable(True); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); body=QWidget(); body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding); self.layout=QVBoxLayout(body); self.title=QLabel(); self.name=QLineEdit(); self.source=QLabel(); self.source.setWordWrap(True); self.source.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.start=FocusWheelSpinBox(); self.end=FocusWheelSpinBox(); self.visible=QCheckBox(); self.pivot_x=FocusWheelDoubleSpinBox(); self.pivot_y=FocusWheelDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.start.setRange(0,511);self.end.setRange(0,511); self.form=QFormLayout(); self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        super().__init__(parent); self.setWidgetResizable(True); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); body=QWidget(); body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding); self.layout=QVBoxLayout(body); self.title=QLabel(); self.name=QLineEdit(); self.source=QLabel(); self.source.setWordWrap(True); self.source.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.start=ScrollSafeSpinBox(); self.end=ScrollSafeSpinBox(); self.visible=QCheckBox(); self.pivot_x=ScrollSafeDoubleSpinBox(); self.pivot_y=ScrollSafeDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.start.setRange(0,511);self.end.setRange(0,511); self.form=QFormLayout(); self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for widget in (self.name,self.source,self.start,self.end,self.visible,self.pivot_x,self.pivot_y): self.form.addRow(" ",widget)
         self.layout.addWidget(self.title); self.layout.addLayout(self.form); self.center=QPushButton(); self.layout.addWidget(self.center); modes=QGridLayout(); self.mode_buttons={}
         for index,mode in enumerate(("move","rotate","scale","pivot")):
@@ -70,7 +71,10 @@ class LayerInspector(QScrollArea):
         self.layer,self.frame=layer,frame;self._loading=True
         if layer:
             self.name.setText(layer.name);self.source.setText(source.name if source else "");self.start.setValue(layer.start_frame);self.end.setValue(layer.end_frame);self.visible.setChecked(layer.visible);self.pivot_x.setValue(layer.pivot_x);self.pivot_y.setValue(layer.pivot_y)
-        self._loading=False;self._properties()
+        self._loading=False;self._update_visibility_tooltip();self._properties()
+
+    def _update_visibility_tooltip(self):
+        if self.localization:apply_tooltip(self.visible,self.localization,"tooltip.visibility.hide" if self.visible.isChecked() else "tooltip.visibility.show",status=False)
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -84,6 +88,7 @@ class LayerInspector(QScrollArea):
         before={key:getattr(self.layer,key) for key in ("name","start_frame","end_frame","visible","pivot_x","pivot_y")};after={"name":self.name.text().strip() or self.layer.name,"start_frame":self.start.value(),"end_frame":max(self.start.value(),self.end.value()),"visible":self.visible.isChecked(),"pivot_x":self.pivot_x.value(),"pivot_y":self.pivot_y.value()}
         for key,value in after.items():setattr(self.layer,key,value)
         if before!=after:self.changed.emit(before,after)
+        self._update_visibility_tooltip()
 
     def _properties(self):
         self.property_cards={}
@@ -92,16 +97,16 @@ class LayerInspector(QScrollArea):
             if widget:widget.deleteLater()
         if not self.layer:return
         for property_id,track in self.layer.tracks.items():
-            card=QFrame();card.setObjectName("propertyCard_"+property_id);card.setFrameShape(QFrame.Shape.StyledPanel);card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred);card_layout=QVBoxLayout(card);card_layout.setContentsMargins(8,6,8,8);header=QHBoxLayout();title=QLabel(self.localization.text("property."+property_id) if self.localization else property_id.title());title.setWordWrap(True);remove=QPushButton("×");remove.setFixedSize(28,28);remove.setToolTip(self.localization.text("property.remove") if self.localization else "Remove");header.addWidget(title,1);header.addWidget(remove);card_layout.addLayout(header);value=track.evaluate(self.frame);editors=[];value_form=QFormLayout();value_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);value_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+            card=QFrame();card.setObjectName("propertyCard_"+property_id);card.setFrameShape(QFrame.Shape.StyledPanel);card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred);card_layout=QVBoxLayout(card);card_layout.setContentsMargins(8,6,8,8);header=QHBoxLayout();title=QLabel(self.localization.text("property."+property_id) if self.localization else property_id.title());title.setWordWrap(True);remove=QPushButton("×");remove.setObjectName("removePropertyButton");remove.setFixedSize(28,28);apply_tooltip(remove,self.localization,"tooltip.resource.remove_property");header.addWidget(title,1);header.addWidget(remove);card_layout.addLayout(header);value=track.evaluate(self.frame);editors=[];value_form=QFormLayout();value_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);value_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
             values=value if isinstance(value,(list,tuple)) else [value]
             labels=("property.x","property.y") if property_id in {"position","scale"} else ("property.value",)
             for label_key,part in zip(labels,values):
-                editor=FocusWheelDoubleSpinBox();editor.setRange(-4096,4096);editor.setDecimals(3);editor.setMinimumWidth(0);editor.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);editor.setSuffix(" %" if property_id in {"scale","opacity"} else "°" if property_id=="rotation" else " px");editor.setValue(float(part)*(100 if property_id in {"scale","opacity"} else 1));value_form.addRow(self.localization.text(label_key) if self.localization else label_key,editor);editors.append(editor)
+                editor=ScrollSafeDoubleSpinBox();editor.setRange(-4096,4096);editor.setDecimals(3);editor.setMinimumWidth(0);editor.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);editor.setSuffix(" %" if property_id in {"scale","opacity"} else "°" if property_id=="rotation" else " px");editor.setValue(float(part)*(100 if property_id in {"scale","opacity"} else 1));value_form.addRow(self.localization.text(label_key) if self.localization else label_key,editor);editors.append(editor)
             card_layout.addLayout(value_form)
             easing=QComboBox()
             for name in ("Linear","Ease In","Ease Out","Ease In/Out"):easing.addItem(self.localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if self.localization else name,name)
             existing=next((item for item in track.keyframes if item.frame==self.frame),None);easing.setCurrentIndex(max(0,easing.findData(existing.easing if existing else "Linear")))
-            easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);key=QPushButton("◆");key.setFixedSize(34,28);key.setToolTip(self.localization.text("composition.add_keyframe") if self.localization else "Add Keyframe");footer=QHBoxLayout();footer.addWidget(QLabel(self.localization.text("property.easing") if self.localization else "Easing"));footer.addWidget(easing,1);footer.addWidget(key);card_layout.addLayout(footer);key.clicked.connect(lambda checked=False,p=property_id,e=editors,c=easing:self.keyframe_requested.emit(p,self._value(p,e),c.currentData()));remove.clicked.connect(lambda checked=False,p=property_id:self.remove_property_requested.emit(p));[editor.valueChanged.connect(lambda value,p=property_id,e=editors:self.property_value_requested.emit(p,self._value(p,e))) for editor in editors];self.property_layout.addWidget(card);self.property_cards[property_id]={"card":card,"editors":editors,"easing":easing,"keyframe":key,"remove":remove}
+            easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);apply_tooltip(easing,self.localization,"tooltip.resource.easing",status=False);key=QPushButton("◆");key.setObjectName("addKeyframeButton");key.setFixedSize(34,28);apply_tooltip(key,self.localization,"tooltip.resource.add_keyframe");footer=QHBoxLayout();footer.addWidget(QLabel(self.localization.text("property.easing") if self.localization else "Easing"));footer.addWidget(easing,1);footer.addWidget(key);card_layout.addLayout(footer);key.clicked.connect(lambda checked=False,p=property_id,e=editors,c=easing:self.keyframe_requested.emit(p,self._value(p,e),c.currentData()));remove.clicked.connect(lambda checked=False,p=property_id:self.remove_property_requested.emit(p));[editor.valueChanged.connect(lambda value,p=property_id,e=editors:self.property_value_requested.emit(p,self._value(p,e))) for editor in editors];self.property_layout.addWidget(card);self.property_cards[property_id]={"card":card,"editors":editors,"easing":easing,"keyframe":key,"remove":remove}
 
     @staticmethod
     def _value(property_id,editors):
@@ -110,6 +115,7 @@ class LayerInspector(QScrollArea):
     def retranslate(self,localization):
         self.localization=localization;t=localization.text;self.title.setText(t("v2.layer_inspector"))
         for widget,key in ((self.name,"v2.layer_name"),(self.source,"v2.source_asset"),(self.start,"composition.start"),(self.end,"composition.end"),(self.visible,"v2.visible"),(self.pivot_x,"v2.layer_pivot_x"),(self.pivot_y,"v2.layer_pivot_y")):self.form.labelForField(widget).setText(t(key))
-        self.center.setText(t("v2.center_layer_pivot"));self.add_property.setText(t("composition.add_property"));self.full_rotation.setText(t("v2.full_rotation"));self.use.setText(t("v2.use_in_effect"));self.use.setToolTip(t("v2.use_in_effect_tip"))
-        for mode,key in (("move","gizmo.move"),("rotate","gizmo.rotate"),("scale","gizmo.scale"),("pivot","composition.pivot")):self.mode_buttons[mode].setText(t(key));self.mode_buttons[mode].setToolTip(t("gizmo.tooltip."+mode) if mode!="pivot" else t("v2.center_layer_pivot"))
+        self.center.setText(t("v2.center_layer_pivot"));self.add_property.setText(t("composition.add_property"));self.full_rotation.setText(t("v2.full_rotation"));self.use.setText(t("v2.use_in_effect"))
+        apply_tooltip(self.visible,localization,"tooltip.visibility.hide" if self.visible.isChecked() else "tooltip.visibility.show",status=False);apply_tooltip(self.pivot_x,localization,"tooltip.resource.layer_pivot",status=False);apply_tooltip(self.pivot_y,localization,"tooltip.resource.layer_pivot",status=False);apply_tooltip(self.center,localization,"tooltip.resource.center_layer");apply_tooltip(self.add_property,localization,"tooltip.resource.add_property");apply_tooltip(self.full_rotation,localization,"tooltip.resource.full_rotation");apply_tooltip(self.use,localization,"tooltip.resource.use")
+        for mode,key in (("move","gizmo.move"),("rotate","gizmo.rotate"),("scale","gizmo.scale"),("pivot","composition.pivot")):self.mode_buttons[mode].setText(t(key));apply_tooltip(self.mode_buttons[mode],localization,"tooltip.resource.gizmo_"+mode)
         self._properties()

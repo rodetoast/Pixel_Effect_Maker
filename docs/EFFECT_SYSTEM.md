@@ -6,12 +6,12 @@
 
 ## 데이터 흐름
 
-외부 PNG/GIF/Aseprite는 Imported Asset이 된 뒤 Resource Editor의 Composition Layer에서 비파괴적으로 애니메이션화됩니다. Resource Composition ID/type 참조가 Particle Emitter로 전달되며 파일 형식별 별도 이동·방출 렌더 경로를 만들지 않습니다.
+외부 PNG/GIF/Aseprite는 Imported Asset이 된 뒤 Resource Editor의 Composition Layer에서 비파괴적으로 애니메이션화됩니다. Resource Composition은 Effect Editor에 Composition Layer로 직접 배치하거나 Particle System의 Resource로 연결하며 파일 형식별 별도 이동·방출 렌더 경로를 만들지 않습니다.
 
 ```text
 Imported Asset
 → Resource Composition
-→ Particle Emitter
+→ Composition Layer 또는 Particle System
 → deterministic Particle Instances
 → non-destructive Preview
 → Bake / Preview Sequence Export

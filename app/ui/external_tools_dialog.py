@@ -2,11 +2,12 @@
 from pathlib import Path
 from PySide6.QtWidgets import QDialog,QDialogButtonBox,QFileDialog,QFormLayout,QHBoxLayout,QLabel,QLineEdit,QPushButton,QVBoxLayout,QWidget
 from app.services.aseprite_locator_service import locate_aseprite,validate_aseprite
+from app.ui.tooltip_helper import apply_tooltip
 class ExternalToolsDialog(QDialog):
     def __init__(self,settings,localization,parent=None):
         super().__init__(parent);self.settings=settings;self.localization=localization;self._validated=None;root=QVBoxLayout(self);form=QFormLayout();row=QWidget();layout=QHBoxLayout(row);layout.setContentsMargins(0,0,0,0);self.path=QLineEdit(str(settings.value("external_tools/aseprite_path","")));self.browse=QPushButton();layout.addWidget(self.path,1);layout.addWidget(self.browse);form.addRow("Aseprite",row);root.addLayout(form);actions=QHBoxLayout();self.detect=QPushButton();self.validate=QPushButton();self.clear=QPushButton();[actions.addWidget(w) for w in (self.detect,self.validate,self.clear)];root.addLayout(actions);self.status=QLabel();root.addWidget(self.status);self.buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Apply|QDialogButtonBox.StandardButton.Cancel);root.addWidget(self.buttons);self.browse.clicked.connect(self._browse);self.detect.clicked.connect(self._detect);self.validate.clicked.connect(self._validate);self.clear.clicked.connect(lambda:self.path.clear());self.buttons.clicked.connect(self._button);self.path.textChanged.connect(lambda:self.status.setText(""));self.retranslate_ui()
     def retranslate_ui(self):
-        t=self.localization.text;self.setWindowTitle(t("external.title"));self.browse.setText(t("external.browse"));self.detect.setText(t("external.detect"));self.validate.setText(t("external.validate"));self.clear.setText(t("external.clear"))
+        t=self.localization.text;self.setWindowTitle(t("external.title"));self.browse.setText(t("external.browse"));self.detect.setText(t("external.detect"));self.validate.setText(t("external.validate"));self.clear.setText(t("external.clear"));apply_tooltip(self.browse,self.localization,"tooltip.dialog.browse_aseprite");apply_tooltip(self.detect,self.localization,"tooltip.dialog.detect_aseprite");apply_tooltip(self.validate,self.localization,"tooltip.dialog.validate_aseprite");apply_tooltip(self.clear,self.localization,"tooltip.dialog.clear_aseprite")
     def _browse(self):
         path,_=QFileDialog.getOpenFileName(self,self.localization.text("external.browse"),"","Aseprite (Aseprite.exe)")
         if path:self.path.setText(path)

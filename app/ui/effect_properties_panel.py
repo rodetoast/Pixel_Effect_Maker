@@ -25,10 +25,11 @@ from app.models.effect_generator import (
     TransformEmitterSettings,
 )
 from app.models.project import Project
+from .tooltip_helper import apply_tooltip
 from .focus_wheel_widgets import (
     FocusWheelComboBox,
-    FocusWheelDoubleSpinBox,
-    FocusWheelSpinBox,
+    ScrollSafeDoubleSpinBox,
+    ScrollSafeSpinBox,
 )
 
 
@@ -214,13 +215,13 @@ class EffectPropertiesPanel(QScrollArea):
 
     @staticmethod
     def _integer(minimum: int, maximum: int) -> QSpinBox:
-        widget = FocusWheelSpinBox()
+        widget = ScrollSafeSpinBox()
         widget.setRange(minimum, maximum)
         return widget
 
     @staticmethod
     def _number(minimum: float, maximum: float, value: float = 0.0) -> QDoubleSpinBox:
-        widget = FocusWheelDoubleSpinBox()
+        widget = ScrollSafeDoubleSpinBox()
         widget.setRange(minimum, maximum)
         widget.setDecimals(3)
         widget.setValue(value)
@@ -236,7 +237,6 @@ class EffectPropertiesPanel(QScrollArea):
         end.setMinimumWidth(72)
         layout.addWidget(start, 1)
         arrow = QLabel("→")
-        arrow.setToolTip("Start → End over the instance lifetime")
         layout.addWidget(arrow)
         layout.addWidget(end, 1)
         return row
@@ -462,9 +462,21 @@ class EffectPropertiesPanel(QScrollArea):
         self.generate_button.setText(t("effects.apply_to_frames"))
         self.revert_button.setText(t("effects.revert"))
         self.reset_button.setText(t("effects.reset_defaults"))
+        for widget in self._controls:
+            apply_tooltip(widget, localization, "tooltip.effect.setting", status=False)
+        for arrow in (widget for widget in self.findChildren(QLabel) if widget.text() == "→"):
+            apply_tooltip(arrow, localization, "tooltip.effect.range", status=False)
+        for widget,key in (
+            (self.auto_preview_check,"tooltip.effect.auto_preview"),
+            (self.edit_end_check,"tooltip.effect.edit_end"),
+            (self.refresh_preview_button,"tooltip.effect.refresh_preview"),
+            (self.generate_button,"tooltip.effect.apply"),
+            (self.revert_button,"tooltip.effect.revert"),
+            (self.reset_button,"tooltip.effect.reset"),
+        ):apply_tooltip(widget,localization,key)
         for mode, key in (("move", "gizmo.move"), ("rotate", "gizmo.rotate"), ("scale", "gizmo.scale"), ("distribution", "gizmo.distribution")):
             self.gizmo_buttons[mode].setText(t(key))
-            self.gizmo_buttons[mode].setToolTip(t("gizmo.tooltip." + mode))
+            apply_tooltip(self.gizmo_buttons[mode],localization,"gizmo.tooltip."+mode)
         self.edit_end_check.setText(t("gizmo.edit_end"))
         section_keys = {
             "Source": "section.source", "Timing": "section.timing",

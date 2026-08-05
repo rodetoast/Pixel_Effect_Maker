@@ -174,5 +174,10 @@ class ResourceEditorController(QObject):
         track = layer.add_property("rotation")
         track.keyframes.clear()
         track.set_keyframe(0, 0.0, "Linear")
-        track.set_keyframe(composition.frame_count - 1, 360.0, "Linear")
+        if composition.frame_count > 1:
+            end = 360.0 * (
+                (composition.frame_count - 1) / composition.frame_count
+                if composition.loop else 1.0
+            )
+            track.set_keyframe(composition.frame_count - 1, end, "Linear")
         self.changed()

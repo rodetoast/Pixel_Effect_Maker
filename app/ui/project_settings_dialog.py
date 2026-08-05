@@ -18,14 +18,15 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QRadioButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 
 from app.models.project import Project
 from app.services.canvas_resize_service import CanvasAnchor, CanvasResizeMode
 from app.version import get_display_name
+from app.ui.tooltip_helper import apply_tooltip
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,7 @@ class ProjectSettingsDialog(QDialog):
         self.general_group = QGroupBox("General")
         general_form = QFormLayout(self.general_group)
         self.name_edit = QLineEdit(project.name)
-        self.fps_spin = QSpinBox()
+        self.fps_spin = ScrollSafeSpinBox()
         self.fps_spin.setRange(1, 120)
         self.fps_spin.setValue(project.fps)
         self.loop_check = QCheckBox("Loop animation")
@@ -78,8 +79,8 @@ class ProjectSettingsDialog(QDialog):
         canvas_layout = QVBoxLayout(self.canvas_group)
         canvas_form = QFormLayout()
         self.current_size_label = QLabel(f"{project.width} × {project.height}")
-        self.width_spin = QSpinBox()
-        self.height_spin = QSpinBox()
+        self.width_spin = ScrollSafeSpinBox()
+        self.height_spin = ScrollSafeSpinBox()
         for spin, value in (
             (self.width_spin, project.width),
             (self.height_spin, project.height),
@@ -181,6 +182,10 @@ class ProjectSettingsDialog(QDialog):
         self.canvas_only_radio.setText(t("dialog.canvas_only"))
         self.scale_radio.setText(t("dialog.scale_canvas"))
         self.apply_button.setText(t("shortcut.apply"))
+        apply_tooltip(self.name_edit,self.localization,"tooltip.dialog.project_name",status=False);apply_tooltip(self.fps_spin,self.localization,"tooltip.dialog.fps",status=False);apply_tooltip(self.loop_check,self.localization,"tooltip.dialog.loop",status=False)
+        for widget in (self.width_spin,self.height_spin,self.canvas_only_radio,self.scale_radio):apply_tooltip(widget,self.localization,"tooltip.dialog.canvas",status=False)
+        for button,anchor in self.anchor_by_button.items():button.setToolTip(t("tooltip.dialog.anchor",anchor=anchor.value))
+        apply_tooltip(self.apply_button,self.localization,"tooltip.dialog.apply_project")
         self._validate()
 
     def _validate(self) -> None:

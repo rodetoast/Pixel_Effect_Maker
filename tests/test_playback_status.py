@@ -61,8 +61,9 @@ def test_playback_advance_moves_status_and_column_highlight(tmp_path) -> None:
     window.set_playing(True)
     window._advance_playback()
     assert status(window) == "Playing · Frame 2 / 2 · 12 FPS"
-    first = window.timeline.table.item(0, 0).background().color()
-    second = window.timeline.table.item(0, 1).background().color()
+    offset = window.timeline.FRAME_COLUMN_OFFSET
+    first = window.timeline.table.item(0, offset).background().color()
+    second = window.timeline.table.item(0, offset + 1).background().color()
     assert first != second
     assert second.name() == "#34495e"
     window.set_playing(False)
@@ -86,6 +87,6 @@ def test_playback_test_project_status(tmp_path) -> None:
     window = MainWindow(service_for(tmp_path))
     window.create_playback_test()
     assert status(window) == "Stopped · Frame 1 / 8 · 12 FPS"
-    assert window.playback_test_action.statusTip().startswith("Create an 8-frame")
+    assert window.playback_test_action.statusTip().startswith("Replace the current project")
     window.dirty = False
     window.close()

@@ -1,7 +1,9 @@
 """Application-wide interface preferences."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
+from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
+from app.ui.tooltip_helper import apply_tooltip
 
 
 MIN_TIMELINE_FRAME_WIDTH = 20
@@ -23,7 +25,7 @@ class InterfaceSettingsDialog(QDialog):
     def __init__(self, settings, localization, parent=None):
         super().__init__(parent); self.settings=settings; self.localization=localization
         root=QVBoxLayout(self); self.form=QFormLayout(); row=QHBoxLayout()
-        self.slider=QSlider(Qt.Orientation.Horizontal); self.spin=QSpinBox(); self.reset=QPushButton()
+        self.slider=QSlider(Qt.Orientation.Horizontal); self.spin=ScrollSafeSpinBox(); self.reset=QPushButton()
         for widget in (self.slider,self.spin): widget.setRange(MIN_TIMELINE_FRAME_WIDTH,MAX_TIMELINE_FRAME_WIDTH)
         value=timeline_frame_width(settings); self.slider.setValue(value); self.spin.setValue(value); self.spin.setSuffix(" px")
         row.addWidget(self.slider,1); row.addWidget(self.spin); self.form.addRow(QLabel(),row); root.addLayout(self.form); root.addWidget(self.reset)
@@ -36,4 +38,4 @@ class InterfaceSettingsDialog(QDialog):
         self.settings.setValue("ui/timeline_frame_width",int(value)); self.frame_width_changed.emit(int(value))
 
     def retranslate(self):
-        t=self.localization.text; self.setWindowTitle(t("interface.title")); self.form.labelForField(self.form.itemAt(0,QFormLayout.ItemRole.FieldRole).layout()).setText(t("interface.timeline_frame_width")); self.reset.setText(t("interface.restore_default")); self.spin.setToolTip(t("tooltip.timeline_frame_width")); self.slider.setToolTip(t("tooltip.timeline_frame_width"))
+        t=self.localization.text; self.setWindowTitle(t("interface.title")); self.form.labelForField(self.form.itemAt(0,QFormLayout.ItemRole.FieldRole).layout()).setText(t("interface.timeline_frame_width")); self.reset.setText(t("interface.restore_default"));apply_tooltip(self.spin,self.localization,"tooltip.timeline_frame_width",status=False);apply_tooltip(self.slider,self.localization,"tooltip.timeline_frame_width",status=False);apply_tooltip(self.reset,self.localization,"tooltip.dialog.reset_frame_width")

@@ -1,4 +1,4 @@
-# Pixel Effect Maker v0.0.03 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
 이 문서는 사용자가 실제 Windows GUI에서 확인할 항목입니다. 자동 테스트 또는 오프스크린 시작 점검이 통과했더라도 수동 확인 전에는 체크하지 않습니다.
 
@@ -19,7 +19,7 @@
 - [ ] Pivot Drag, 숫자 입력, 중앙 정렬과 Escape 취소가 Zoom 상태에서도 정확하다.
 - [ ] Resource Reimport가 ID·이름·Pivot을 유지하며 실패 시 원본을 유지한다.
 - [ ] 사용 중 Resource 삭제가 차단되고 미사용 Resource는 확인 후 삭제된다.
-- [ ] 정적·GIF·Aseprite·Generated Clip으로 Particle Emitter를 만들고 Preview한다.
+- [ ] 정적·GIF·Aseprite·Animated Resource로 Particle System을 만들고 Preview한다.
 - [ ] External Tools에서 Browse, Auto Detect, Validate, Clear와 잘못된 경로 보존을 확인한다.
 - [ ] 빈 상태에서는 Import 안내만 표시되고 Composition Timeline과 Inspector가 숨겨진다.
 - [ ] Asset 선택 중에는 원본 Preview·Frame Strip·Reimport·리소스 생성만 표시된다.
@@ -71,7 +71,8 @@
 - [ ] 좌·중앙·우측 Splitter 폭을 조절할 수 있고 재실행 후 복원된다.
 - [ ] 우측 Properties를 세로 스크롤할 수 있으며 불필요한 수평 스크롤이 없다.
 - [ ] Hover 상태의 SpinBox, DoubleSpinBox, ComboBox는 Wheel로 값이 바뀌지 않는다.
-- [ ] 입력을 클릭한 뒤에는 Wheel 값이 바뀌고 다른 영역 클릭 후 다시 비활성화된다.
+- [ ] 입력을 클릭하거나 텍스트를 선택한 뒤에도 Wheel로 숫자 값이 바뀌지 않고 상위 패널만 스크롤된다.
+- [ ] SpinBox Up/Down 첫 클릭·반복 클릭·길게 누르기와 키보드 Up/Down은 정상이다.
 - [ ] 에셋 1개를 가져왔을 때 목록 Hover/선택 행도 정확히 1개만 존재한다.
 - [ ] Position과 Scale Card에서 X/Y 입력, 보간, Keyframe과 삭제 버튼이 모두 보인다.
 - [ ] Rotation과 Opacity Card가 세로 구조로 표시되고 가로 ScrollBar가 생기지 않는다.
@@ -90,14 +91,14 @@
 - [ ] Shift Rotate가 15°에 맞고 Escape가 현재 Drag를 취소한다.
 - [ ] 기즈모 조작만으로 프로젝트 modified 상태가 되지 않는다.
 
-## Animation Clip
+## Legacy Animated Resource
 
 - [ ] 서로 다른 Source 형태의 적용된 Clip Generator에서 Clip을 만든다.
 - [ ] Generator를 다시 적용해도 기존 Clip이 자동 변경되지 않는다.
 - [ ] 명시적 Clip 업데이트 후 이를 쓰는 Particle Preview가 무효화된다.
 - [ ] 저장 후 다시 열어도 Clip 픽셀, FPS, Pivot, 재생 모드가 유지된다.
 
-## Particle Emitter
+## Particle System
 
 - [ ] Burst와 Over Time이 구분된다.
 - [ ] Point, Line, Circle/Arc, Box 생성 범위가 올바르다.
@@ -110,12 +111,25 @@
 - [ ] Bake 없이 Preview Sequence가 투명 PNG로 번호 순서대로 출력된다.
 - [ ] 형식 5 프로젝트를 다시 열어 Particle 설정과 결과가 유지된다.
 
+## Effect Timeline과 직접 조작
+
+- [ ] 눈 아이콘은 표시만 전환하고 레이어 이름 클릭은 선택만 변경한다. 숨긴 레이어도 선택 가능하다.
+- [ ] Visibility Undo/Redo 후 아이콘과 Show/Hide Tooltip이 즉시 바뀐다.
+- [ ] Resource Editor의 `이펙트에 추가…`에서 컴포지션 레이어와 파티클 시스템을 각각 만든다. 취소하면 모델이 바뀌지 않는다.
+- [ ] 컴포지션 레이어 Start/End를 드래그하면 Inspector가 즉시 바뀌고 Undo 한 번으로 전체 Drag가 취소된다.
+- [ ] 파티클 시스템 Origin/Direction/Expected End와 Line/Circle/Box Handle을 조작한다.
+- [ ] Shift Direction이 15°에 맞고 Escape가 시작값으로 돌아오며 Undo 항목을 만들지 않는다.
+- [ ] Preview 정지 상태에서 Path, Spread, Spawn Shape와 최대 세 개 Ghost가 보인다.
+- [ ] `편집 가이드 표시`를 끄고 다시 실행해 설정이 유지되는지 확인한다.
+- [ ] Guide가 Bake, PNG Preview Sequence와 일반 Export 결과에 포함되지 않는다.
+- [ ] 100%/125%/150% DPI와 Canvas Zoom에서 Handle 크기, Hover Cursor와 Pan/Zoom 충돌을 확인한다.
+
 ## 실행
 
 - [ ] `run_app.bat`으로 실행된다.
-- [ ] 메인 창 제목에 `v0.0.03`가 표시된다.
+- [ ] 메인 창 제목에 `v0.0.04`가 표시된다.
 - [ ] `--check`가 정상 종료된다.
-- [ ] `--version`이 `Pixel Effect Maker v0.0.03`를 출력한다.
+- [ ] `--version`이 `Pixel Effect Maker v0.0.04`를 출력한다.
 
 ## 프로젝트
 
@@ -382,3 +396,28 @@
 - [ ] Timeline Frame Width 20/36/64/96px에서 드래그 스크러빙이 동작한다.
 - [x] 빈 Resource Editor의 두 시작 버튼을 확인하고 빈 리소스 만들기가 동작한다. (실제 파일 가져오기는 미확인)
 - [x] 빈 리소스 생성 후 Workspace 왕복 시 자동 Popup 없이 선택한 Resource가 유지된다.
+
+## Tooltip 사용자 확인
+
+- [ ] Main Window의 Workspace, New/Open/Save/Export, Undo/Redo에 마우스를 올려 행동 설명과 현재 단축키를 확인한다.
+- [ ] Keyboard Shortcuts에서 Undo/Redo, 재생, 이전·다음 프레임 단축키를 변경한 뒤 기존 Tooltip이 즉시 갱신되는지 확인한다.
+- [ ] Effect Timeline의 재생·정지, 프레임·레이어 조작, FPS와 스크러빙 설명을 확인한다.
+- [ ] Effect Editor의 Source Import, Preview, Apply, Revert, Reset과 실제 표시되는 Generator/Particle 작업 설명을 확인한다.
+- [ ] Resource Editor의 Import, Create Resource, Empty Resource, Reimport, Delete와 Use in Effect 설명을 확인한다.
+- [ ] Resource Move/Rotate/Scale/Pivot, Full Rotation, Add/Remove Keyframe, Easing과 세 종류 Pivot 설명을 확인한다.
+- [ ] 재생 중 Play Tooltip이 Pause로, Layer 표시 전환 시 Hide/Show 설명이 현재 상태와 일치하는지 확인한다.
+- [ ] Particle Resource, Emission, Spawn Shape, Direction, Random Range, Preview, Bake와 Export 설명을 확인한다.
+- [ ] Startup, New Project, Project Settings, New Resource, Interface Settings, Keyboard Shortcuts와 External Tools Dialog를 확인한다.
+- [ ] 실행 중 한국어↔영어 전환 후 이미 보이던 버튼과 QAction Tooltip이 같은 정보량으로 갱신되는지 확인한다.
+- [ ] Tooltip이 너무 빨리 사라지거나 패널 뒤에 가려지지 않고, 기능을 암시하지 않으며, 125%/150% DPI에서 잘리지 않는지 확인한다.
+
+## Loop 회전·레이어 삭제·Wheel
+
+- [ ] 12프레임 Loop Resource의 Full Rotation 마지막 값이 330°이고 반복 경계에서 같은 자세가 연속 표시되지 않는다.
+- [ ] 12프레임 Non-loop는 마지막 360°, 2프레임 Loop는 마지막 180°, 역회전은 부호가 반대로 적용된다.
+- [ ] 1280px 창에서 Resource Inspector가 약 300px이고 Canvas가 가장 넓으며, 유효한 사용자 Splitter 폭이 재시작 후 유지된다.
+- [ ] Composition Layer와 Particle System을 버튼·Layer 메뉴·타임라인 이름 컨텍스트 메뉴로 삭제하고 원본 Resource Composition이 남는다.
+- [ ] 삭제 직후 Inspector와 Guide가 정리되고 이전 레이어가 선택되며 Undo/Redo로 모델·픽셀·선택이 왕복한다.
+- [ ] SpinBox 위 일반 Wheel과 포커스 후 일반 Wheel은 값이 변하지 않고 패널이 스크롤된다.
+- [ ] Ctrl+Wheel은 정수·소수 SpinBox의 `singleStep` 한 단계씩 움직이고 최소·최대 범위를 지킨다.
+- [ ] Ctrl+Wheel 사용 후에도 Native Up/Down 첫 클릭·반복 클릭·길게 누르기와 키보드 Up/Down이 정상 동작한다.

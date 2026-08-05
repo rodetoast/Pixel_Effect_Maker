@@ -82,7 +82,7 @@ def test_particle_render_is_deterministic_transparent_and_clipped():
 def test_particle_bake_preserves_layers_and_is_atomic_on_validation():
     project=Project.create_default(width=8,height=8); clip=clip_asset(); project.animation_clips.append(clip); emitter=ParticleEmitter("P",settings(clip.id)); project.particle_emitters.append(emitter)
     ordinary=project.layers[0].id; ordinary_before=project.frames[0].layer_pixels[ordinary].copy(); outputs=render_particle_frames(project,emitter); layer=apply_particle_frames(project,emitter,outputs)
-    assert layer.name=="Particle: P" and np.array_equal(project.frames[0].layer_pixels[ordinary],ordinary_before)
+    assert layer.name=="Particle System: P" and np.array_equal(project.frames[0].layer_pixels[ordinary],ordinary_before)
     before=project.frames[0].layer_pixels[layer.id].copy()
     with pytest.raises(ValueError):apply_particle_frames(project,emitter,[np.zeros((1,1,4),dtype=np.uint8)])
     assert np.array_equal(project.frames[0].layer_pixels[layer.id],before)

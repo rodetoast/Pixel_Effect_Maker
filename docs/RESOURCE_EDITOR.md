@@ -49,7 +49,7 @@ Asset Frame Strip과 Composition Timeline은 서로 다른 위젯입니다. Comp
 
 ## Effect 연결과 Legacy
 
-`Use This Resource in Effect`은 ResourceComposition을 참조하는 Particle Emitter를 만들고 Effect Editor로 전환한 뒤 Preview를 요청합니다. Asset 직접 Particle 사용은 파일 호환 경로에 남지만 V2의 Primary Action으로 노출하지 않습니다.
+`이펙트에 추가…`는 Resource Composition을 컴포지션 레이어로 직접 배치하거나 파티클 시스템 리소스로 사용하는 두 선택을 제공합니다. 컴포지션 레이어는 Start/End 경로를 직접 편집하고, 파티클 시스템은 방출·방향·속도·수명을 적용합니다. 기존 Asset/Animation Clip 직접 Particle 참조는 파일 호환 경로에만 유지합니다.
 
 기존 `app/ui/resource_editor_widget.py`와 Transform Generator 모델은 Legacy 호환을 위해 보존합니다. MainWindow 기본 Workspace는 `app/ui/resource_editor_v2/`만 사용하며 새 Transform Generator 생성 버튼은 숨깁니다. 기존 Generator가 있는 프로젝트에서만 Legacy 영역을 표시합니다.
 

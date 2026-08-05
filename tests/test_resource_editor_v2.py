@@ -58,10 +58,10 @@ def test_click_flow_asset_to_rotating_particle_preview(tmp_path,monkeypatch):
     assert editor.controller.state.mode==ResourceEditorMode.LAYER_EDIT and len(window.project.resource_compositions)==1
     composition=window.project.resource_compositions[0];layer=composition.layers[0];assert layer.source_id==window.project.source_assets[0].id
     assert editor.composition_timeline.isVisibleTo(window) and editor.layer_inspector.isVisibleTo(window)
-    QTest.mouseClick(editor.layer_inspector.full_rotation,Qt.MouseButton.LeftButton);assert [key.value for key in layer.tracks["rotation"].keyframes]==[0.0,360.0]
+    QTest.mouseClick(editor.layer_inspector.full_rotation,Qt.MouseButton.LeftButton);assert [key.value for key in layer.tracks["rotation"].keyframes]==[0.0,330.0]
     first=render_composition_frame(window.project,composition,0);middle=render_composition_frame(window.project,composition,3);assert not np.array_equal(first,middle)
     editor.setFocus();QTest.keyClick(editor,Qt.Key.Key_Return);assert editor._playing and editor.timer.interval()==83;editor.stop()
-    assert editor.layer_inspector.use.isVisibleTo(window);QTest.mouseClick(editor.layer_inspector.use,Qt.MouseButton.LeftButton);assert window.workspace_stack.currentIndex()==0
+    assert editor.layer_inspector.use.isVisibleTo(window);editor.request_add_to_effect("particle_system");assert window.workspace_stack.currentIndex()==0
     emitter=window.project.particle_emitters[-1];assert emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==composition.id
     for _ in range(50):
         QTest.qWait(20);APPLICATION.processEvents()
@@ -122,6 +122,20 @@ def test_layer_inspector_cards_fit_viewport_without_horizontal_scroll(tmp_path,l
     panes=editor.splitter.sizes();assert panes[0]>=180 and panes[1]>=320 and panes[2]>=300
     vertical=editor.vertical_splitter.sizes();assert vertical[1]>=120 and vertical[1]<sum(vertical)/2
     window.dirty=False;window.close()
+
+
+def test_resource_splitter_preserves_valid_width_and_normalizes_oversized_legacy(tmp_path):
+    settings_service = service(tmp_path)
+    settings = settings_service.settings
+    settings.setValue("ui/resource_editor_v2_horizontal_splitter", [200, 700, 380])
+    window = MainWindow(settings_service); window.resize(1280, 800); window.set_workspace("resource"); window.show(); APPLICATION.processEvents()
+    editor = window.resource_editor; editor._restore_splitters(); APPLICATION.processEvents()
+    assert editor.splitter.sizes()[2] >= 360
+    settings.setValue("ui/resource_editor_v2_horizontal_splitter", [180, 320, 800])
+    editor._restore_splitters(); APPLICATION.processEvents()
+    right = editor.splitter.sizes()[2]
+    assert 295 <= right <= 315
+    window.dirty = False; window.close()
 
 
 def test_alpha_bounds_drive_selection_polygon_without_changing_pivot_or_pixels():

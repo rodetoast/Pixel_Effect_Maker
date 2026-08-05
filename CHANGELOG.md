@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added
+
+- 활성 Editor, Timeline, Gizmo, Particle, Resource 작업과 주요 Dialog에 행동·조건을 설명하는 한국어·영어 Hover Tooltip 추가
+- 현재 사용자 설정 단축키와 Play/Pause·Show/Hide 상태를 반영하는 공통 Tooltip 적용 구조 및 누락 자동 감사 테스트 추가
+- Resource Composition을 컴포지션 레이어로 직접 배치하거나 파티클 시스템 리소스로 사용하는 두 가지 Effect 추가 경로
+- 선택한 컴포지션 레이어의 시작·끝점과 파티클 시스템의 방출 원점·방향·예상 도달점·형태·퍼짐을 재생 전 표시하는 편집 가이드
+- 화면 픽셀 크기가 일정한 Canvas Handle, Resource Ghost, Shift 15° 방향 Snap, Escape 취소와 Drag 단위 Undo
+
+### Changed
+
+- Resource Editor V2의 기본 우측 Inspector를 약 300px로 조정하고, 유효한 사용자 Splitter 저장값은 유지하되 과도하게 넓은 기존 값은 정규화
+- SpinBox 일반 Wheel은 상위 패널 스크롤에 맡기고, 명시적인 Ctrl+Wheel만 현재 `singleStep` 단위로 값을 변경
+- 사용자 용어를 Effect Composition, Resource Composition, Composition Layer, Particle System, Emission Origin/Shape로 정리
+- Effect Timeline을 Visibility 전용 열, Layer Name 열, Frame 열로 분리하고 이름 클릭과 표시 전환을 독립화
+- `ui/show_effect_editing_guides` QSettings 토글을 추가하고 기본값을 켬으로 설정
+
+### Fixed
+
+- Loop Resource의 Full Rotation 마지막 키를 `360 × (N - 1) / N`으로 생성해 루프 경계의 중복 자세를 제거하고 Non-loop는 360° 종점을 유지
+- Composition Layer, Particle System 및 기존 Transform Emitter의 생성 출력 레이어를 공통 삭제하고 Resource 원본은 보존하는 Undo/Redo 경로 추가
+- 포커스·텍스트 선택 상태와 무관하게 모든 활성 SpinBox의 Wheel 값 변경을 차단하고 상위 ScrollArea가 스크롤을 처리하도록 수정
+- Visibility 열 추가 후에도 20/36/64/96px Frame 열 매핑과 Drag Scrubbing이 유지되도록 보정
+- 직접 배치 필드가 없는 기존 v5 프로젝트를 기본 빈 목록으로 읽으며 `animation_clip`/`particle_emitter` 직렬화 식별자를 유지
+
 ## v0.0.04 - 2026-08-04
 
 ### Fixed

@@ -12,10 +12,11 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
+from app.ui.tooltip_helper import apply_tooltip
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,10 +50,10 @@ class NewProjectDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.name_edit = QLineEdit("Untitled")
-        self.width_spin = QSpinBox()
-        self.height_spin = QSpinBox()
-        self.fps_spin = QSpinBox()
-        self.frame_count_spin = QSpinBox()
+        self.width_spin = ScrollSafeSpinBox()
+        self.height_spin = ScrollSafeSpinBox()
+        self.fps_spin = ScrollSafeSpinBox()
+        self.frame_count_spin = ScrollSafeSpinBox()
         self.loop_check = QCheckBox("Loop animation")
         self.loop_check.setChecked(True)
         self.preset_combo = QComboBox()
@@ -120,6 +121,9 @@ class NewProjectDialog(QDialog):
             label.setText(text)
         self.loop_check.setText(t("dialog.loop"))
         self.create_button.setText(t("dialog.create"))
+        apply_tooltip(self.name_edit,self.localization,"tooltip.dialog.project_name",status=False)
+        for widget in (self.preset_combo,self.width_spin,self.height_spin):apply_tooltip(widget,self.localization,"tooltip.dialog.canvas",status=False)
+        apply_tooltip(self.fps_spin,self.localization,"tooltip.dialog.fps",status=False);apply_tooltip(self.frame_count_spin,self.localization,"tooltip.dialog.frames",status=False);apply_tooltip(self.loop_check,self.localization,"tooltip.dialog.loop",status=False);apply_tooltip(self.create_button,self.localization,"tooltip.dialog.create")
         custom_index = self.preset_combo.count() - 1
         self.preset_combo.setItemText(custom_index, t("dialog.custom"))
         self._validate()

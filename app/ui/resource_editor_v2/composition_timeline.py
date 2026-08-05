@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.ui.timeline_scrub_controller import TimelineScrubController
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class CompositionTimeline(QWidget):
@@ -14,7 +15,7 @@ class CompositionTimeline(QWidget):
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; layout=QVBoxLayout(self); controls=QHBoxLayout()
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]); layout=QVBoxLayout(self); controls=QHBoxLayout()
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         for widget in (self.previous,self.play,self.next,self.delete_keyframe): controls.addWidget(widget)
         controls.addStretch(); layout.addLayout(controls)
@@ -40,6 +41,10 @@ class CompositionTimeline(QWidget):
                 marker="◆" if property_id and any(key.frame==column for key in layer.tracks[property_id].keyframes) else "■" if property_id is None and layer.start_frame<=column<=layer.end_frame else "·"
                 item=QTableWidgetItem(marker); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter); self.table.setItem(row,column,item)
         self.table.setVerticalHeaderLabels(headers)
+        if self.localization:
+            for row,(layer,property_id) in enumerate(self.rows):
+                header=self.table.verticalHeaderItem(row)
+                if header and property_id is None:header.setToolTip(self.localization.text("tooltip.visibility.hide" if layer.visible else "tooltip.visibility.show"))
         target=next((index for index,value in enumerate(self.rows) if value[0] is selected_layer),0) if self.rows else -1
         if target>=0: self.table.setCurrentCell(target,frame); self.table.scrollToItem(self.table.item(target,frame))
         self.table.blockSignals(False)
@@ -60,7 +65,21 @@ class CompositionTimeline(QWidget):
     def _delete(self):
         row=self.table.currentRow(); self.delete_keyframe_requested.emit(self.rows[row][1] if 0<=row<len(self.rows) else None)
 
-    def set_playing(self,playing): self.play.setText("■" if playing else "▶")
+    def set_playing(self,playing):
+        self._playing=playing; self.play.setText("■" if playing else "▶")
+        if self.localization:self._update_tooltips()
+
+    def set_shortcuts(self,play,previous,next_):
+        self._shortcuts=(play,previous,next_)
+        if self.localization:self._update_tooltips()
+
+    def _update_tooltips(self):
+        play,previous,next_=self._shortcuts
+        apply_tooltip(self.previous,self.localization,"tooltip.timeline.previous",previous)
+        apply_tooltip(self.next,self.localization,"tooltip.timeline.next",next_)
+        apply_tooltip(self.play,self.localization,"tooltip.timeline.pause" if self._playing else "tooltip.timeline.play",play)
+        apply_tooltip(self.delete_keyframe,self.localization,"tooltip.timeline.delete_keyframe")
+        apply_tooltip(self.table,self.localization,"tooltip.timeline.table",status=False)
 
     def retranslate(self,localization):
-        self.localization=localization;self.delete_keyframe.setText(localization.text("composition.delete_keyframe")); self.previous.setToolTip(localization.text("tooltip.previous_frame")); self.next.setToolTip(localization.text("tooltip.next_frame")); self.play.setToolTip(localization.text("tooltip.play_stop")); self.delete_keyframe.setToolTip(localization.text("tooltip.delete_keyframe"))
+        self.localization=localization;self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self._update_tooltips()

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QDialogButtonBox, QFileDialog, QMessageBox
 
 from app.services.project_io import ProjectIOError, load_project
 from app.ui.new_project_dialog import NewProjectDialog
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class StartupDialog(NewProjectDialog):
@@ -27,6 +28,9 @@ class StartupDialog(NewProjectDialog):
         self.setWindowTitle(t("startup.title"))
         self.create_button.setText(t("startup.create"))
         self.open_button.setText(t("startup.open"))
+        if self.localization:
+            apply_tooltip(self.create_button,self.localization,"tooltip.dialog.create")
+            apply_tooltip(self.open_button,self.localization,"tooltip.dialog.open")
 
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(

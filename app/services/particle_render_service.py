@@ -19,6 +19,28 @@ from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
 
 
+def velocity_from_direction_speed(direction_degrees: float, speed: float) -> tuple[float, float]:
+    """Convert the renderer's degrees/pixels-per-frame values to velocity."""
+    radians = math.radians(direction_degrees)
+    return math.cos(radians) * speed, math.sin(radians) * speed
+
+
+def representative_particle_guide(settings: ParticleEmitterSettings) -> dict[str, float]:
+    """Return a deterministic editing guide using renderer units and midpoint ranges."""
+    speed = (settings.speed_min + settings.speed_max) / 2.0
+    lifetime = (settings.lifetime_min + settings.lifetime_max) / 2.0
+    velocity_x, velocity_y = velocity_from_direction_speed(settings.direction_degrees, speed)
+    age = max(0.0, lifetime - 1.0)
+    return {
+        "origin_x": float(settings.origin_x),
+        "origin_y": float(settings.origin_y),
+        "endpoint_x": float(settings.origin_x) + velocity_x * age,
+        "endpoint_y": float(settings.origin_y) + velocity_y * age,
+        "speed": speed,
+        "lifetime": lifetime,
+    }
+
+
 def build_particle_instances(settings: ParticleEmitterSettings, clip_length: int) -> list[ParticleInstance]:
     """Resolve all randomness once; equal settings and seed produce equal instances."""
     settings.validate()
@@ -35,12 +57,12 @@ def build_particle_instances(settings: ParticleEmitterSettings, clip_length: int
             direction = math.degrees(math.atan2(dy, dx)) if abs(dx) + abs(dy) > 1e-9 else rng.uniform(0, 360)
         direction += rng.uniform(-settings.direction_spread_degrees, settings.direction_spread_degrees)
         speed = rng.uniform(settings.speed_min, settings.speed_max)
-        radians = math.radians(direction)
+        velocity_x, velocity_y = velocity_from_direction_speed(direction, speed)
         result.append(ParticleInstance(
             birth_frame=settings.start_frame + spread_birth + delay,
             lifetime=rng.randint(settings.lifetime_min, settings.lifetime_max),
-            start_x=x, start_y=y, velocity_x=math.cos(radians) * speed,
-            velocity_y=math.sin(radians) * speed,
+            start_x=x, start_y=y, velocity_x=velocity_x,
+            velocity_y=velocity_y,
             scale=rng.uniform(settings.scale_min, settings.scale_max),
             rotation=rng.uniform(settings.rotation_min, settings.rotation_max),
             angular_velocity=rng.uniform(settings.angular_velocity_min, settings.angular_velocity_max),
@@ -123,12 +145,12 @@ def apply_particle_frames(project: Project, emitter: ParticleEmitter, outputs: l
     if any(item.dtype != np.uint8 or item.shape != expected for item in outputs): raise EffectRenderError("invalid particle RGBA output")
     layer = next((item for item in project.layers if item.id == emitter.generated_layer_id), None)
     new = layer is None
-    if new: layer = Layer(id=uuid4().hex, name=f"Particle: {emitter.name}", kind="generated", generator_id=emitter.id)
+    if new: layer = Layer(id=uuid4().hex, name=f"Particle System: {emitter.name}", kind="generated", generator_id=emitter.id)
     while len(project.frames) < len(outputs): project.add_frame()
     if new: project.layers.append(layer)
     assert layer is not None
     for index, frame in enumerate(project.frames):
         frame.layer_pixels[layer.id] = outputs[index].copy() if index < len(outputs) else empty_pixels(project.width, project.height)
-    layer.name = f"Particle: {emitter.name}"; layer.kind = "generated"; layer.generator_id = emitter.id
+    layer.name = f"Particle System: {emitter.name}"; layer.kind = "generated"; layer.generator_id = emitter.id
     emitter.generated_layer_id = layer.id
     return layer

@@ -6,7 +6,8 @@ from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QFormLayout, QVBoxLayout, QWidget
 
 from app.models.source_asset import SourceAsset
-from app.ui.focus_wheel_widgets import FocusWheelDoubleSpinBox
+from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox
+from app.ui.tooltip_helper import apply_tooltip
 
 
 def asset_frames(asset):
@@ -78,7 +79,7 @@ class AssetInspectorWidget(QWidget):
         layout = QVBoxLayout(self)
         self.title = QLabel()
         self.info = QLabel()
-        self.pivot_x = FocusWheelDoubleSpinBox(); self.pivot_y = FocusWheelDoubleSpinBox()
+        self.pivot_x = ScrollSafeDoubleSpinBox(); self.pivot_y = ScrollSafeDoubleSpinBox()
         for widget in (self.pivot_x, self.pivot_y): widget.setRange(-4096, 4096)
         self.form = QFormLayout(); self.form.addRow(" ", self.pivot_x); self.form.addRow(" ", self.pivot_y)
         self.center_button = QPushButton(); self.reimport_button = QPushButton(); self.create_button = QPushButton()
@@ -111,4 +112,5 @@ class AssetInspectorWidget(QWidget):
         self.title.setText(t("v2.asset_inspector"))
         self.form.labelForField(self.pivot_x).setText(t("v2.asset_pivot_x")); self.form.labelForField(self.pivot_y).setText(t("v2.asset_pivot_y"))
         self.center_button.setText(t("v2.center_asset_pivot")); self.reimport_button.setText(t("resource.reimport")); self.create_button.setText(t("v2.create_from_asset"))
-        self.create_button.setToolTip(t("v2.create_from_asset_tip"))
+        apply_tooltip(self.pivot_x,localization,"tooltip.resource.asset_pivot",status=False);apply_tooltip(self.pivot_y,localization,"tooltip.resource.asset_pivot",status=False)
+        apply_tooltip(self.center_button,localization,"tooltip.resource.center_asset");apply_tooltip(self.reimport_button,localization,"tooltip.resource.reimport");apply_tooltip(self.create_button,localization,"tooltip.resource.create_from_asset")

@@ -50,9 +50,10 @@ def test_effect_timeline_mouse_drag_scrubs_without_model_or_undo_change(tmp_path
     window._refresh_all(); window.show(); APPLICATION.processEvents()
     before = deepcopy(window.project.to_dict()); undo_count = window.application_undo_stack.count()
     window.set_playing(True)
-    drag_cells(window.timeline.table, 0, 5)
+    offset = window.timeline.FRAME_COLUMN_OFFSET
+    drag_cells(window.timeline.table, offset, offset + 5)
     assert window.frame_index == 5 and window.canvas.frame_index == 5
-    assert window.timeline.table.currentColumn() == 5 and not window.play_timer.isActive()
+    assert window.timeline.table.currentColumn() == offset + 5 and not window.play_timer.isActive()
     assert window.project.to_dict() == before and window.application_undo_stack.count() == undo_count
     window.dirty = False; window.close()
 
@@ -82,10 +83,11 @@ def test_effect_scrub_reverses_direction_at_each_frame_width(tmp_path, frame_wid
         window.project.add_frame()
     window.timeline.set_frame_cell_width(frame_width)
     window._refresh_all(); window.show(); APPLICATION.processEvents()
-    drag_path(window.timeline.table, [0, 5, 2, 9])
+    offset = window.timeline.FRAME_COLUMN_OFFSET
+    drag_path(window.timeline.table, [offset, offset + 5, offset + 2, offset + 9])
     assert window.frame_index == 9
-    assert window.timeline.table.currentColumn() == 9
-    assert window.timeline.table.columnWidth(0) == frame_width
+    assert window.timeline.table.currentColumn() == offset + 9
+    assert window.timeline.table.columnWidth(offset) == frame_width
     window.dirty = False; window.close()
 
 
@@ -95,12 +97,13 @@ def test_effect_scrub_clamps_at_left_and_right_edges(tmp_path):
         window.project.add_frame()
     window._refresh_all(); window.show(); APPLICATION.processEvents()
     table = window.timeline.table
-    first = table.visualItemRect(table.item(0, 0)).center()
+    offset = window.timeline.FRAME_COLUMN_OFFSET
+    first = table.visualItemRect(table.item(0, offset)).center()
     QTest.mousePress(table.viewport(), Qt.MouseButton.LeftButton, pos=first)
     QTest.mouseMove(table.viewport(), first - table.viewport().rect().topRight())
     QTest.mouseMove(table.viewport(), table.viewport().rect().topRight() + first)
     QTest.mouseRelease(table.viewport(), Qt.MouseButton.LeftButton, pos=table.viewport().rect().topRight() + first)
     APPLICATION.processEvents()
     assert window.frame_index == 5
-    assert table.currentColumn() == 5
+    assert table.currentColumn() == offset + 5
     window.dirty = False; window.close()

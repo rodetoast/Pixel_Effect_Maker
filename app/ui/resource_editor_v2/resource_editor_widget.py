@@ -4,7 +4,8 @@ from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QPushButton, QSizePolicy, QStackedWidget, QSplitter, QTableWidget, QVBoxLayout, QWidget
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QDialog, QLabel, QMenu, QMessageBox, QPushButton, QSizePolicy, QStackedWidget, QSplitter, QTableWidget, QVBoxLayout, QWidget
 
 from app.models.resource_composition import CompositionLayer, ResourceComposition
 from app.services.resource_composition_render_service import invalidate_composition_cache
@@ -19,6 +20,7 @@ from .new_resource_dialog import NewResourceDialog
 from .resource_editor_controller import ResourceEditorController
 from .resource_editor_state import ResourceEditorMode
 from app.ui.undo_commands import EditorValueCommand
+from app.ui.tooltip_helper import apply_tooltip
 
 
 class ResourceStartPanel(QWidget):
@@ -29,12 +31,12 @@ class ResourceStartPanel(QWidget):
 
 class ResourceEditorWidget(QWidget):
     SUPPORTED_DROP_SUFFIXES = {".png", ".gif", ".ase", ".aseprite"}
-    import_requested=Signal(object);pivot_changed=Signal(str,str,float,float);create_emitter_requested=Signal(str,str);reimport_requested=Signal(str,str);delete_requested=Signal(str,str);resource_selected=Signal(str,str);composition_changed=Signal(str)
+    import_requested=Signal(object);pivot_changed=Signal(str,str,float,float);create_emitter_requested=Signal(str,str);add_to_effect_requested=Signal(str,str,str);reimport_requested=Signal(str,str);delete_requested=Signal(str,str);resource_selected=Signal(str,str);composition_changed=Signal(str)
 
     def __init__(self,settings,parent=None):
         super().__init__(parent);self.setAcceptDrops(True);self.settings=settings;self.localization=None;self.undo_stack=None;self._applying_command=False;self.controller=ResourceEditorController(self);self.project=None;self._playing=False;self._last_asset=None;self._gizmo_before={};root=QVBoxLayout(self);self.vertical_splitter=QSplitter(Qt.Orientation.Vertical);self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False);self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setStretchFactor(2,0)
         self.browser=AssetBrowserPanel();self.center_stack=QStackedWidget();self.empty=ResourceStartPanel();self.asset_canvas=AssetPreviewCanvas();self.asset_strip=AssetFrameStrip();asset_center=QWidget();asset_layout=QVBoxLayout(asset_center);asset_layout.addWidget(self.asset_canvas,1);asset_layout.addWidget(self.asset_strip);self.composition_canvas=CompositionCanvas();self.center_stack.addWidget(self.empty);self.center_stack.addWidget(asset_center);self.center_stack.addWidget(self.composition_canvas)
-        self.browser.setMinimumWidth(180);self.browser.setMaximumWidth(320);self.browser.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.center_stack.setMinimumWidth(320);self.inspector_stack=QStackedWidget();self.empty_inspector=QWidget();self.asset_inspector=AssetInspectorWidget();self.composition_inspector=CompositionInspector();self.layer_inspector=LayerInspector();[self.inspector_stack.addWidget(widget) for widget in (self.empty_inspector,self.asset_inspector,self.composition_inspector,self.layer_inspector)];self.inspector_stack.setMinimumWidth(300);self.inspector_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);[self.splitter.addWidget(widget) for widget in (self.browser,self.center_stack,self.inspector_stack)];self.vertical_splitter.setChildrenCollapsible(False);self.vertical_splitter.setStretchFactor(0,1);self.vertical_splitter.setStretchFactor(1,0);self.vertical_splitter.addWidget(self.splitter)
+        self.browser.setMinimumWidth(180);self.browser.setMaximumWidth(320);self.browser.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.center_stack.setMinimumWidth(320);self.inspector_stack=QStackedWidget();self.empty_inspector=QWidget();self.asset_inspector=AssetInspectorWidget();self.composition_inspector=CompositionInspector();self.layer_inspector=LayerInspector();[self.inspector_stack.addWidget(widget) for widget in (self.empty_inspector,self.asset_inspector,self.composition_inspector,self.layer_inspector)];self.inspector_stack.setMinimumWidth(280);self.inspector_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);[self.splitter.addWidget(widget) for widget in (self.browser,self.center_stack,self.inspector_stack)];self.vertical_splitter.setChildrenCollapsible(False);self.vertical_splitter.setStretchFactor(0,1);self.vertical_splitter.setStretchFactor(1,0);self.vertical_splitter.addWidget(self.splitter)
         self.composition_timeline=CompositionTimeline();self.composition_timeline.set_frame_cell_width(timeline_frame_width(settings));self.composition_timeline.setMinimumHeight(120);self.vertical_splitter.addWidget(self.composition_timeline);root.addWidget(self.vertical_splitter,1);self.timeline=QTableWidget(self);self.timeline.hide();self.splitter.splitterMoved.connect(self._save_horizontal_splitter);self.vertical_splitter.splitterMoved.connect(self._save_vertical_splitter);QTimer.singleShot(0,self._restore_splitters)
         self.timer=QTimer(self);self.timer.timeout.connect(self._advance)
         self.list=self.browser.asset_list;self.comp_list=self.browser.resource_list;self.pivot_x=self.asset_inspector.pivot_x;self.pivot_y=self.asset_inspector.pivot_y;self.canvas=self.composition_canvas
@@ -117,8 +119,8 @@ class ResourceEditorWidget(QWidget):
         except (TypeError,ValueError):return []
 
     def _restore_splitters(self):
-        available=max(900,self.width());left=min(240,max(190,round(available*.18)));right=min(380,max(310,round(available*.27)));defaults=[left,max(320,available-left-right),right];saved=self._settings_sizes(self.settings.value("ui/resource_editor_v2_horizontal_splitter",[]),3)
-        valid=bool(saved and saved[0]>=180 and saved[1]>=320 and saved[2]>=300 and sum(saved)<=available*1.25);self.splitter.setSizes(saved if valid else defaults);self._restore_vertical_splitter()
+        available=max(820,self.width(),self.window().width());left=min(220,max(190,round(available*.17)));right=310;defaults=[left,max(320,available-left-right),right];saved=self._settings_sizes(self.settings.value("ui/resource_editor_v2_horizontal_splitter",[]),3)
+        valid=bool(saved and saved[0]>=180 and saved[1]>=320 and saved[2]>=280 and saved[2]<=min(520,available*.42) and sum(saved)<=available*1.25);self.splitter.setSizes(saved if valid else defaults);self._restore_vertical_splitter()
 
     def _restore_vertical_splitter(self):
         available=max(420,self.height());saved=self._settings_sizes(self.settings.value("ui/resource_editor_v2_vertical_splitter",[]),2);defaults=[max(260,available-190),190];valid=bool(saved and saved[0]>=240 and saved[1]>=120 and sum(saved)<=available*1.25);self.vertical_splitter.setSizes(saved if valid else defaults)
@@ -163,12 +165,24 @@ class ResourceEditorWidget(QWidget):
         for key,value in before.items():setattr(self.selected_layer,key,value)
         self._push_value(self.selected_layer.id,"layer_meta",before,after,"Layer Properties",511)
     def _use_in_effect(self):
-        if self.composition:self.create_emitter_requested.emit("resource_composition",self.composition.id)
+        if not self.composition:return
+        menu=QMenu(self)
+        direct=menu.addAction(self.localization.text("effect.add_as_composition_layer") if self.localization else "Add as Composition Layer")
+        particle=menu.addAction(self.localization.text("effect.add_as_particle_system") if self.localization else "Add as Particle System")
+        chosen=menu.exec(QCursor.pos())
+        if chosen is direct:self.request_add_to_effect("composition_layer")
+        elif chosen is particle:self.request_add_to_effect("particle_system")
+
+    def request_add_to_effect(self, mode: str) -> None:
+        """Testable non-modal path used by the two menu choices."""
+        if not self.composition or mode not in {"composition_layer", "particle_system"}:return
+        self.add_to_effect_requested.emit(mode,"resource_composition",self.composition.id)
+        if mode=="particle_system":self.create_emitter_requested.emit("resource_composition",self.composition.id)
 
     def _delete_composition(self,identifier):
         composition=next((item for item in self.project.resource_compositions if item.id==identifier),None)
         if composition is None:return
-        if any(emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==identifier for emitter in self.project.particle_emitters):QMessageBox.warning(self,self.localization.text("v2.resources"),self.localization.text("composition.in_use"));return
+        if any(emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==identifier for emitter in self.project.particle_emitters) or any(layer.resource_composition_id==identifier for layer in self.project.effect_composition_layers):QMessageBox.warning(self,self.localization.text("v2.resources"),self.localization.text("composition.in_use"));return
         if not self._confirm(self.localization.text("v2.resources"),self.localization.text("composition.delete_confirm"),"v2.delete"):return
         self.project.resource_compositions.remove(composition);invalidate_composition_cache(identifier);self.controller.clear();self.composition_changed.emit("");self.browser.refresh(self.project)
 
@@ -257,8 +271,9 @@ class ResourceEditorWidget(QWidget):
         super().keyPressEvent(event)
 
     def retranslate_ui(self,localization):
-        self.localization=localization;self.browser.retranslate(localization);self.asset_inspector.retranslate(localization);self.composition_inspector.retranslate(localization);self.layer_inspector.retranslate(localization);self.composition_timeline.retranslate(localization);self.empty.setText(localization.text("resource.start_text"));self.empty.import_button.setText(localization.text("resource.start_import"));self.empty.blank_button.setText(localization.text("resource.start_blank"));self.set_gizmo(self.composition_canvas.mode)
+        self.localization=localization;self.browser.retranslate(localization);self.asset_inspector.retranslate(localization);self.composition_inspector.retranslate(localization);self.layer_inspector.retranslate(localization);self.composition_timeline.retranslate(localization);self.empty.setText(localization.text("resource.start_text"));self.empty.import_button.setText(localization.text("resource.start_import"));self.empty.blank_button.setText(localization.text("resource.start_blank"));apply_tooltip(self.empty.import_button,localization,"tooltip.resource.import");apply_tooltip(self.empty.blank_button,localization,"tooltip.resource.create_empty");self.set_gizmo(self.composition_canvas.mode)
     def set_undo_stack(self,stack):self.undo_stack=stack
+    def set_shortcuts(self,play,previous,next_):self.composition_timeline.set_shortcuts(play,previous,next_)
     def set_timeline_frame_width(self,width):self.composition_timeline.set_frame_cell_width(width)
     def _push_value(self,target_id,field,before,after,text,merge_id=-1):
         if before==after:return
@@ -308,6 +323,7 @@ class ResourceEditorWidget(QWidget):
         if before is None:self.selected_layer.tracks.pop(property_id,None)
         self._push_value(self.selected_layer.id,"track:"+property_id,before,after,"Add Keyframe")
     def add_full_rotation(self,clockwise=True,turns=1):
-        before=deepcopy(self.selected_layer.tracks.get("rotation"));track=deepcopy(before) if before else self.selected_layer.add_property("rotation");track=deepcopy(track);track.keyframes.clear();track.set_keyframe(0,0,"Linear");track.set_keyframe(self.composition.frame_count-1,(360 if clockwise else -360)*turns,"Linear")
+        before=deepcopy(self.selected_layer.tracks.get("rotation"));track=deepcopy(before) if before else self.selected_layer.add_property("rotation");track=deepcopy(track);track.keyframes.clear();track.set_keyframe(0,0,"Linear");count=self.composition.frame_count
+        if count>1:track.set_keyframe(count-1,(360 if clockwise else -360)*turns*((count-1)/count if self.composition.loop else 1),"Linear")
         if before is None:self.selected_layer.tracks.pop("rotation",None)
         self._push_value(self.selected_layer.id,"track:rotation",before,track,"Full Rotation")

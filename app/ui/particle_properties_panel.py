@@ -1,10 +1,11 @@
-"""Scrollable properties for the first executable Particle Emitter flow."""
+"""Scrollable properties for the Particle System flow."""
 from __future__ import annotations
 from random import SystemRandom
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
-from .focus_wheel_widgets import FocusWheelComboBox, FocusWheelDoubleSpinBox, FocusWheelSpinBox
+from .focus_wheel_widgets import FocusWheelComboBox, ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
+from .tooltip_helper import apply_tooltip
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
@@ -12,7 +13,7 @@ class ParticlePropertiesPanel(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent); self.setWidgetResizable(True); self.setMinimumWidth(360); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.emitter_id = None; self._loading = False; self._localization = None
-        body=QWidget(); self.layout=QVBoxLayout(body); self.title=QLabel("Particle Emitter Properties"); self.layout.addWidget(self.title);self._group_records=[]
+        body=QWidget(); self.layout=QVBoxLayout(body); self.title=QLabel("Particle System"); self.layout.addWidget(self.title);self._group_records=[]
         self.clip=FocusWheelComboBox(); self.output_frame_count=self._i(1,512); self.start_frame=self._i(0,511)
         self.emission_mode=self._combo(("burst","over_time")); self.count_min=self._i(0,4096); self.count_max=self._i(0,4096); self.emission_duration=self._i(1,512)
         self.spawn_shape=self._combo(("point","line","circle","box")); self.origin_x=self._n(-4096,4096); self.origin_y=self._n(-4096,4096); self.line_end_x=self._n(-4096,4096); self.line_end_y=self._n(-4096,4096); self.radius=self._n(0,4096); self.box_width=self._n(0,4096); self.box_height=self._n(0,4096); self.start_angle=self._n(-3600,3600); self.end_angle=self._n(-3600,3600)
@@ -30,8 +31,8 @@ class ParticlePropertiesPanel(QScrollArea):
         for w in self.controls:
             signal=w.currentIndexChanged if isinstance(w,FocusWheelComboBox) else w.valueChanged; signal.connect(self._changed)
         self.random_start_frame.toggled.connect(self._changed); self.randomize.clicked.connect(self._randomize); self.refresh.clicked.connect(lambda: self.emitter_id and self.refresh_requested.emit(self.emitter_id)); self.bake.clicked.connect(lambda: self.emitter_id and self.bake_requested.emit(self.emitter_id,self.settings())); self.export.clicked.connect(lambda: self.emitter_id and self.export_requested.emit(self.emitter_id)); self.revert.clicked.connect(lambda: self.emitter_id and self.revert_requested.emit(self.emitter_id))
-    def _i(self,a,b): w=FocusWheelSpinBox(); w.setRange(a,b); return w
-    def _n(self,a,b): w=FocusWheelDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3); return w
+    def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b); return w
+    def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3); return w
     def _combo(self, values): w=FocusWheelComboBox(); [w.addItem(v,v) for v in values]; return w
     def _group(self,title,rows):
         g=QGroupBox(title);f=QFormLayout(g);records=[]
@@ -75,8 +76,10 @@ class ParticlePropertiesPanel(QScrollArea):
         field_keys={"Resource":"particle.resource_label","Output Frames":"particle.output_frames","Start Frame":"particle.start_frame","Mode":"particle.mode","Count Min":"particle.count_min","Count Max":"particle.count_max","Duration":"particle.duration","Shape":"particle.shape","Origin X":"particle.origin_x","Origin Y":"particle.origin_y","Line End X":"particle.line_end_x","Line End Y":"particle.line_end_y","Radius":"particle.radius","Box Width":"particle.box_width","Box Height":"particle.box_height","Start Angle":"particle.start_angle","End Angle":"particle.end_angle","Direction":"particle.direction_value","Spread":"particle.spread","Speed Min":"particle.speed_min","Speed Max":"particle.speed_max","Lifetime Min":"particle.lifetime_min","Lifetime Max":"particle.lifetime_max","Scale Min":"particle.scale_min","Scale Max":"particle.scale_max","Rotation Min":"particle.rotation_min","Rotation Max":"particle.rotation_max","Angular Velocity Min":"particle.angular_velocity_min","Angular Velocity Max":"particle.angular_velocity_max","Start Delay Min":"particle.start_delay_min","Start Delay Max":"particle.start_delay_max","Clip Speed Min":"particle.clip_speed_min","Clip Speed Max":"particle.clip_speed_max","Random Start Frame":"particle.random_start_frame","Opacity Start":"particle.opacity_start","Opacity End":"particle.opacity_end","Seed":"particle.seed"}
         for title,group,form,records in self._group_records:
             group.setTitle(t(group_keys[title]))
-            for name,widget in records:form.labelForField(widget).setText(t(field_keys[name]))
+            tooltip_key={"Particle Resource":"tooltip.particle.resource","Emission":"tooltip.particle.emission","Spawn Shape":"tooltip.particle.spawn","Direction":"tooltip.particle.direction","Random Range":"tooltip.particle.random"}[title]
+            for name,widget in records:form.labelForField(widget).setText(t(field_keys[name]));apply_tooltip(widget,l,tooltip_key,status=False)
         self.random_start_frame.setText(t("particle.random_start_frame"))
-        self.randomize.setToolTip(t("particle.randomize_seed"));self.refresh.setToolTip(t("effects.refresh_preview"));self.bake.setToolTip(t("effects.bake"));self.export.setToolTip(t("effects.export_preview"));self.revert.setToolTip(t("effects.revert"))
+        apply_tooltip(self.clip,l,"tooltip.particle.resource",status=False);apply_tooltip(self.output_frame_count,l,"tooltip.particle.output",status=False);apply_tooltip(self.random_start_frame,l,"tooltip.particle.random_start",status=False)
+        for widget,key in ((self.randomize,"tooltip.particle.randomize"),(self.refresh,"tooltip.particle.preview"),(self.bake,"tooltip.particle.bake"),(self.export,"tooltip.particle.export"),(self.revert,"tooltip.particle.revert")):apply_tooltip(widget,l,key)
         if hasattr(self,"_heading_indexes"):
             for index,key in zip(self._heading_indexes,("particle.resource_compositions","resource.static","resource.animated")):self.clip.setItemText(index,t(key))
