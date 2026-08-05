@@ -9,10 +9,109 @@ from uuid import uuid4
 
 from .effect_composition_layer import EffectCompositionLayer
 from .particle_emitter import ParticleEmitter, ParticleEmitterSettings
+from .resource_composition import AnimationTrack
 
 PLACEMENT_SINGLE = "single"
 PLACEMENT_PARTICLE = "particle"
 PLACEMENT_MODES = {PLACEMENT_SINGLE, PLACEMENT_PARTICLE}
+
+TRANSFORM_TRACK_PROPERTIES = (
+    "position_x", "position_y", "position_z", "rotation_x", "rotation_y",
+    "rotation_z", "scale_x", "scale_y", "opacity", "perspective_strength",
+)
+
+
+@dataclass
+class EffectLayerTransform3D:
+    """Animatable flat-plane transform shared by both placement modes."""
+
+    position_x: float = 0.0
+    position_y: float = 0.0
+    position_z: float = 0.0
+    rotation_x: float = 0.0
+    rotation_y: float = 0.0
+    rotation_z: float = 0.0
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+    opacity: float = 1.0
+    pivot_x: float = 0.0
+    pivot_y: float = 0.0
+    perspective_strength: float = 0.0
+    tracks: dict[str, AnimationTrack] = field(default_factory=dict)
+    revision: int = 0
+
+    def __post_init__(self) -> None:
+        for name in TRANSFORM_TRACK_PROPERTIES:
+            setattr(self, name, float(getattr(self, name)))
+        self.pivot_x = float(self.pivot_x); self.pivot_y = float(self.pivot_y)
+        self.opacity = max(0.0, min(1.0, self.opacity))
+        self.perspective_strength = max(0.0, min(1.0, self.perspective_strength))
+        self.scale_x = max(0.01, self.scale_x); self.scale_y = max(0.01, self.scale_y)
+        for name, track in self.tracks.items():
+            if name not in TRANSFORM_TRACK_PROPERTIES or track.property_id != name:
+                raise ValueError("unsupported Resource Layer transform track")
+
+    def value(self, property_id: str, frame: int) -> float:
+        if property_id not in TRANSFORM_TRACK_PROPERTIES:
+            raise ValueError("unsupported Resource Layer transform property")
+        track = self.tracks.get(property_id)
+        return float(track.evaluate(frame)) if track and track.keyframes else float(getattr(self, property_id))
+
+    def add_track(self, property_id: str) -> AnimationTrack:
+        if property_id not in TRANSFORM_TRACK_PROPERTIES:
+            raise ValueError("unsupported Resource Layer transform property")
+        return self.tracks.setdefault(property_id, AnimationTrack(property_id, float(getattr(self, property_id))))
+
+    def set_keyframe(self, property_id: str, frame: int, value: float, easing: str = "Linear"):
+        keyframe = self.add_track(property_id).set_keyframe(frame, float(value), easing)
+        self.revision += 1
+        return keyframe
+
+    def reset_base(self) -> None:
+        for name in TRANSFORM_TRACK_PROPERTIES:
+            setattr(self, name, 1.0 if name in {"scale_x", "scale_y", "opacity"} else 0.0)
+        self.pivot_x = self.pivot_y = 0.0
+        self.revision += 1
+
+    def evaluated(self, frame: int) -> "EffectLayerTransform3D":
+        values = {name: self.value(name, frame) for name in TRANSFORM_TRACK_PROPERTIES}
+        return EffectLayerTransform3D(**values, pivot_x=self.pivot_x, pivot_y=self.pivot_y)
+
+    def is_identity(self, frame: int | None = None) -> bool:
+        value = self if frame is None else self.evaluated(frame)
+        return (
+            value.position_x == value.position_y == value.position_z == 0.0
+            and value.rotation_x == value.rotation_y == value.rotation_z == 0.0
+            and value.scale_x == value.scale_y == value.opacity == 1.0
+            and value.perspective_strength == 0.0
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "position": [self.position_x, self.position_y, self.position_z],
+            "rotation": [self.rotation_x, self.rotation_y, self.rotation_z],
+            "scale": [self.scale_x, self.scale_y], "opacity": self.opacity,
+            "pivot": [self.pivot_x, self.pivot_y],
+            "perspective_strength": self.perspective_strength,
+            "tracks": {name: track.to_dict() for name, track in self.tracks.items() if track.keyframes},
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "EffectLayerTransform3D":
+        if not data:
+            return cls()
+        position = data.get("position", (0.0, 0.0, 0.0)); rotation = data.get("rotation", (0.0, 0.0, 0.0))
+        scale = data.get("scale", (1.0, 1.0)); pivot = data.get("pivot", (0.0, 0.0))
+        return cls(
+            position_x=float(position[0]), position_y=float(position[1]), position_z=float(position[2]),
+            rotation_x=float(rotation[0]), rotation_y=float(rotation[1]), rotation_z=float(rotation[2]),
+            scale_x=float(scale[0]), scale_y=float(scale[1]), opacity=float(data.get("opacity", 1.0)),
+            pivot_x=float(pivot[0]), pivot_y=float(pivot[1]),
+            perspective_strength=float(data.get("perspective_strength", 0.0)),
+            tracks={name: AnimationTrack.from_dict(track) for name, track in data.get("tracks", {}).items()},
+            revision=int(data.get("revision", 0)),
+        )
 
 
 @dataclass
@@ -31,6 +130,7 @@ class EffectResourceLayer:
     generated_layer_id: str | None = None
     single_settings: EffectCompositionLayer | None = None
     particle_settings: ParticleEmitterSettings | None = None
+    layer_transform: EffectLayerTransform3D = field(default_factory=EffectLayerTransform3D)
     id: str = field(default_factory=lambda: uuid4().hex)
 
     def __post_init__(self) -> None:
@@ -115,6 +215,7 @@ class EffectResourceLayer:
             "generated_layer_id": self.generated_layer_id,
             "single_settings": self.single_settings.to_dict(),
             "particle_settings": self.particle_settings.to_dict(),
+            "layer_transform": self.layer_transform.to_dict(),
         }
 
     @classmethod
@@ -136,6 +237,7 @@ class EffectResourceLayer:
                 if single_data.get("resource_composition_id") else EffectCompositionLayer(**single_data)
             ),
             particle_settings=None if not particle_data else ParticleEmitterSettings.from_dict(particle_data),
+            layer_transform=EffectLayerTransform3D.from_dict(data.get("layer_transform")),
         )
 
     @classmethod

@@ -11,9 +11,15 @@ from PySide6.QtWidgets import QWidget
 
 from app.models.project import Project
 from app.models.effect_composition_layer import EffectCompositionLayer
+from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.models.particle_emitter import ParticleEmitterSettings
 from app.services.particle_render_service import representative_particle_guide
 from app.services.resource_composition_render_service import render_composition_frames
+from app.services.effect_layer_transform_3d_render_service import project_points_3d,unproject_point_2d
+from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
+from app.services.effect_render_service import render_transformed_source
+from app.models.frame import empty_pixels
+from app.models.source_asset import SourceAsset
 
 
 class CanvasWidget(QWidget):
@@ -48,6 +54,7 @@ class CanvasWidget(QWidget):
         self._guide_before = None
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
+        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None
         self.setMinimumSize(320, 320)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -100,6 +107,17 @@ class CanvasWidget(QWidget):
     def set_effect_guides_visible(self, visible: bool) -> None:
         self.show_effect_guides = bool(visible)
         self.update()
+
+    def set_resource_layer_transform(self, identifier=None, transform=None, *, mode="move") -> None:
+        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None
+        for key in list(self._ghost_cache):
+            if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
+        self.update()
+
+    def resource_transform_handle_positions(self) -> dict[str,QPointF]:
+        if self.project is None or self.resource_transform is None:return {}
+        t=self.resource_transform.evaluated(self.frame_index);center=self.canvas_to_widget(self.project.width/2+t.pivot_x+t.position_x,self.project.height/2+t.pivot_y+t.position_y)
+        return {"center":center,"x":center+QPointF(42,0),"y":center+QPointF(0,42),"z":center+QPointF(34,-34),"rotate_x":center+QPointF(44,0),"rotate_y":center+QPointF(0,44),"rotate_z":center+QPointF(34,34),"scale":center+QPointF(38,38),"pivot":center+QPointF(-14,-14)}
 
     def canvas_to_widget(self, x: float, y: float) -> QPointF:
         if self.project is None: return QPointF()
@@ -177,6 +195,8 @@ class CanvasWidget(QWidget):
             )
         if self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._paint_gizmo(painter)
+        if self.resource_transform_id and self.resource_transform is not None:
+            self._paint_resource_transform_gizmo(painter)
         if self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
 
@@ -208,31 +228,54 @@ class CanvasWidget(QWidget):
             elif getattr(s, "distribution", "Point") == "Circle":
                 radius = max(0.0, float(s.radius)) * self.zoom; painter.drawEllipse(center, radius, radius)
 
+    def _paint_resource_transform_gizmo(self,painter):
+        p=self.resource_transform_handle_positions();center=p.get("center")
+        if center is None:return
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing,True);mode=self.resource_transform_mode
+        if mode=="move":
+            for name,color in (("x","#ff6b6b"),("y","#51cf66"),("z","#4dabf7")):
+                painter.setPen(QPen(QColor(color),3));painter.drawLine(center,p[name]);painter.drawEllipse(p[name],5,5)
+            painter.setPen(QPen(QColor("#ffffff"),2));painter.drawEllipse(center,5,5)
+        elif mode.startswith("rotate_"):
+            color={"rotate_x":"#ff6b6b","rotate_y":"#51cf66","rotate_z":"#4dabf7"}[mode];painter.setPen(QPen(QColor(color),3));painter.drawEllipse(center,38,38);painter.drawEllipse(p[mode],5,5)
+        elif mode=="scale":
+            painter.setPen(QPen(QColor("#ffd43b"),2));painter.drawRect(QRectF(center-QPointF(38,38),center+QPointF(38,38)));painter.drawRect(QRectF(p["scale"]-QPointF(5,5),p["scale"]+QPointF(5,5)))
+        elif mode=="pivot":
+            painter.setPen(QPen(QColor("#e599f7"),2));q=p["pivot"];painter.drawLine(q-QPointF(8,0),q+QPointF(8,0));painter.drawLine(q-QPointF(0,8),q+QPointF(0,8))
+
+    def _hit_resource_transform(self,position):
+        points=self.resource_transform_handle_positions();mode=self.resource_transform_mode
+        names=("x","y","z","center") if mode=="move" else (mode,) if mode.startswith("rotate_") else (mode,)
+        return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=12),None)
+
     def _guide_points(self) -> dict[str, QPointF]:
         settings = self.effect_guide_settings
         if isinstance(settings, EffectCompositionLayer):
             return {
-                "start": self.canvas_to_widget(settings.start_x, settings.start_y),
-                "end": self.canvas_to_widget(settings.end_x, settings.end_y),
+                "start": self.canvas_to_widget(*self._project_effect_point(settings.start_x, settings.start_y)),
+                "end": self.canvas_to_widget(*self._project_effect_point(settings.end_x, settings.end_y)),
             }
         if isinstance(settings, ParticleEmitterSettings):
             guide = representative_particle_guide(settings)
-            origin = self.canvas_to_widget(guide["origin_x"], guide["origin_y"])
-            endpoint = self.canvas_to_widget(guide["endpoint_x"], guide["endpoint_y"])
+            origin = self.canvas_to_widget(*self._project_effect_point(guide["origin_x"], guide["origin_y"]))
+            endpoint = self.canvas_to_widget(*self._project_effect_point(guide["endpoint_x"], guide["endpoint_y"]))
             angle = math.radians(settings.direction_degrees)
             direction = origin + QPointF(math.cos(angle) * 48, math.sin(angle) * 48)
             points = {"origin": origin, "direction": direction, "endpoint": endpoint}
             if settings.spawn_shape == "line":
-                points["shape"] = self.canvas_to_widget(settings.line_end_x, settings.line_end_y)
+                points["shape"] = self.canvas_to_widget(*self._project_effect_point(settings.line_end_x, settings.line_end_y))
             elif settings.spawn_shape == "circle":
-                points["shape"] = self.canvas_to_widget(settings.origin_x + settings.radius, settings.origin_y)
+                points["shape"] = self.canvas_to_widget(*self._project_effect_point(settings.origin_x + settings.radius, settings.origin_y))
             elif settings.spawn_shape == "box":
-                points["shape"] = self.canvas_to_widget(
-                    settings.origin_x + settings.box_width / 2,
-                    settings.origin_y + settings.box_height / 2,
-                )
+                points["shape"] = self.canvas_to_widget(*self._project_effect_point(settings.origin_x + settings.box_width / 2,settings.origin_y + settings.box_height / 2))
             return points
         return {}
+
+    def _project_effect_point(self,x,y):
+        if self.project is None or self.resource_transform is None:return float(x),float(y)
+        t=self.resource_transform.evaluated(self.frame_index);pivot_x=self.project.width/2+t.pivot_x;pivot_y=self.project.height/2+t.pivot_y
+        point,valid=project_points_3d(np.array(((x-pivot_x,y-pivot_y,0.0),)),t,self.project.width,self.project.height)
+        return (float(point[0,0]+pivot_x),float(point[0,1]+pivot_y)) if valid[0] else (float(x),float(y))
 
     def _paint_effect_guide(self, painter: QPainter) -> None:
         points = self._guide_points()
@@ -278,6 +321,28 @@ class CanvasWidget(QWidget):
         composition = next((item for item in self.project.resource_compositions if item.id == composition_id), None)
         if composition is None:
             return
+        # During a high-frequency 2.5D drag, keep projected guide geometry live
+        # and reuse the last output frame instead of rebuilding three Ghost planes.
+        if self._resource_transform_drag:
+            return
+        if self.resource_transform is not None:
+            t=self.resource_transform.evaluated(self.frame_index);a=self.widget_to_canvas(start);b=self.widget_to_canvas(end)
+            raw_a=unproject_point_2d(a.x(),a.y(),t,self.project.width,self.project.height);raw_b=unproject_point_2d(b.x(),b.y(),t,self.project.width,self.project.height)
+            if raw_a is None or raw_b is None:return
+            values=tuple(getattr(t,name) for name in ("position_x","position_y","position_z","rotation_x","rotation_y","rotation_z","scale_x","scale_y","opacity","pivot_x","pivot_y","perspective_strength"))
+            key=("2.5d",composition.id,composition.revision,self.frame_index,values,tuple(round(v,3) for v in (*raw_a,*raw_b)))
+            pixmaps=self._ghost_cache.get(key)
+            if pixmaps is None:
+                frames=render_composition_frames(self.project,composition);indexes=sorted({0,len(frames)//2,len(frames)-1});pixmaps=[]
+                for order,index in enumerate(indexes):
+                    amount=order/max(1,len(indexes)-1);x=raw_a[0]+(raw_b[0]-raw_a[0])*amount;y=raw_a[1]+(raw_b[1]-raw_a[1])*amount
+                    raw=empty_pixels(self.project.width,self.project.height);asset=SourceAsset(composition.name,frames[index],pivot_x=composition.pivot_x,pivot_y=composition.pivot_y)
+                    render_transformed_source(raw,asset,position_x=x,position_y=y,rotation=0,scale_x=1,scale_y=1,horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=1)
+                    pixels=np.ascontiguousarray(transform_rgba_frame(raw,self.resource_transform,self.frame_index));image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy();pixmaps.append(QPixmap.fromImage(image))
+                self._ghost_cache[key]=pixmaps
+            origin=self._canvas_origin();target=QRectF(origin.x(),origin.y(),self.project.width*self.zoom,self.project.height*self.zoom);painter.save();painter.setOpacity(.28)
+            for pixmap in pixmaps:painter.drawPixmap(target,pixmap,QRectF(pixmap.rect()))
+            painter.restore();return
         key = (composition.id, composition.revision)
         pixmaps = self._ghost_cache.get(key)
         if pixmaps is None:
@@ -320,6 +385,12 @@ class CanvasWidget(QWidget):
                 self.setFocus()
                 event.accept()
                 return
+        active_transform_layer = next((item for item in self.project.effect_resource_layers if item.id==self.resource_transform_id),None) if self.project is not None else None
+        transform_is_selected = active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id
+        if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
+            handle=self._hit_resource_transform(event.position())
+            if handle:
+                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.setFocus();event.accept();return
         if event.button() == Qt.MouseButton.LeftButton and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._gizmo_drag = True; self._gizmo_before = deepcopy(self.gizmo_settings); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton:
@@ -345,6 +416,20 @@ class CanvasWidget(QWidget):
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._panning:
             delta=event.position()-self._pan_last;self._pan_last=event.position();self.pan_offset+=delta;self.update();event.accept();return
+        if self._resource_transform_drag:
+            t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag
+            if handle in {"x","center"}:t.position_x=before.position_x+delta.x()
+            if handle in {"y","center"}:t.position_y=before.position_y+delta.y()
+            if handle=="z":t.position_z=before.position_z-delta.y()+delta.x()
+            if handle.startswith("rotate_"):
+                center=self.resource_transform_handle_positions()["center"];angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()))
+                if event.modifiers()&Qt.KeyboardModifier.ShiftModifier:angle=round(angle/15)*15
+                setattr(t,handle,angle)
+            if handle=="scale":t.scale_x=max(.01,before.scale_x+delta.x()/32);t.scale_y=max(.01,before.scale_y+delta.y()/32)
+            if handle=="pivot":t.pivot_x=before.pivot_x+delta.x();t.pivot_y=before.pivot_y+delta.y()
+            for key in list(self._ghost_cache):
+                if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
+            self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);self.update();event.accept();return
         if self._guide_handle:
             point = self.widget_to_canvas(event.position())
             integer_point = (round(point.x()), round(point.y()))
@@ -381,6 +466,8 @@ class CanvasWidget(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._panning and event.button()==Qt.MouseButton.MiddleButton:
             self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
+        if self._resource_transform_drag:
+            self._resource_transform_drag=None;self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True);event.accept();return
         if self._guide_handle:
             self._guide_handle = None
             self._guide_last_canvas_point = None
@@ -397,6 +484,8 @@ class CanvasWidget(QWidget):
             self._guide_last_canvas_point = None
             self.effect_guide_cancelled.emit(self.effect_guide_id, before)
             self.update(); event.accept(); return
+        if event.key()==Qt.Key.Key_Escape and self._resource_transform_drag and self._resource_transform_before is not None:
+            self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));self.update();event.accept();return
         if event.key() == Qt.Key.Key_Escape and self._gizmo_drag and self._gizmo_before is not None:
             self.gizmo_settings = self._gizmo_before; self._gizmo_drag = False
             self.gizmo_changed.emit(self.gizmo_generator_id, deepcopy(self.gizmo_settings)); self.update(); event.accept(); return
@@ -404,6 +493,10 @@ class CanvasWidget(QWidget):
 
     def _move_effect_guide(self, point: QPointF, modifiers) -> None:
         settings = self.effect_guide_settings
+        if self.project is not None and self.resource_transform is not None:
+            local=unproject_point_2d(point.x(),point.y(),self.resource_transform.evaluated(self.frame_index),self.project.width,self.project.height)
+            if local is None:return
+            point=QPointF(*local)
         x, y = round(point.x()), round(point.y())
         if isinstance(settings, EffectCompositionLayer):
             if self._guide_handle == "start": settings.start_x, settings.start_y = x, y
@@ -487,4 +580,6 @@ class CanvasWidget(QWidget):
     gizmo_changed = Signal(str, object)
     effect_guide_changed = Signal(str, object, bool)
     effect_guide_cancelled = Signal(str, object)
+    resource_transform_changed = Signal(str, object, bool)
+    resource_transform_cancelled = Signal(str, object)
     layer_selected = Signal(int)

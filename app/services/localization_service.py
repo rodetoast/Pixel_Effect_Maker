@@ -284,6 +284,35 @@ EN.update({
     "message.unsaved_title":"Unsaved Changes","message.discard_unsaved":"Discard the unsaved changes?","status.new_project":"New project created","status.opened":"Opened {path}","status.saved":"Saved {path}","status.imported":"Imported source asset: {name}","status.created":"Created {name}","status.generated":"Generated {name}","status.playback_test":"Playback test project created",
     "error.open":"Open Failed","error.save":"Save Failed","error.export":"Export Failed","error.import":"Import Failed","error.generation":"Generation Failed","error.canvas_resize":"Canvas Resize Failed","error.shortcuts":"Shortcut Settings","error.delete_frame":"Cannot Delete Frame","error.delete_layer":"Cannot Delete Layer",
 })
+
+EN.update({
+    "resource_layer.transform":"2.5D Transform",
+    "resource_layer.transform_help":"Transform the final Resource Layer output as a flat plane. X/Y rotation, depth, and perspective create tilted effects.",
+    "resource_layer.transform_reset":"Reset 2.5D\nTransform",
+    "resource_layer.add_keyframe":"Add a keyframe at the current Effect frame.",
+    "tooltip.resource_layer.rotation_x":"Tilt the Resource Layer around its horizontal axis.",
+    "tooltip.resource_layer.rotation_y":"Tilt the Resource Layer around its vertical axis.",
+    "tooltip.resource_layer.rotation_z":"Rotate the Resource Layer in the screen plane. Hold Shift on the gizmo to snap 15°.",
+    "tooltip.resource_layer.position_z":"Adjust layer depth and front-to-back composition order. Larger values are closer to the camera.",
+    "tooltip.resource_layer.perspective":"Project near parts larger and far parts smaller. Zero uses orthographic projection.",
+    "tooltip.resource_layer.depth_handle":"Drag X/Y axes or the blue diagonal Z Depth Handle.",
+    "resource_layer.position_z":"Position Z","resource_layer.rotation_x":"Rotation X","resource_layer.rotation_y":"Rotation Y","resource_layer.rotation_z":"Rotation Z","resource_layer.perspective":"Perspective Strength","resource_layer.move_xyz":"Move XYZ",
+    "resource_layer.resource_composition":"Resource Composition",
+})
+KO.update({
+    "resource_layer.transform":"2.5D 변형",
+    "resource_layer.transform_help":"리소스 레이어의 최종 결과를 평면으로 변형합니다. X/Y축 회전과 깊이, 원근으로 기울어진 효과를 만듭니다.",
+    "resource_layer.transform_reset":"2.5D 변형\n초기화",
+    "resource_layer.add_keyframe":"현재 이펙트 프레임에 키프레임을 추가합니다.",
+    "tooltip.resource_layer.rotation_x":"리소스 레이어를 가로축을 기준으로 기울입니다.",
+    "tooltip.resource_layer.rotation_y":"리소스 레이어를 세로축을 기준으로 기울입니다.",
+    "tooltip.resource_layer.rotation_z":"리소스 레이어를 화면 평면에서 회전합니다. 기즈모에서 Shift를 누르면 15°로 맞춥니다.",
+    "tooltip.resource_layer.position_z":"레이어의 깊이와 앞뒤 합성 순서를 조절합니다. 값이 클수록 카메라에 가까워집니다.",
+    "tooltip.resource_layer.perspective":"가까운 부분은 크게, 먼 부분은 작게 투영합니다. 0에서는 직교 투영을 사용합니다.",
+    "tooltip.resource_layer.depth_handle":"X/Y축 또는 파란색 대각선 Z 깊이 핸들을 드래그합니다.",
+    "resource_layer.position_z":"위치 Z","resource_layer.rotation_x":"회전 X","resource_layer.rotation_y":"회전 Y","resource_layer.rotation_z":"회전 Z","resource_layer.perspective":"원근 강도","resource_layer.move_xyz":"이동 XYZ",
+    "resource_layer.resource_composition":"리소스 컴포지션",
+})
 KO.update({
     "action.undo":"실행 취소","action.redo":"다시 실행","action.undo_named":"실행 취소: {name}","action.redo_named":"다시 실행: {name}",
     "interface.title":"인터페이스 설정…","interface.timeline_frame_width":"타임라인 프레임 너비","interface.restore_default":"기본값 복원",

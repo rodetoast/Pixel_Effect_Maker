@@ -2,6 +2,8 @@
 
 현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
 
+Resource Layer의 최종 출력에는 Position/Rotation X/Y/Z, Scale, Opacity, Pivot, Perspective, Keyframe과 안정적 Z 정렬을 갖춘 공통 평면 기반 2.5D Transform을 적용할 수 있습니다. 자세한 좌표계와 제한은 `docs/RESOURCE_LAYER_2_5D_TRANSFORM.md`를 참고합니다.
+
 Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽셀 편집기가 되는 것이 아닙니다. 사용자가 만든 임의의 투명 PNG를 비파괴 Source Asset으로 가져오고, 범용 Emitter와 시간 기반 Transform으로 여러 프레임의 픽셀 이펙트를 반자동 생성하는 도구를 목표로 합니다. 파일명이나 특정 실루엣에 따른 특수 처리는 사용하지 않습니다.
 
 ## 현재 구현 기능

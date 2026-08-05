@@ -8,12 +8,72 @@ from app.services.effect_composition_layer_render_service import (
     render_effect_composition_layer,
 )
 from app.services.particle_render_service import apply_particle_frames, render_particle_frames
+from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
+
+_BASE_CACHE: dict[str, tuple[tuple, list]] = {}
+_TRANSFORM_CACHE: dict[tuple, object] = {}
+
+
+def _resource_revisions(project) -> tuple:
+    return tuple((item.id,item.revision) for item in project.resource_compositions)
+
+
+def _base_key(project, layer: EffectResourceLayer) -> tuple:
+    settings = layer.particle_settings.to_dict() if layer.placement_mode == PLACEMENT_PARTICLE else layer.single_settings.to_dict()
+    return (id(project),layer.placement_mode,repr(settings),project.width,project.height,project.fps,_resource_revisions(project))
+
+
+def _transform_values(layer: EffectResourceLayer, frame: int) -> tuple:
+    value=layer.layer_transform.evaluated(frame)
+    return tuple(getattr(value,name) for name in ("position_x","position_y","position_z","rotation_x","rotation_y","rotation_z","scale_x","scale_y","opacity","pivot_x","pivot_y","perspective_strength"))
+
+
+def invalidate_effect_resource_layer_base(layer_id: str | None = None) -> None:
+    if layer_id is None:
+        _BASE_CACHE.clear();_TRANSFORM_CACHE.clear();return
+    _BASE_CACHE.pop(layer_id,None)
+    for key in list(_TRANSFORM_CACHE):
+        if key[0]==layer_id:_TRANSFORM_CACHE.pop(key,None)
+
+
+def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
+    key=_base_key(project,layer);cached=_BASE_CACHE.get(layer.id)
+    if cached is not None and cached[0]==key:return cached[1]
+    if layer.placement_mode == PLACEMENT_PARTICLE:
+        frames=render_particle_frames(project,layer.as_particle_emitter())
+    else:
+        frames=render_effect_composition_layer(project,layer.as_composition_layer())
+    _BASE_CACHE[layer.id]=(key,frames)
+    for cache_key in list(_TRANSFORM_CACHE):
+        if cache_key[0]==layer.id:_TRANSFORM_CACHE.pop(cache_key,None)
+    return frames
+
+
+def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame: int):
+    base=render_effect_resource_layer_base(project,layer)
+    if not base:return None
+    frame=max(0,min(int(frame),len(base)-1));base_key=_BASE_CACHE[layer.id][0];key=(layer.id,base_key,frame,_transform_values(layer,frame))
+    cached=_TRANSFORM_CACHE.get(key)
+    if cached is None:
+        for cache_key in list(_TRANSFORM_CACHE):
+            if cache_key[:3]==key[:3]:_TRANSFORM_CACHE.pop(cache_key,None)
+        cached=transform_rgba_frame(base[frame],layer.layer_transform,frame);_TRANSFORM_CACHE[key]=cached
+    return cached
 
 
 def render_effect_resource_layer(project, layer: EffectResourceLayer):
-    if layer.placement_mode == PLACEMENT_PARTICLE:
-        return render_particle_frames(project, layer.as_particle_emitter())
-    return render_effect_composition_layer(project, layer.as_composition_layer())
+    frames=render_effect_resource_layer_base(project,layer)
+    return [render_effect_resource_layer_frame(project,layer,index) for index in range(len(frames))]
+
+
+def apply_effect_resource_layer_current_frame(project,layer: EffectResourceLayer,frame: int):
+    generated=next((item for item in project.layers if item.id==layer.generated_layer_id),None)
+    if generated is None:return apply_effect_resource_layer(project,layer)
+    pixels=render_effect_resource_layer_frame(project,layer,frame)
+    if pixels is None:return generated
+    while len(project.frames)<=frame:project.add_frame()
+    project.frames[frame].layer_pixels[generated.id]=pixels.copy();generated.visible=layer.visible
+    return generated
 
 
 def apply_effect_resource_layer(project, layer: EffectResourceLayer, frames=None):
@@ -24,5 +84,8 @@ def apply_effect_resource_layer(project, layer: EffectResourceLayer, frames=None
         generated = apply_effect_composition_layer(project, layer.as_composition_layer(), frames)
     layer.generated_layer_id = generated.id
     layer.sync_active_adapter()
+    # Unified Resource Layers own the user-facing name.  The legacy particle
+    # renderer still supplies its compatibility name, so replace it here.
+    generated.name = layer.name
     generated.visible = layer.visible
     return generated

@@ -2,6 +2,8 @@
 
 애플리케이션 버전은 `0.0.04`를 유지하며 프로젝트 `FORMAT_VERSION`만 6으로 변경한다.
 
+`effect_resource_layers[].layer_transform`은 선택적인 v6 확장 필드다. 없는 기존 v6은 Identity로 읽는다. `position[3]`, `rotation[3]`, `scale[2]`, `opacity`, Canvas 중심 기준 `pivot[2]`, `perspective_strength`, 비어 있지 않은 `tracks`, `revision`을 저장한다. 기존 문서를 계속 읽을 수 있으므로 포맷 번호는 6을 유지한다.
+
 ## v5와 v6
 
 v5는 직접 배치 `effect_composition_layers`와 `particle_emitters`를 별도 배열에 저장했다. v6는 `effect_resource_layers` 하나에 공통 Resource 참조와 `placement_mode`, `single_settings`, `particle_settings`를 저장한다. 비활성 모드 설정도 저장하므로 모드 왕복에서 값이 사라지지 않는다.

@@ -4,6 +4,8 @@ Effect Editor는 선택된 Effect Layer만 편집한다. Composition Layer는 Re
 
 Particle System 가이드는 Renderer의 `velocity_from_direction_speed()`와 `representative_particle_guide()`를 공유한다. 대표 Speed와 Lifetime은 각 Range의 중간값이고, 실제 렌더처럼 마지막 표시 위치는 `velocity × (lifetime - 1)`이다. Point는 Origin, Line은 끝점, Circle은 Radius, Box는 반 크기 Handle을 편집한다. Direction과 Spread Cone은 같은 degree 값을 사용한다.
 
+선택한 Resource Layer는 공통 Move XYZ, Rotate X/Y/Z, Scale, Pivot 기즈모를 제공한다. 정면에서 점으로 보이는 Z축은 파란색 대각선 Depth Handle로 표시한다. 겹치는 지점에서는 Content Guide가 우선하고 떨어진 축 Handle로 공통 변형을 편집한다. Shift는 15° Snap, Escape는 전체 Drag 취소다.
+
 Handle은 Zoom과 무관한 화면 크기로 hit-test한다. Mouse Press에서 시작값을 저장하고 Move 동안 Inspector와 Canvas를 갱신하며 Release에서 Undo Command 하나를 만든다. Shift는 Direction을 15°에 맞추고 Escape는 시작값을 복원한다.
 
 최대 세 장의 Resource Ghost는 Resource Composition revision별 캐시를 사용한다. `편집 가이드 표시`는 `ui/show_effect_editing_guides`에 저장하며 프로젝트 JSON에는 기록하지 않는다. 모든 선·Handle·Ghost는 Canvas overlay이므로 Preview Worker를 만들지 않고 Project compose, Bake, PNG Export 결과에도 포함되지 않는다.

@@ -2,9 +2,17 @@
 
 ## 감사 결과와 입력 동기화
 
+Effect Editor의 Resource Layer Inspector는 기본 약 300px, 최소 실사용 280px을 기준으로 한다. 내부 ScrollArea 콘텐츠는 Viewport 폭을 따르고 가로 Scroll은 사용하지 않으며, 긴 설정은 세로 Scroll로 접근한다. Transform 조작 모드는 2열 Grid, 숫자와 Keyframe/Easing은 폭을 합산하지 않는 2단 필드로 배치한다.
+
+Resource Layer 2.5D 숫자 입력도 일반 Wheel은 Inspector Scroll, Ctrl+Wheel은 `singleStep` 값 변경 정책을 따른다. Inspector 변경, 명시적 Keyframe, 완료된 Gizmo Drag는 Undo 대상이며 UI Refresh는 Keyframe을 만들지 않는다.
+
 기존 `NewResourceDialog`는 FPS 변경을 Duration 변경으로 처리하고, 소수점 3자리로 표시된 Duration을 다시 Frames 계산에 사용했다. `valueChanged → 다른 SpinBox 변경 → 반올림된 값 재입력` 경로가 반복 Step을 덮어썼다. 현재는 `_duration_seconds`와 `_syncing`을 사용하고 `QSignalBlocker`로 재진입을 막는다. Frames 변경은 `duration=frames/fps`, FPS 변경은 이전 Duration을 보존한 새 Frames, Duration 완료는 `frames=round(duration×fps)`로 정규화한다. Duration의 최소값과 Step은 항상 한 프레임이며 4자리로 표시한다.
 
 현재 Dialog는 Duration과 Frames를 동시에 노출하지 않고 `Length + Unit`으로 통합한다. Frames 단위에서는 FPS 변경 시 정수 frame count를 유지하고, Seconds 단위에서는 입력 초를 유지한 채 `max(1, round(seconds × fps))`로 frame count를 다시 계산한다. 단위 왕복은 항상 정수 frame count를 기준으로 정규화한다.
+
+Loop는 Form의 늘어나는 필드가 아니라 내용 폭의 `QCheckBox`다. 체크 표시와 한국어·영어 텍스트만 Hit Area이며 행 오른쪽 빈 공간은 값을 바꾸지 않는다. Tab 포커스, Space 토글과 Dialog의 Enter/Cancel 동작은 Qt 기본 접근성을 유지한다.
+
+Effect Inspector의 각 활성 입력은 화면에 직접 보이는 Form Label을 가진다. 약 280~320px 또는 큰 글꼴에서 2열이 맞지 않으면 `WrapLongRows`가 Label을 입력 위로 옮긴다. Label은 비어 있거나 0폭이 되지 않으며 Tooltip은 추가 설명에만 사용한다. Boolean의 Random Start는 Form Label 하나만 표시해 문구 중복을 피한다.
 
 Project Canvas 크기가 바뀔 때는 재생을 멈추고 Effect·Particle Preview Manager의 Context revision을 올린 뒤 Canvas Preview를 지운다. 이전 Context에서 완료된 Worker 결과는 거부한다. Canvas 합성도 source와 destination의 높이·폭이 다르면 오래된 Preview를 표시하지 않고 적용된 Project Frame으로 fallback한다.
 
@@ -35,6 +43,8 @@ MainWindow의 단일 `application_undo_stack`을 모든 Workspace가 공유한�
 Full Rotation은 Loop Resource에서 마지막 프레임을 `±360 × turns × (N - 1) / N`으로 만들고, Non-loop에서는 `±360 × turns` 종점을 유지한다. 1프레임 Loop는 0° 키 하나만, 2프레임 Loop는 0°와 ±180°를 사용한다. 선택한 Effect Layer 삭제는 생성 모델과 렌더 출력 레이어를 한 명령으로 제거하며 Resource Composition 원본은 보존한다. 마지막 생성 레이어를 지우면 프로젝트 불변식을 위한 빈 일반 레이어를 두고 Undo 시 원래 모델·픽셀·선택을 복원한다.
 
 Effect Editor의 활성 레이어는 Resource Layer로 통일한다. Resource Editor의 `Add as Layer to Effect`는 Single 모드 레이어를 즉시 만들며, Inspector의 Placement Mode가 Single/Particle Emission을 Undo 가능한 값으로 전환한다. 전환은 ID·순서·Visibility·Resource 참조와 양쪽 설정을 유지한다.
+
+공통 2.5D 값과 Canvas Gizmo는 Inspector나 Timeline 모델을 재구성하지 않는다. 입력은 Layer Transform revision만 갱신하고 단일 16ms Timer에 합쳐져 현재 프레임만 후처리한다. 오래된 Layer ID/revision 요청은 버린다. 재생, 저장과 PNG Export처럼 전체 Sequence가 실제로 필요한 경계에서만 캐시된 원본 RGBA에 최종 Transform을 materialize한다.
 
 ## Gizmo
 

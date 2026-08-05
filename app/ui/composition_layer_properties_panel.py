@@ -4,34 +4,46 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QComboBox, QFormLayout, QGroupBox, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QComboBox, QFormLayout, QGroupBox, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from app.models.effect_composition_layer import EffectCompositionLayer
 from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 from app.ui.tooltip_helper import apply_tooltip
+from app.ui.resource_layer_transform_panel import ResourceLayerTransformPanel
 
 
 class CompositionLayerPropertiesPanel(QScrollArea):
     changed = Signal(str, object)
     mode_changed = Signal(str, str)
     resource_changed = Signal(str, str)
+    transform_changed = Signal(str, object)
+    transform_keyframe_requested = Signal(str, str, int, float, str)
+    transform_gizmo_changed = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWidgetResizable(True)
+        self.setWidgetResizable(True);self.setMinimumWidth(0);self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.layer: EffectCompositionLayer | None = None
         self._loading = False
-        body = QWidget(); layout = QVBoxLayout(body)
+        body = QWidget();body.setObjectName("compositionLayerInspectorContent");body.setMinimumWidth(0);body.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); layout = QVBoxLayout(body);layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.resource_layer_id = None
         self.title = QLabel("Resource Layer")
         self.title.setStyleSheet("font-size: 15px; font-weight: bold;")
+        self.title.setMinimumWidth(0);self.title.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         layout.addWidget(self.title)
-        self.resource = QComboBox(); layout.addWidget(self.resource);self.resource.currentIndexChanged.connect(self._resource_changed)
-        self.mode = QComboBox(); self.mode.addItem("Single", "single"); self.mode.addItem("Particle Emission", "particle"); layout.addWidget(self.mode)
-        self.mode_help = QLabel("Place one resource directly in the Effect Composition."); self.mode_help.setWordWrap(True); layout.addWidget(self.mode_help)
+        common=QGroupBox("Resource Layer");common.setMinimumWidth(0);common.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.common_form=QFormLayout(common);self.common_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.common_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.resource = QComboBox();self.resource.setMinimumWidth(0);self.resource.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.common_form.addRow("Resource Composition",self.resource);self.resource.currentIndexChanged.connect(self._resource_changed)
+        self.mode = QComboBox();self.mode.setMinimumWidth(0);self.mode.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); self.mode.addItem("Single", "single"); self.mode.addItem("Particle Emission", "particle");self.common_form.addRow("Placement Mode",self.mode)
+        for editor in (self.resource,self.mode):label=self.common_form.labelForField(editor);label.setWordWrap(True);label.setMinimumWidth(0);label.setMaximumWidth(110);label.setBuddy(editor);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred)
+        layout.addWidget(common)
+        self.mode_help = QLabel("Place one resource directly in the Effect Composition."); self.mode_help.setWordWrap(True);self.mode_help.setMinimumWidth(0);self.mode_help.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); layout.addWidget(self.mode_help)
         self.mode.currentIndexChanged.connect(self._mode_changed)
-        group = QGroupBox("Path"); self.form = QFormLayout(group)
+        self.transform_panel=ResourceLayerTransformPanel();layout.addWidget(self.transform_panel)
+        self.transform_panel.transform_changed.connect(self.transform_changed)
+        self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested)
+        self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
+        group = QGroupBox("Path");group.setMinimumWidth(0);group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); self.form = QFormLayout(group);self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.start_x = self._number(); self.start_y = self._number()
         self.end_x = self._number(); self.end_y = self._number()
         self.start_frame = self._integer(); self.end_frame = self._integer()
@@ -42,6 +54,8 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         )
         for widget, label in self._fields:
             self.form.addRow(label, widget)
+            widget.setMinimumWidth(70);widget.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
+            field_label=self.form.labelForField(widget);field_label.setMinimumWidth(0);field_label.setMaximumWidth(88);field_label.setWordWrap(True)
             widget.valueChanged.connect(self._changed)
         layout.addWidget(group); layout.addStretch(); self.setWidget(body)
 
@@ -72,6 +86,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.resource.clear();[self.resource.addItem(item.name,item.id) for item in project.resource_compositions]
         if layer is not None:self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
         self._loading = False
+        self.transform_panel.set_layer(layer, getattr(project,"_current_effect_frame",0))
         self.set_layer(None if layer is None else layer.as_composition_layer(), project)
 
     def _mode_changed(self, *args) -> None:
@@ -93,9 +108,12 @@ class CompositionLayerPropertiesPanel(QScrollArea):
     def retranslate_ui(self, localization) -> None:
         self._localization=localization
         self.title.setText(localization.text("resource_layer.title"))
+        self.common_form.labelForField(self.resource).setText(localization.text("resource_layer.resource_composition"));self.common_form.labelForField(self.mode).setText(localization.text("resource_layer.placement_mode"))
         self.mode.setItemText(0,localization.text("resource_layer.single"));self.mode.setItemText(1,localization.text("resource_layer.particle"));self.mode_help.setText(localization.text("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"))
         apply_tooltip(self.mode,localization,"tooltip.resource_layer.mode",status=False);apply_tooltip(self.resource,localization,"tooltip.resource_layer.resource",status=False)
+        self.transform_panel.retranslate_ui(localization)
         labels = ("effect.start_x", "effect.start_y", "effect.end_x", "effect.end_y", "particle.start_frame", "composition.end")
         for (widget, _), key in zip(self._fields, labels, strict=True):
             self.form.labelForField(widget).setText(localization.text(key))
+            self.form.labelForField(widget).setBuddy(widget);self.form.labelForField(widget).setVisible(True)
             apply_tooltip(widget, localization, "tooltip.effect.composition_path", status=False)

@@ -2,19 +2,22 @@
 from __future__ import annotations
 from random import SystemRandom
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from .focus_wheel_widgets import FocusWheelComboBox, ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 from .tooltip_helper import apply_tooltip
+from .resource_layer_transform_panel import ResourceLayerTransformPanel
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
     revert_requested = Signal(str); export_requested = Signal(str); gizmo_mode_changed = Signal(str)
     mode_changed = Signal(str, str)
+    transform_changed = Signal(str, object);transform_keyframe_requested = Signal(str, str, int, float, str);transform_gizmo_changed = Signal(str, str)
     def __init__(self, parent=None):
-        super().__init__(parent); self.setWidgetResizable(True); self.setMinimumWidth(360); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        super().__init__(parent); self.setWidgetResizable(True); self.setMinimumWidth(0); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.emitter_id = None; self._loading = False; self._localization = None
-        body=QWidget(); self.layout=QVBoxLayout(body); self.title=QLabel("Resource Layer"); self.layout.addWidget(self.title);self.resource_layer_id=None;self.mode=FocusWheelComboBox();self.mode.addItem("Single","single");self.mode.addItem("Particle Emission","particle");self.layout.addWidget(self.mode);self.mode_help=QLabel("Emit multiple instances of the same resource with direction, speed, and lifetime.");self.mode_help.setWordWrap(True);self.layout.addWidget(self.mode_help);self.mode.currentIndexChanged.connect(self._mode_changed);self._group_records=[]
+        body=QWidget();body.setObjectName("particleInspectorContent");body.setMinimumWidth(0);body.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.layout=QVBoxLayout(body);self.layout.setAlignment(Qt.AlignmentFlag.AlignTop); self.title=QLabel("Resource Layer");self.title.setMinimumWidth(0);self.title.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.layout.addWidget(self.title);self.resource_layer_id=None;common=QGroupBox("Resource Layer");common.setMinimumWidth(0);common.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.common_form=QFormLayout(common);self.common_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);self.mode=FocusWheelComboBox();self.mode.setMinimumWidth(0);self.mode.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.mode.addItem("Single","single");self.mode.addItem("Particle Emission","particle");self.common_form.addRow("Placement Mode",self.mode);self.mode_label=self.common_form.labelForField(self.mode);self.mode_label.setMinimumWidth(0);self.mode_label.setMaximumWidth(112);self.mode_label.setWordWrap(True);self.mode_label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.mode_label.setBuddy(self.mode);self.layout.addWidget(common);self.mode_help=QLabel("Emit multiple instances of the same resource with direction, speed, and lifetime.");self.mode_help.setWordWrap(True);self.mode_help.setMinimumWidth(0);self.mode_help.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.layout.addWidget(self.mode_help);self.mode.currentIndexChanged.connect(self._mode_changed);self._group_records=[]
+        self.transform_panel=ResourceLayerTransformPanel();self.layout.addWidget(self.transform_panel);self.transform_panel.transform_changed.connect(self.transform_changed);self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested);self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
         self.clip=FocusWheelComboBox(); self.output_frame_count=self._i(1,512); self.start_frame=self._i(0,511)
         self.emission_mode=self._combo(("burst","over_time")); self.count_min=self._i(0,4096); self.count_max=self._i(0,4096); self.emission_duration=self._i(1,512)
         self.spawn_shape=self._combo(("point","line","circle","box")); self.origin_x=self._n(-4096,4096); self.origin_y=self._n(-4096,4096); self.line_end_x=self._n(-4096,4096); self.line_end_y=self._n(-4096,4096); self.radius=self._n(0,4096); self.box_width=self._n(0,4096); self.box_height=self._n(0,4096); self.start_angle=self._n(-3600,3600); self.end_angle=self._n(-3600,3600)
@@ -26,18 +29,19 @@ class ParticlePropertiesPanel(QScrollArea):
         self._group("Direction", (("Mode",self.direction_mode),("Direction",self.direction_degrees),("Spread",self.direction_spread_degrees),("Speed Min",self.speed_min),("Speed Max",self.speed_max)))
         self._group("Random Range", (("Lifetime Min",self.lifetime_min),("Lifetime Max",self.lifetime_max),("Scale Min",self.scale_min),("Scale Max",self.scale_max),("Rotation Min",self.rotation_min),("Rotation Max",self.rotation_max),("Angular Velocity Min",self.angular_velocity_min),("Angular Velocity Max",self.angular_velocity_max),("Start Delay Min",self.start_delay_min),("Start Delay Max",self.start_delay_max),("Clip Speed Min",self.clip_speed_min),("Clip Speed Max",self.clip_speed_max),("Random Start Frame",self.random_start_frame),("Opacity Start",self.opacity_start),("Opacity End",self.opacity_end),("Seed",self.seed)))
         self.randomize=QPushButton("Randomize Seed"); self.refresh=QPushButton("Refresh Preview"); self.bake=QPushButton("Bake to Frames"); self.export=QPushButton("Export Preview Sequence…"); self.revert=QPushButton("Revert Changes")
-        for w in (self.randomize,self.refresh,self.bake,self.export,self.revert): self.layout.addWidget(w)
+        for w in (self.randomize,self.refresh,self.bake,self.export,self.revert):w.setMinimumWidth(0);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.layout.addWidget(w)
         self.layout.addStretch(); self.setWidget(body)
-        self.controls=body.findChildren(QSpinBox)+body.findChildren(QDoubleSpinBox)+body.findChildren(QComboBox)
+        self.controls=[w for w in body.findChildren(QSpinBox)+body.findChildren(QDoubleSpinBox)+body.findChildren(QComboBox) if not self.transform_panel.isAncestorOf(w)]
         for w in self.controls:
             signal=w.currentIndexChanged if isinstance(w,FocusWheelComboBox) else w.valueChanged; signal.connect(self._changed)
         self.random_start_frame.toggled.connect(self._changed); self.randomize.clicked.connect(self._randomize); self.refresh.clicked.connect(lambda: self.emitter_id and self.refresh_requested.emit(self.emitter_id)); self.bake.clicked.connect(lambda: self.emitter_id and self.bake_requested.emit(self.emitter_id,self.settings())); self.export.clicked.connect(lambda: self.emitter_id and self.export_requested.emit(self.emitter_id)); self.revert.clicked.connect(lambda: self.emitter_id and self.revert_requested.emit(self.emitter_id))
-    def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b); return w
-    def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3); return w
-    def _combo(self, values): w=FocusWheelComboBox(); [w.addItem(v,v) for v in values]; return w
+    def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
+    def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
+    def _combo(self, values): w=FocusWheelComboBox();w.setMinimumWidth(0);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); [w.addItem(v,v) for v in values]; return w
     def _group(self,title,rows):
-        g=QGroupBox(title);f=QFormLayout(g);records=[]
-        for name,w in rows:f.addRow(name,w);records.append((name,w))
+        g=QGroupBox(title);g.setMinimumWidth(0);g.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);f=QFormLayout(g);f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);records=[]
+        for name,w in rows:
+            w.setMinimumWidth(0 if isinstance(w,(QComboBox,QCheckBox)) else 70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);f.addRow(name,w);label=f.labelForField(w);label.setMinimumWidth(0);label.setMaximumWidth(112);label.setWordWrap(True);label.setBuddy(w);label.setVisible(True);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);records.append((name,w))
         self._group_records.append((title,g,f,records));self.layout.addWidget(g);return g
     def set_emitter(self, emitter: ParticleEmitter|None, project):
         self._loading=True; self.emitter_id=None if emitter is None else emitter.id; self.clip.clear()
@@ -55,6 +59,7 @@ class ParticlePropertiesPanel(QScrollArea):
     def set_resource_layer(self, layer, project):
         self.resource_layer_id=None if layer is None else layer.id
         self.set_emitter(None if layer is None else layer.as_particle_emitter(),project)
+        self.transform_panel.set_layer(layer,getattr(project,"_current_effect_frame",0))
         self._loading=True
         if layer is not None:
             self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
@@ -84,14 +89,14 @@ class ParticlePropertiesPanel(QScrollArea):
         if not self._loading and self.emitter_id: self.draft_changed.emit(self.emitter_id,self.settings())
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
-        self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"))
+        self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.mode_label.setText(t("resource_layer.placement_mode"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False);self.transform_panel.retranslate_ui(l); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"))
         group_keys={"Particle Resource":"particle.resource","Emission":"particle.emission","Spawn Shape":"particle.spawn_shape","Direction":"particle.direction","Random Range":"particle.random_range"}
         field_keys={"Resource":"particle.resource_label","Output Frames":"particle.output_frames","Start Frame":"particle.start_frame","Mode":"particle.mode","Count Min":"particle.count_min","Count Max":"particle.count_max","Duration":"particle.duration","Shape":"particle.shape","Origin X":"particle.origin_x","Origin Y":"particle.origin_y","Line End X":"particle.line_end_x","Line End Y":"particle.line_end_y","Radius":"particle.radius","Box Width":"particle.box_width","Box Height":"particle.box_height","Start Angle":"particle.start_angle","End Angle":"particle.end_angle","Direction":"particle.direction_value","Spread":"particle.spread","Speed Min":"particle.speed_min","Speed Max":"particle.speed_max","Lifetime Min":"particle.lifetime_min","Lifetime Max":"particle.lifetime_max","Scale Min":"particle.scale_min","Scale Max":"particle.scale_max","Rotation Min":"particle.rotation_min","Rotation Max":"particle.rotation_max","Angular Velocity Min":"particle.angular_velocity_min","Angular Velocity Max":"particle.angular_velocity_max","Start Delay Min":"particle.start_delay_min","Start Delay Max":"particle.start_delay_max","Clip Speed Min":"particle.clip_speed_min","Clip Speed Max":"particle.clip_speed_max","Random Start Frame":"particle.random_start_frame","Opacity Start":"particle.opacity_start","Opacity End":"particle.opacity_end","Seed":"particle.seed"}
         for title,group,form,records in self._group_records:
             group.setTitle(t(group_keys[title]))
             tooltip_key={"Particle Resource":"tooltip.particle.resource","Emission":"tooltip.particle.emission","Spawn Shape":"tooltip.particle.spawn","Direction":"tooltip.particle.direction","Random Range":"tooltip.particle.random"}[title]
             for name,widget in records:form.labelForField(widget).setText(t(field_keys[name]));apply_tooltip(widget,l,tooltip_key,status=False)
-        self.random_start_frame.setText(t("particle.random_start_frame"))
+        self.random_start_frame.setText("")
         apply_tooltip(self.clip,l,"tooltip.particle.resource",status=False);apply_tooltip(self.output_frame_count,l,"tooltip.particle.output",status=False);apply_tooltip(self.random_start_frame,l,"tooltip.particle.random_start",status=False)
         for widget,key in ((self.randomize,"tooltip.particle.randomize"),(self.refresh,"tooltip.particle.preview"),(self.bake,"tooltip.particle.bake"),(self.export,"tooltip.particle.export"),(self.revert,"tooltip.particle.revert")):apply_tooltip(widget,l,key)
         if hasattr(self,"_heading_indexes"):

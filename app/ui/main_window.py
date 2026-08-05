@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QPushButton,
+    QSizePolicy,
 )
 
 from app.models.effect_generator import TransformEmitter, TransformEmitterSettings
@@ -59,7 +60,7 @@ from app.services.aseprite_import_service import import_aseprite
 from app.services.aseprite_locator_service import locate_aseprite, validate_aseprite
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.services.effect_composition_layer_render_service import render_effect_composition_layer, apply_effect_composition_layer
-from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
@@ -112,6 +113,10 @@ class MainWindow(QMainWindow):
             self.shortcuts = dict(DEFAULT_SHORTCUTS)
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self._advance_playback)
+        self._pending_resource_transforms={}
+        self._dirty_resource_transform_layers=set()
+        self.resource_transform_render_timer=QTimer(self);self.resource_transform_render_timer.setSingleShot(True);self.resource_transform_render_timer.timeout.connect(self._flush_resource_transform_current)
+        self.resource_transform_finalize_timer=QTimer(self);self.resource_transform_finalize_timer.setSingleShot(True);self.resource_transform_finalize_timer.timeout.connect(self._flush_resource_transform_final)
 
         self._build_ui()
         self._build_menus()
@@ -156,7 +161,7 @@ class MainWindow(QMainWindow):
         )
         self.particle_properties = ParticlePropertiesPanel()
         self.composition_layer_properties = CompositionLayerPropertiesPanel()
-        self.properties_stack = QStackedWidget(); self.properties_stack.setMinimumWidth(360)
+        self.properties_stack = QStackedWidget(); self.properties_stack.setMinimumWidth(280);self.properties_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding)
         self.properties_stack.addWidget(self.effect_properties); self.properties_stack.addWidget(self.particle_properties); self.properties_stack.addWidget(self.composition_layer_properties)
         self.editor_splitter.addWidget(self.properties_stack)
         self.editor_splitter.setStretchFactor(0, 0)
@@ -196,13 +201,13 @@ class MainWindow(QMainWindow):
             sizes = [int(item) for item in value] if isinstance(value, (list, tuple)) else []
         except (TypeError, ValueError):
             sizes = []
-        if len(sizes) != 3 or min(sizes) < 100 or sizes[2] < 340:
-            sizes = [230, 680, 370]
+        if len(sizes) != 3 or min(sizes) < 100 or sizes[2] < 280:
+            sizes = [230, 700, 300]
         self.editor_splitter.setSizes(sizes)
 
     def _save_splitter_sizes(self, *args) -> None:
         sizes = self.editor_splitter.sizes()
-        if len(sizes) == 3 and sizes[2] >= 340:
+        if len(sizes) == 3 and sizes[2] >= 280:
             self.settings_service.settings.setValue("ui/editor_splitter_sizes", sizes)
 
     def _build_menus(self) -> None:
@@ -356,6 +361,8 @@ class MainWindow(QMainWindow):
         self.resource_editor.retranslate_ui(self.localization)
         self.effect_workspace_button.setText(t("workspace.effect"));self.resource_workspace_button.setText(t("workspace.resource"))
         self.timeline.retranslate_ui(self.localization)
+        if hasattr(self,"project"):
+            self._update_resource_layer_display_names()
         self.undo_action.setText(t("action.undo") if not self.application_undo_stack.undoText() else t("action.undo_named").format(name=self.application_undo_stack.undoText()))
         self.redo_action.setText(t("action.redo") if not self.application_undo_stack.redoText() else t("action.redo_named").format(name=self.application_undo_stack.redoText()))
         self._refresh_tooltips()
@@ -465,6 +472,8 @@ class MainWindow(QMainWindow):
         self.canvas.gizmo_changed.connect(self._gizmo_changed)
         self.canvas.effect_guide_changed.connect(self._effect_guide_changed)
         self.canvas.effect_guide_cancelled.connect(self._effect_guide_cancelled)
+        self.canvas.resource_transform_changed.connect(self._resource_transform_gizmo_changed)
+        self.canvas.resource_transform_cancelled.connect(self._resource_transform_gizmo_cancelled)
         self.canvas.layer_selected.connect(lambda index:self.select_cell(index,self.frame_index))
         self.preview_manager.state_changed.connect(self._preview_state_changed)
         self.preview_manager.preview_ready.connect(self._preview_ready)
@@ -478,6 +487,10 @@ class MainWindow(QMainWindow):
         self.composition_layer_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.composition_layer_properties.resource_changed.connect(self.set_resource_layer_resource)
         self.particle_properties.mode_changed.connect(self.set_resource_layer_mode)
+        for panel in (self.composition_layer_properties,self.particle_properties):
+            panel.transform_changed.connect(self.update_resource_layer_transform)
+            panel.transform_keyframe_requested.connect(self.add_resource_layer_transform_keyframe)
+            panel.transform_gizmo_changed.connect(self._set_resource_transform_gizmo)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
         self.particle_preview_manager.preview_failed.connect(self._particle_preview_failed)
         self.resource_editor.import_requested.connect(self.import_resources)
@@ -571,11 +584,54 @@ class MainWindow(QMainWindow):
             current=next((item for item in self.project.effect_resource_layers if item.id==target_id),None)
             if current:
                 current.__dict__.update(deepcopy(value).__dict__)
+                invalidate_effect_resource_layer_base(current.id)
                 generated=apply_effect_resource_layer(self.project,current)
+                self._dirty_resource_transform_layers.discard(current.id)
                 self._sync_resource_layer_adapters()
                 if current.placement_mode==PLACEMENT_PARTICLE:self.particle_preview_manager.revert(current.as_particle_emitter())
                 self.layer_index=self.project.layers.index(generated)
                 self._refresh_all();self.select_resource_layer(current.id)
+        elif field=="resource_layer_transform":
+            current=next((item for item in self.project.effect_resource_layers if item.id==target_id),None)
+            if current:
+                current.layer_transform=deepcopy(value);self._queue_resource_transform_render(current)
+                self._sync_resource_layer_adapters()
+                self.project._current_effect_frame=self.frame_index
+                if current.placement_mode==PLACEMENT_PARTICLE:self.particle_properties.transform_panel.set_layer(current,self.frame_index)
+                else:self.composition_layer_properties.transform_panel.set_layer(current,self.frame_index)
+
+    def _queue_resource_transform_render(self,layer) -> None:
+        self._pending_resource_transforms[layer.id]=int(layer.layer_transform.revision)
+        self._dirty_resource_transform_layers.add(layer.id)
+        if not self.resource_transform_render_timer.isActive():self.resource_transform_render_timer.start(16)
+        self.resource_transform_finalize_timer.start(250)
+
+    def _flush_resource_transform_current(self) -> None:
+        pending=dict(self._pending_resource_transforms)
+        for identifier,revision in pending.items():
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is None or layer.layer_transform.revision!=revision:continue
+            generated=apply_effect_resource_layer_current_frame(self.project,layer,self.frame_index)
+            if generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
+            if self.canvas.resource_transform_id==identifier:self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=self.canvas.resource_transform_mode)
+        self.canvas.update()
+
+    def _flush_resource_transform_final(self) -> None:
+        self.resource_transform_render_timer.stop();pending=dict(self._pending_resource_transforms);self._pending_resource_transforms.clear()
+        for identifier,revision in pending.items():
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is None or layer.layer_transform.revision!=revision:continue
+            generated=apply_effect_resource_layer_current_frame(self.project,layer,self.frame_index)
+            if generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
+        self.canvas.update()
+
+    def _materialize_resource_transform_sequences(self) -> None:
+        self._flush_resource_transform_final()
+        identifiers=set(self._dirty_resource_transform_layers);self._dirty_resource_transform_layers.clear()
+        for identifier in identifiers:
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is not None:apply_effect_resource_layer(self.project,layer)
+        if identifiers:self._sync_resource_layer_adapters()
 
     def apply_undo_operation(self,operation,state,forward) -> None:
         if operation in {"add_frame","duplicate_frame"}:
@@ -712,6 +768,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.localization.text("status.opened").format(path=path), 4000)
 
     def save(self) -> bool:
+        self._materialize_resource_transform_sequences()
         if self.project_path is None:
             return self.save_as()
         try:
@@ -743,6 +800,7 @@ class MainWindow(QMainWindow):
         return self.save()
 
     def export_frames(self) -> None:
+        self._materialize_resource_transform_sequences()
         if self.preview_manager.dirty_generator_ids():
             self.statusBar().showMessage(
                 self.localization.text("message.export_without_preview"), 5000
@@ -830,6 +888,18 @@ class MainWindow(QMainWindow):
     def _sync_resource_layer_adapters(self) -> None:
         self.project.effect_composition_layers=[item.as_composition_layer() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_SINGLE]
         self.project.particle_emitters=[item.as_particle_emitter() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_PARTICLE]
+        self._update_resource_layer_display_names()
+
+    def _update_resource_layer_display_names(self) -> None:
+        for item in self.project.effect_resource_layers:
+            generated=next((layer for layer in self.project.layers if layer.id==item.generated_layer_id),None)
+            if generated is not None:
+                mode_key="resource_layer.particle" if item.placement_mode==PLACEMENT_PARTICLE else "resource_layer.single"
+                generated.name=f"{item.name} · {self.localization.text(mode_key)}"
+        if hasattr(self,"timeline"):
+            for row,layer in enumerate(reversed(self.project.layers)):
+                item=self.timeline.table.item(row,self.timeline.NAME_COLUMN)
+                if item is not None:item.setText(layer.name);item.setToolTip(layer.name)
 
     def create_resource_layer_from_resource(self, identifier: str, placement_mode: str = PLACEMENT_SINGLE):
         composition=next((item for item in self.project.resource_compositions if item.id==identifier),None)
@@ -1031,7 +1101,7 @@ class MainWindow(QMainWindow):
     def select_resource_layer(self, identifier: str) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer is None:return
-        self._clear_preview();self.canvas.set_gizmo(None)
+        self._clear_preview();self.canvas.set_gizmo(None);self.project._current_effect_frame=self.frame_index
         if layer.placement_mode==PLACEMENT_PARTICLE:
             self.properties_stack.setCurrentWidget(self.particle_properties)
             self.particle_properties.set_resource_layer(layer,self.project)
@@ -1041,6 +1111,7 @@ class MainWindow(QMainWindow):
             self.properties_stack.setCurrentWidget(self.composition_layer_properties)
             self.composition_layer_properties.set_resource_layer(layer,self.project)
             self.canvas.set_effect_guide(layer.id,"composition_layer",layer.as_composition_layer())
+        self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
         generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
         if generated is not None:self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
 
@@ -1056,6 +1127,34 @@ class MainWindow(QMainWindow):
         after=deepcopy(layer);after.resource_composition_id=resource_id;after.single_settings.resource_composition_id=resource_id
         after.particle_settings.resource_type="resource_composition";after.particle_settings.clip_asset_id=resource_id
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Resource Layer Resource",703))
+
+    def update_resource_layer_transform(self,identifier,transform) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,transform,"Resource Layer 2.5D Transform",704))
+
+    def add_resource_layer_transform_keyframe(self,identifier,property_id,frame,value,easing) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        after=deepcopy(layer.layer_transform);after.set_keyframe(property_id,frame,value,easing)
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,after,"Add 2.5D Transform Keyframe"))
+
+    def _set_resource_transform_gizmo(self,identifier,mode) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer:self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
+
+    def _resource_transform_gizmo_changed(self,identifier,transform,final) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        if not hasattr(self,"_resource_transform_before"):self._resource_transform_before={}
+        self._resource_transform_before.setdefault(identifier,deepcopy(layer.layer_transform));transform=deepcopy(transform);transform.revision=max(transform.revision,layer.layer_transform.revision+1);layer.layer_transform=transform
+        self._queue_resource_transform_render(layer);self.project._current_effect_frame=self.frame_index
+        panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;panel.set_layer(layer,self.frame_index);self.canvas.update()
+        if final:
+            before=self._resource_transform_before.pop(identifier);self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",before,transform,"2.5D Transform Gizmo"))
+
+    def _resource_transform_gizmo_cancelled(self,identifier,transform) -> None:
+        before=getattr(self,"_resource_transform_before",{}).pop(identifier,transform);self.apply_undo_value(identifier,"resource_layer_transform",before)
 
     def open_resource_editor(self,kind: str,identifier: str) -> None:
         self.set_workspace("resource");self.resource_editor.select_resource(kind,identifier)
@@ -1090,6 +1189,18 @@ class MainWindow(QMainWindow):
 
     def _effect_guide_changed(self, identifier: str, settings, final: bool) -> None:
         if self.play_timer.isActive():self.set_playing(False)
+        unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if unified is not None:
+            if self._effect_guide_before is None:self._effect_guide_before=deepcopy(unified)
+            if isinstance(settings,EffectCompositionLayer):unified.single_settings=deepcopy(settings);unified.start_frame=settings.start_frame;unified.end_frame=settings.end_frame
+            else:unified.particle_settings=deepcopy(settings)
+            generated=apply_effect_resource_layer(self.project,unified);self.layer_index=self.project.layers.index(generated);self._sync_resource_layer_adapters()
+            if isinstance(settings,EffectCompositionLayer):self.composition_layer_properties.set_resource_layer(unified,self.project)
+            else:self.particle_properties.set_resource_layer(unified,self.project);self.particle_properties.set_settings(settings)
+            if final:
+                before=self._effect_guide_before;self._effect_guide_before=None
+                self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,deepcopy(unified),"Resource Layer Content Guide"))
+            self.canvas.update();return
         if self._effect_guide_before is None:
             if isinstance(settings,EffectCompositionLayer):
                 current=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
@@ -1115,7 +1226,8 @@ class MainWindow(QMainWindow):
             self.application_undo_stack.push(EditorValueCommand(self,identifier,field,before,settings,"Effect Guide"))
 
     def _effect_guide_cancelled(self, identifier: str, before) -> None:
-        self._effect_guide_before=None
+        stored=self._effect_guide_before;self._effect_guide_before=None
+        if isinstance(stored,EffectResourceLayer):self.apply_undo_value(identifier,"resource_layer_settings",stored);return
         field="composition_layer_settings" if isinstance(before,EffectCompositionLayer) else "particle_settings"
         self.apply_undo_value(identifier,field,before)
 
@@ -1127,6 +1239,10 @@ class MainWindow(QMainWindow):
 
     def _particle_preview_ready(self, emitter_id: str, revision: int, frames: list) -> None:
         if self.particle_properties.emitter_id!=emitter_id:return
+        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        if unified:
+            from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
+            frames=[transform_rgba_frame(frame,unified.layer_transform,index) for index,frame in enumerate(frames)]
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter:self._activate_particle_preview(emitter,frames)
 
@@ -1141,6 +1257,12 @@ class MainWindow(QMainWindow):
         if emitter:self.particle_properties.set_settings(self.particle_preview_manager.revert(emitter).settings); self._clear_preview()
 
     def bake_particle_emitter(self, emitter_id: str, settings: ParticleEmitterSettings) -> bool:
+        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        if unified is not None:
+            after=deepcopy(unified);after.particle_settings=deepcopy(settings)
+            try:layer=apply_effect_resource_layer(self.project,after)
+            except (ValueError,MemoryError) as exc:QMessageBox.critical(self,self.localization.text("effects.bake"),str(exc));return False
+            unified.__dict__.update(after.__dict__);self._sync_resource_layer_adapters();self._clear_preview();self.layer_index=self.project.layers.index(layer);self._mark_dirty();self._refresh_all();return True
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter is None:return False
         draft=self.particle_preview_manager.update(self.project,emitter,settings,immediate=True); session=self.particle_preview_manager.sessions.get(emitter_id)
@@ -1154,7 +1276,12 @@ class MainWindow(QMainWindow):
         directory=QFileDialog.getExistingDirectory(self,self.localization.text("effects.export_preview"),str(Path("exports").resolve()))
         if not directory:return
         emitter=next(e for e in self.project.particle_emitters if e.id==emitter_id)
-        try: export_preview_sequence(session.frames,directory,emitter.name)
+        frames=session.frames
+        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        if unified:
+            from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
+            frames=[transform_rgba_frame(frame,unified.layer_transform,index) for index,frame in enumerate(frames)]
+        try: export_preview_sequence(frames,directory,emitter.name)
         except (ValueError,FileExistsError,OSError) as exc: QMessageBox.critical(self,self.localization.text("effects.export_preview"),str(exc))
     def _refresh_effect_panels(self) -> None:
         selected_generator = self.effect_library.current_generator_id()
@@ -1641,6 +1768,11 @@ class MainWindow(QMainWindow):
         if 0 <= index < self._display_frame_count():
             self.frame_index = index
             self.canvas.set_frame(index)
+            self.project._current_effect_frame=index
+            if 0<=self.layer_index<len(self.project.layers):
+                selected=next((item for item in self.project.effect_resource_layers if item.generated_layer_id==self.project.layers[self.layer_index].id),None)
+                if selected:
+                    panel=self.particle_properties.transform_panel if selected.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;panel.set_layer(selected,index);self.canvas.set_resource_layer_transform(selected.id,selected.layer_transform,mode=self.canvas.resource_transform_mode)
             self.timeline.set_current_cell(
                 self.project,
                 self.layer_index,
@@ -1663,6 +1795,7 @@ class MainWindow(QMainWindow):
             with QSignalBlocker(self.play_action):
                 self.play_action.setChecked(playing)
         if playing:
+            self._materialize_resource_transform_sequences()
             self.play_timer.start(max(1, round(1000 / self.project.fps)))
         else:
             self.play_timer.stop()

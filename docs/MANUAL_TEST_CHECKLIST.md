@@ -2,6 +2,16 @@
 
 이 문서는 사용자가 실제 Windows GUI에서 확인할 항목입니다. 자동 테스트 또는 오프스크린 시작 점검이 통과했더라도 수동 확인 전에는 체크하지 않습니다.
 
+## Resource Layer 2.5D Transform
+
+- Effect Inspector를 280px, 300px, 320px로 조절하고 Single/Particle 양쪽에서 가로 Scroll이나 오른쪽 잘림이 없는지 확인
+- 한국어↔영어 전환 및 Windows 100%/125%/150% DPI에서 2열 조작 버튼, 수치 입력, Path, Particle 설정과 세로 Scroll 확인
+- Position X/Y/Z, Rotation X/Y/Z, Scale X/Y, Opacity, Pivot, Perspective, Ctrl+Wheel, Reset, 명시적 Keyframe을 한국어·영어에서 확인
+- Single과 Particle Emission 각각 X/Y Tilt, Z Rotation, Position Z, Perspective, Content Guide, Preview/Bake/PNG/Sequence Export 확인
+- Move XYZ, Rotate XYZ, Scale, Pivot, Shift 15° Snap, Escape, Undo/Redo, Pan/Zoom 및 Handle 겹침 확인
+- 서로 다른 Z와 Animated Z의 앞뒤 순서, 같은 Z의 Timeline 순서 유지 확인
+- 100%/125%/150% DPI, 극단 X/Y Rotation, 작은/큰 Canvas와 Tooltip 확인
+
 ## Resource v5
 
 - [ ] PNG와 다중 프레임 GIF를 가져와 투명도와 frame duration이 유지된다.
@@ -429,3 +439,14 @@
 - [ ] Single과 Particle 설정을 각각 편집한 뒤 모드를 왕복해 양쪽 값이 유지되는지 확인한다.
 - [ ] 기존 v5 직접 배치와 Particle 프로젝트를 열어 ID·순서·표시·결과를 확인하고 다른 이름으로 저장해 다시 연다.
 - [ ] Add Composition Layer와 Add Particle System이 활성 UI에 남지 않았는지 확인한다.
+
+## Loop Hit Area·Inspector Label·2.5D 성능
+
+- [ ] New Resource에서 Loop 체크 표시와 글자를 각각 클릭해 토글되고, 글자 오른쪽 100px 이상의 빈 공간 클릭은 값을 바꾸지 않는지 확인한다.
+- [ ] Loop에 Tab으로 포커스한 뒤 Space로 토글하고 Enter/Create와 Escape/Cancel이 그대로 동작하는지 확인한다.
+- [ ] Effect Inspector를 280/300/320px로 맞춰 Single 및 Particle Emission의 모든 값에 화면 라벨이 보이고 가로 Scroll이나 Label/Editor 겹침이 없는지 확인한다.
+- [ ] 한국어·영어, Windows 125%·150% 배율에서 Resource, Emission, Spawn Shape, Direction, Random Range와 2.5D/Easing 라벨을 확인한다.
+- [ ] Particle Emission을 선택해 Position/Rotation XYZ와 Perspective를 빠르게 드래그하고 입력이 마지막 값에 따라오며 Inspector가 깜박이거나 재생성되지 않는지 확인한다.
+- [ ] 조작 중 Guide가 따라오고 Particle Ghost 지연이 조작 후 해제되며 Escape는 복원·Undo 없음, Release는 Undo 하나인지 확인한다.
+- [ ] Timeline/Playback/Status에 `사용자 레이어 이름 · 파티클 방출` 또는 `· Particle Emission`이 표시되고 활성 UI에 `Particle System:` 접두사가 없는지 확인한다.
+- [ ] 조작 후 재생, Save/Load, Preview, Bake와 PNG Export 결과가 동일한지 확인한다.

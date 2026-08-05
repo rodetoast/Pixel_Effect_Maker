@@ -4,6 +4,9 @@
 
 ### Added
 
+- Effect Editor 오른쪽 Resource Layer Inspector를 약 280~320px에서도 가로 Scroll 없이 사용할 수 있도록 반응형으로 변경하고, 2.5D 조작 버튼 2열 배치와 Transform/Path/Particle 입력 폭 및 한국어·영어·큰 글꼴 대응을 추가
+- Resource Layer 공통 2.5D Transform(Position X/Y/Z, Rotation X/Y/Z, Scale X/Y, Opacity, Pivot, Perspective), Keyframe/Easing, Stable Z 정렬, 3축 Canvas 조작을 Single과 Particle Emission 최종 출력에 동일하게 적용
+- FORMAT_VERSION 6을 유지하며 기존 v6과 v1~v5 마이그레이션에 Identity 기본값을 적용하고 Identity 출력은 기존 픽셀과 동일하게 보존
 - Effect Editor의 직접 배치와 파티클 방출을 하나의 Resource Layer와 Undo 가능한 Single/Particle Emission Placement Mode로 통합
 - 형식 1~5의 직접 배치·Particle 데이터를 ID·순서·Visibility·설정과 함께 형식 6 Resource Layer로 메모리 마이그레이션
 - 활성 Editor, Timeline, Gizmo, Particle, Resource 작업과 주요 Dialog에 행동·조건을 설명하는 한국어·영어 Hover Tooltip 추가
@@ -14,6 +17,9 @@
 
 ### Changed
 
+- Particle Emission의 원본 RGBA와 공통 2.5D 후처리 캐시를 분리하고, 조작 중 현재 프레임 요청을 16ms latest-wins 방식으로 병합
+- 좁은 Effect Inspector에서 모든 활성 Property Label을 입력 위로 줄바꿈할 수 있게 하고 한국어·영어 및 125%·150% 글꼴에서도 화면 라벨을 유지
+- 통합 Resource Layer의 생성 레이어 표시 이름을 `사용자 이름 · Single/Particle Emission` 형식으로 정리
 - Resource Editor의 Add to Effect 선택 메뉴를 `Add as Layer to Effect` 단일 흐름으로 변경하고 Effect Inspector에서 배치 방식을 선택하도록 단순화
 - 프로젝트 `FORMAT_VERSION`을 6으로 올리고 새 저장에서 중복된 직접 배치·Particle 배열 대신 `effect_resource_layers`만 기록
 - Resource Editor V2의 기본 우측 Inspector를 약 300px로 조정하고, 유효한 사용자 Splitter 저장값은 유지하되 과도하게 넓은 기존 값은 정규화
@@ -24,6 +30,9 @@
 
 ### Fixed
 
+- New Resource의 Loop 체크박스가 행 전체를 차지해 오른쪽 빈 영역에서도 토글되던 Hit Area 문제 수정
+- Particle Emission 2.5D 수치·기즈모 조작이 매 입력마다 Particle Simulation과 전체 Preview Sequence를 다시 만들던 문제 수정
+- 반응형 Effect Inspector에서 Resource, Emission, Spawn, Motion/Random 및 2.5D 속성명이 사라지던 문제 수정
 - Loop Resource의 Full Rotation 마지막 키를 `360 × (N - 1) / N`으로 생성해 루프 경계의 중복 자세를 제거하고 Non-loop는 360° 종점을 유지
 - Composition Layer, Particle System 및 기존 Transform Emitter의 생성 출력 레이어를 공통 삭제하고 Resource 원본은 보존하는 Undo/Redo 경로 추가
 - 포커스·텍스트 선택 상태와 무관하게 모든 활성 SpinBox의 Wheel 값 변경을 차단하고 상위 ScrollArea가 스크롤을 처리하도록 수정

@@ -138,7 +138,17 @@ class Project:
         """Alpha-composite visible layers and return an RGBA buffer."""
         output = np.zeros((self.height, self.width, 4), dtype=np.float32)
         frame = self.frames[index]
-        for layer in self.layers:
+        resource_by_generated = {item.generated_layer_id: item for item in self.effect_resource_layers}
+        resource_slots = [i for i, layer in enumerate(self.layers) if layer.id in resource_by_generated]
+        ordered_layers = list(self.layers)
+        # Stable ascending Z: farther layers first, nearer layers composite later.
+        sorted_resources = sorted(
+            (self.layers[i] for i in resource_slots),
+            key=lambda layer: resource_by_generated[layer.id].layer_transform.value("position_z", index),
+        )
+        for slot, layer in zip(resource_slots, sorted_resources, strict=True):
+            ordered_layers[slot] = layer
+        for layer in ordered_layers:
             if not layer.visible:
                 continue
             source = frame.layer_pixels.get(layer.id)

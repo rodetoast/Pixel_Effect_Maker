@@ -7,6 +7,7 @@ from .source_asset import SourceAsset
 from .animation_clip import AnimationClipAsset
 from .particle_emitter import ParticleEmitter, ParticleEmitterSettings, ParticleInstance
 from .resource_composition import ResourceComposition,CompositionLayer,AnimationTrack,Keyframe
+from .effect_resource_layer import EffectResourceLayer,EffectLayerTransform3D
 from .preview import GeneratorDraft, PreviewSession
 from .effect_generator import (
     DeformationSettings,
@@ -34,6 +35,7 @@ __all__ = [
     "ParticleEmitterSettings",
     "ParticleInstance",
     "ResourceComposition","CompositionLayer","AnimationTrack","Keyframe",
+    "EffectResourceLayer","EffectLayerTransform3D",
     "TransformEmitter",
     "TransformEmitterSettings",
 ]

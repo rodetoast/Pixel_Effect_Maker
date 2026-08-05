@@ -5,7 +5,12 @@ from typing import Any
 from uuid import uuid4
 
 EASINGS={"Linear","Ease In","Ease Out","Ease In/Out"}
-PROPERTY_DEFAULTS={"position":[0.0,0.0],"rotation":0.0,"scale":[1.0,1.0],"opacity":1.0}
+PROPERTY_DEFAULTS={
+    "position":[0.0,0.0],"rotation":0.0,"scale":[1.0,1.0],"opacity":1.0,
+    "position_x":0.0,"position_y":0.0,"position_z":0.0,
+    "rotation_x":0.0,"rotation_y":0.0,"rotation_z":0.0,
+    "scale_x":1.0,"scale_y":1.0,"perspective_strength":0.0,
+}
 
 @dataclass
 class Keyframe:

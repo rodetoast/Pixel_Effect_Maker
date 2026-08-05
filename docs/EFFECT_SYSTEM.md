@@ -2,6 +2,8 @@
 
 ## 목적
 
+Single과 Particle Renderer는 Canvas 크기 RGBA 결과에서 합류한 뒤 공통 Resource Layer 2.5D Transform을 거친다. 이 후처리는 Nearest-Neighbor 역매핑, 프레임별 Track 평가, Resource Layer끼리의 Stable Z 정렬을 사용한다. Particle 개별 인스턴스는 계속 2D다.
+
 이 시스템은 특정 초승달, 검기, 불꽃 형태를 판별하거나 파일명에 따라 특수 처리하지 않습니다. 임의의 투명 RGBA Source Asset을 여러 위치와 시간에 인스턴스화하고 동일한 Transform 파이프라인으로 Generated Layer를 만드는 범용 기반입니다.
 
 ## 데이터 흐름
@@ -35,6 +37,10 @@ Pseudo-3D는 실제 카메라나 3D 모델이 아닙니다. Source를 네 모서
 ## 비파괴 재생성
 
 Generate는 언제나 원본 Source Asset과 현재 settings에서 전체 출력 버퍼를 새로 계산합니다. 이전 Generated Layer를 다시 변형하지 않습니다. 계산을 완료한 뒤 해당 Emitter의 전용 레이어만 교체하며 일반 레이어, 다른 Emitter 결과와 Source 원본은 바꾸지 않습니다. 출력 프레임이 부족하면 확장하지만 기존 프레임은 삭제하지 않습니다.
+
+통합 Resource Layer에서는 콘텐츠 생성과 공통 2.5D 후처리를 분리한다. Particle/Single 설정, Resource revision, Canvas 크기와 FPS가 바뀌면 Base RGBA를 무효화한다. 공통 2.5D Transform만 바뀌면 Base는 유지하고 현재 프레임의 Nearest-Neighbor 후처리만 다시 계산한다. 고주파 입력은 Transform revision으로 병합하며 오래된 결과를 적용하지 않는다. 전체 Sequence는 재생·저장·Export가 요구할 때 캐시된 Base에서 지연 생성한다.
+
+생성 출력의 활성 UI 이름은 사용자 Resource Layer 이름을 보존하고 현재 모드를 덧붙인 `이름 · Single/Particle Emission` 형식이다. Legacy 모델과 Migration 내부 식별자는 호환성을 위해 유지한다.
 
 ## Live Preview와 Draft
 
