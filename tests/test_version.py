@@ -14,9 +14,9 @@ def test_display_name() -> None:
     assert get_display_name() == "Pixel Effect Maker v0.0.04"
 
 
-def test_project_format_version_is_five_for_resource_data() -> None:
-    assert FORMAT_VERSION == 5
-    assert Project.create_default().to_dict()["format_version"] == 5
+def test_project_format_version_is_six_for_resource_layers() -> None:
+    assert FORMAT_VERSION == 6
+    assert Project.create_default().to_dict()["format_version"] == 6
 
 
 def test_version_cli_does_not_start_gui(capsys) -> None:

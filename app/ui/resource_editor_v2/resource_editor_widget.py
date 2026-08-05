@@ -166,23 +166,17 @@ class ResourceEditorWidget(QWidget):
         self._push_value(self.selected_layer.id,"layer_meta",before,after,"Layer Properties",511)
     def _use_in_effect(self):
         if not self.composition:return
-        menu=QMenu(self)
-        direct=menu.addAction(self.localization.text("effect.add_as_composition_layer") if self.localization else "Add as Composition Layer")
-        particle=menu.addAction(self.localization.text("effect.add_as_particle_system") if self.localization else "Add as Particle System")
-        chosen=menu.exec(QCursor.pos())
-        if chosen is direct:self.request_add_to_effect("composition_layer")
-        elif chosen is particle:self.request_add_to_effect("particle_system")
+        self.request_add_to_effect("resource_layer")
 
     def request_add_to_effect(self, mode: str) -> None:
-        """Testable non-modal path used by the two menu choices."""
-        if not self.composition or mode not in {"composition_layer", "particle_system"}:return
-        self.add_to_effect_requested.emit(mode,"resource_composition",self.composition.id)
-        if mode=="particle_system":self.create_emitter_requested.emit("resource_composition",self.composition.id)
+        """Add the current Resource Composition as a single Resource Layer."""
+        if not self.composition or mode not in {"resource_layer","composition_layer","particle_system"}:return
+        self.add_to_effect_requested.emit("resource_layer","resource_composition",self.composition.id)
 
     def _delete_composition(self,identifier):
         composition=next((item for item in self.project.resource_compositions if item.id==identifier),None)
         if composition is None:return
-        if any(emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==identifier for emitter in self.project.particle_emitters) or any(layer.resource_composition_id==identifier for layer in self.project.effect_composition_layers):QMessageBox.warning(self,self.localization.text("v2.resources"),self.localization.text("composition.in_use"));return
+        if any(layer.resource_composition_id==identifier for layer in self.project.effect_resource_layers) or any(emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==identifier for emitter in self.project.particle_emitters) or any(layer.resource_composition_id==identifier for layer in self.project.effect_composition_layers):QMessageBox.warning(self,self.localization.text("v2.resources"),self.localization.text("composition.in_use"));return
         if not self._confirm(self.localization.text("v2.resources"),self.localization.text("composition.delete_confirm"),"v2.delete"):return
         self.project.resource_compositions.remove(composition);invalidate_composition_cache(identifier);self.controller.clear();self.composition_changed.emit("");self.browser.refresh(self.project)
 

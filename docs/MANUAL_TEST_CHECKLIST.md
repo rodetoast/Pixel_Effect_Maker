@@ -421,3 +421,11 @@
 - [ ] SpinBox 위 일반 Wheel과 포커스 후 일반 Wheel은 값이 변하지 않고 패널이 스크롤된다.
 - [ ] Ctrl+Wheel은 정수·소수 SpinBox의 `singleStep` 한 단계씩 움직이고 최소·최대 범위를 지킨다.
 - [ ] Ctrl+Wheel 사용 후에도 Native Up/Down 첫 클릭·반복 클릭·길게 누르기와 키보드 Up/Down이 정상 동작한다.
+
+## Resource Layer 형식 6
+
+- [ ] Resource Editor에서 `이펙트에 레이어로 추가` 후 Single Resource Layer가 선택된다.
+- [ ] Placement Mode를 Particle Emission으로 바꾸고 방출 Origin·Direction·Shape·Preview·Bake·Export를 확인한다.
+- [ ] Single과 Particle 설정을 각각 편집한 뒤 모드를 왕복해 양쪽 값이 유지되는지 확인한다.
+- [ ] 기존 v5 직접 배치와 Particle 프로젝트를 열어 ID·순서·표시·결과를 확인하고 다른 이름으로 저장해 다시 연다.
+- [ ] Add Composition Layer와 Add Particle System이 활성 UI에 남지 않았는지 확인한다.

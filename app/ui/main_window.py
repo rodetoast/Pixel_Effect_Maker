@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QInputDialog,
     QVBoxLayout,
     QWidget,
     QSplitter,
@@ -27,6 +28,7 @@ from app.models.project import Project, ProjectError
 from app.models.source_asset import SourceAsset
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from app.models.effect_composition_layer import EffectCompositionLayer
+from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE, PLACEMENT_SINGLE
 from app.services.clip_service import create_clip_from_generator, update_clip_from_generator
 from app.services.particle_render_service import apply_particle_frames, render_particle_frames
 from app.services.particle_preview_service import ParticlePreviewManager
@@ -57,6 +59,7 @@ from app.services.aseprite_import_service import import_aseprite
 from app.services.aseprite_locator_service import locate_aseprite, validate_aseprite
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.services.effect_composition_layer_render_service import render_effect_composition_layer, apply_effect_composition_layer
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
@@ -242,9 +245,10 @@ class MainWindow(QMainWindow):
         self.delete_layer_action = QAction("Delete Layer", self)
         self.layer_menu.addActions([self.new_layer_action, self.delete_layer_action])
         self.layer_menu.addSeparator()
-        self.add_composition_layer_action = QAction("Add Composition Layer", self)
+        self.add_composition_layer_action = QAction("Add Resource Layer", self)
+        self.add_resource_layer_action = self.add_composition_layer_action
         self.add_particle_system_action = QAction("Add Particle System", self)
-        self.layer_menu.addActions([self.add_composition_layer_action, self.add_particle_system_action])
+        self.layer_menu.addAction(self.add_resource_layer_action)
 
         self.frame_menu = self.menuBar().addMenu("Frame")
         self.new_frame_action = QAction("New Frame (Duplicate Current)", self)
@@ -336,8 +340,7 @@ class MainWindow(QMainWindow):
             self.play_action: "action.play_stop",
             self.status_bar_action: "action.status_bar",
             self.interface_settings_action: "interface.title",
-            self.add_composition_layer_action: "effect.add_composition_layer",
-            self.add_particle_system_action: "effect.add_particle_system",
+            self.add_resource_layer_action: "resource_layer.add",
             self.editing_guides_action: "effect.editing_guides",
         }
         for action, key in mapping.items():
@@ -373,8 +376,7 @@ class MainWindow(QMainWindow):
             self.delete_frame_action: "tooltip.main.delete_frame", self.status_bar_action: "tooltip.main.status_bar",
             self.interface_settings_action: "tooltip.main.interface", self.undo_action: "tooltip.undo",
             self.redo_action: "tooltip.redo",
-            self.add_composition_layer_action: "tooltip.effect.add_composition_layer",
-            self.add_particle_system_action: "tooltip.effect.add_particle_system",
+            self.add_resource_layer_action: "tooltip.resource_layer.add",
             self.editing_guides_action: "tooltip.effect.show_guides",
         }
         for action, key in action_keys.items():
@@ -423,8 +425,7 @@ class MainWindow(QMainWindow):
         self.play_action.toggled.connect(self.set_playing)
         self.status_bar_action.toggled.connect(self.statusBar().setVisible)
         self.editing_guides_action.toggled.connect(self._set_effect_guides_visible)
-        self.add_composition_layer_action.triggered.connect(self.add_default_composition_layer)
-        self.add_particle_system_action.triggered.connect(self.add_default_particle_system)
+        self.add_resource_layer_action.triggered.connect(self.add_default_resource_layer)
         self.timeline.add_requested.connect(self.add_frame)
         self.timeline.duplicate_requested.connect(self.duplicate_frame)
         self.timeline.delete_requested.connect(self.delete_frame)
@@ -446,9 +447,9 @@ class MainWindow(QMainWindow):
         self.effect_library.add_particle_requested.connect(self.add_particle_emitter)
         self.effect_library.add_particle_from_resource_requested.connect(self.create_particle_from_resource)
         self.effect_library.clip_selected.connect(self.select_animation_clip)
-        self.effect_library.particle_selected.connect(self.select_particle_emitter)
-        self.effect_library.composition_selected.connect(self.select_effect_composition_layer)
-        self.effect_library.add_composition_requested.connect(self.create_composition_layer_from_resource)
+        self.effect_library.particle_selected.connect(self.select_resource_layer)
+        self.effect_library.composition_selected.connect(self.select_resource_layer)
+        self.effect_library.add_composition_requested.connect(self.create_resource_layer_from_resource)
         self.effect_library.resource_open_requested.connect(self.open_resource_editor)
         self.effect_properties.generate_requested.connect(self.generate_effect)
         self.effect_properties.reset_requested.connect(self.reset_generator_settings)
@@ -474,6 +475,9 @@ class MainWindow(QMainWindow):
         self.particle_properties.revert_requested.connect(self.revert_particle_draft)
         self.particle_properties.export_requested.connect(self.export_particle_preview)
         self.composition_layer_properties.changed.connect(self.update_composition_layer)
+        self.composition_layer_properties.mode_changed.connect(self.set_resource_layer_mode)
+        self.composition_layer_properties.resource_changed.connect(self.set_resource_layer_resource)
+        self.particle_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
         self.particle_preview_manager.preview_failed.connect(self._particle_preview_failed)
         self.resource_editor.import_requested.connect(self.import_resources)
@@ -545,7 +549,11 @@ class MainWindow(QMainWindow):
     def apply_undo_value(self,target_id,field,value) -> None:
         if field=="effect_visibility":
             layer=next((item for item in self.project.layers if item.id==target_id),None)
-            if layer:layer.visible=bool(value);self.canvas.update();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count(),preview=self.active_preview_generator_id is not None)
+            if layer:
+                layer.visible=bool(value)
+                resource=next((item for item in self.project.effect_resource_layers if item.generated_layer_id==target_id),None)
+                if resource:resource.visible=bool(value)
+                self.canvas.update();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count(),preview=self.active_preview_generator_id is not None)
         elif field=="particle_settings":
             emitter=next((item for item in self.project.particle_emitters if item.id==target_id),None)
             if emitter:
@@ -559,6 +567,15 @@ class MainWindow(QMainWindow):
                 self.composition_layer_properties.set_layer(layer,self.project)
                 self.canvas.set_effect_guide(layer.id,"composition_layer",layer)
                 self.layer_index=self.project.layers.index(generated);self._refresh_all()
+        elif field=="resource_layer_settings":
+            current=next((item for item in self.project.effect_resource_layers if item.id==target_id),None)
+            if current:
+                current.__dict__.update(deepcopy(value).__dict__)
+                generated=apply_effect_resource_layer(self.project,current)
+                self._sync_resource_layer_adapters()
+                if current.placement_mode==PLACEMENT_PARTICLE:self.particle_preview_manager.revert(current.as_particle_emitter())
+                self.layer_index=self.project.layers.index(generated)
+                self._refresh_all();self.select_resource_layer(current.id)
 
     def apply_undo_operation(self,operation,state,forward) -> None:
         if operation in {"add_frame","duplicate_frame"}:
@@ -589,18 +606,38 @@ class MainWindow(QMainWindow):
                 self.layer_index=index
         elif operation=="delete_effect_layer":
             self._apply_effect_layer_delete(state, forward)
+        elif operation=="add_resource_layer":
+            resource=state["resource_layer"];generated=state["generated_layer"]
+            if forward:
+                if state.pop("initial_redo",False):pass
+                else:
+                    self.project.effect_resource_layers.insert(min(state["resource_index"],len(self.project.effect_resource_layers)),resource)
+                    self.project.layers.insert(min(state["layer_index"],len(self.project.layers)),generated)
+                    for frame,pixels in zip(self.project.frames,state["pixels"]):frame.layer_pixels[generated.id]=pixels
+                self._sync_resource_layer_adapters();self.layer_index=self.project.layers.index(generated)
+            else:
+                if resource in self.project.effect_resource_layers:self.project.effect_resource_layers.remove(resource)
+                if generated in self.project.layers:self.project.layers.remove(generated)
+                for frame in self.project.frames:frame.layer_pixels.pop(generated.id,None)
+                self._sync_resource_layer_adapters();self.layer_index=max(0,min(state["layer_index"]-1,len(self.project.layers)-1))
         self._refresh_all()
         if operation == "delete_effect_layer":
             model_info = state.get("model_info")
             if forward or not model_info:
                 self.composition_layer_properties.set_layer(None, self.project)
                 self.particle_properties.set_emitter(None, self.project)
+            elif model_info["kind"] == "resource_layer":
+                self.select_resource_layer(model_info["model"].id)
             elif model_info["kind"] == "composition_layer":
                 self.select_effect_composition_layer(model_info["model"].id)
             elif model_info["kind"] == "particle_system":
                 self.select_particle_emitter(model_info["model"].id)
             else:
                 self.select_generator(model_info["model"].id)
+        elif operation=="add_resource_layer":
+            if forward:self.select_resource_layer(state["resource_layer"].id)
+            else:
+                self.canvas.set_effect_guide(None);self.composition_layer_properties.set_resource_layer(None,self.project);self.particle_properties.set_resource_layer(None,self.project)
 
     def _confirm_discard(self) -> bool:
         if not self.dirty:
@@ -776,43 +813,56 @@ class MainWindow(QMainWindow):
         self._mark_dirty();self.statusBar().showMessage(self.localization.text("resource.preview_invalidated"),4000)
 
     def create_particle_from_resource(self,kind: str,identifier: str):
+        if kind=="resource_composition":return self.create_resource_layer_from_resource(identifier,PLACEMENT_PARTICLE)
         if kind=="animation_clip":emitter=self.add_particle_emitter(identifier)
-        elif kind=="resource_composition":
-            composition=next((r for r in self.project.resource_compositions if r.id==identifier),None)
-            if composition is None:return None
-            emitter=ParticleEmitter(name=f"Particle System {len(self.project.particle_emitters)+1}",settings=ParticleEmitterSettings(identifier,resource_type="resource_composition",origin_x=self.project.width/2,origin_y=self.project.height/2));self.project.particle_emitters.append(emitter);self._mark_dirty();self.effect_library.refresh(self.project)
         else:
             source=next((r for r in self.project.source_assets if r.id==identifier),None)
             if source is None:return None
-            emitter=ParticleEmitter(name=f"Particle System {len(self.project.particle_emitters)+1}",settings=ParticleEmitterSettings(identifier,resource_type="source_asset",origin_x=self.project.width/2,origin_y=self.project.height/2));self.project.particle_emitters.append(emitter);self._mark_dirty();self.effect_library.refresh(self.project)
-        if emitter:self.set_workspace("effect");self.select_particle_emitter(emitter.id);self.particle_preview_manager.ensure_draft(emitter);self.particle_preview_manager.schedule(self.project,emitter.id)
-        return emitter
+            emitter=ParticleEmitter(name=f"Resource Layer {len(self.project.effect_resource_layers)+1}",settings=ParticleEmitterSettings(identifier,resource_type="source_asset",origin_x=self.project.width/2,origin_y=self.project.height/2))
+        if isinstance(emitter,EffectResourceLayer):return emitter
+        if emitter:
+            layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
+        return None
 
     def _resource_add_to_effect(self, mode: str, kind: str, identifier: str) -> None:
-        # Particle mode also emits the compatibility signal handled above.
-        if mode=="composition_layer" and kind=="resource_composition":
-            self.create_composition_layer_from_resource(identifier)
+        if kind=="resource_composition":self.create_resource_layer_from_resource(identifier)
 
-    def create_composition_layer_from_resource(self, identifier: str):
+    def _sync_resource_layer_adapters(self) -> None:
+        self.project.effect_composition_layers=[item.as_composition_layer() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_SINGLE]
+        self.project.particle_emitters=[item.as_particle_emitter() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_PARTICLE]
+
+    def create_resource_layer_from_resource(self, identifier: str, placement_mode: str = PLACEMENT_SINGLE):
         composition=next((item for item in self.project.resource_compositions if item.id==identifier),None)
         if composition is None:return None
-        number=len(self.project.effect_composition_layers)+1
-        layer=EffectCompositionLayer(
-            name=f"Composition Layer {number}",resource_composition_id=identifier,
-            start_x=self.project.width/2,start_y=self.project.height/2,
-            end_x=self.project.width/2,end_y=self.project.height/2,
-            start_frame=0,end_frame=max(0,len(self.project.frames)-1),
+        number=len(self.project.effect_resource_layers)+1
+        layer=EffectResourceLayer(
+            name=f"Resource Layer {number}",resource_composition_id=identifier,
+            placement_mode=placement_mode,start_frame=0,end_frame=max(0,len(self.project.frames)-1),
         )
-        outputs=render_effect_composition_layer(self.project,layer)
-        generated=apply_effect_composition_layer(self.project,layer,outputs)
-        self.project.effect_composition_layers.append(layer);self._mark_dirty()
+        layer.single_settings.start_x=layer.single_settings.end_x=self.project.width/2
+        layer.single_settings.start_y=layer.single_settings.end_y=self.project.height/2
+        layer.particle_settings.origin_x=self.project.width/2;layer.particle_settings.origin_y=self.project.height/2
+        layer.particle_settings.line_end_x=self.project.width*.75;layer.particle_settings.line_end_y=self.project.height/2
+        generated=apply_effect_resource_layer(self.project,layer)
+        self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters()
         self.layer_index=self.project.layers.index(generated);self.set_workspace("effect")
-        self._refresh_all();self.select_effect_composition_layer(layer.id)
+        state={"resource_layer":layer,"generated_layer":generated,"resource_index":len(self.project.effect_resource_layers)-1,"layer_index":self.layer_index,"pixels":[frame.layer_pixels[generated.id] for frame in self.project.frames],"initial_redo":True}
+        self.application_undo_stack.push(EditorOperationCommand(self,"add_resource_layer",state,"Add Resource Layer"));self.select_resource_layer(layer.id)
         return layer
 
+    def create_composition_layer_from_resource(self, identifier: str):
+        return self.create_resource_layer_from_resource(identifier)
+
     def add_default_composition_layer(self) -> None:
-        if self.project.resource_compositions:self.create_composition_layer_from_resource(self.project.resource_compositions[0].id)
-        else:QMessageBox.information(self,self.localization.text("effect.composition_layer"),self.localization.text("effect.resource_required"))
+        self.add_default_resource_layer()
+
+    def add_default_resource_layer(self) -> None:
+        if self.project.resource_compositions:
+            compositions=self.project.resource_compositions
+            if len(compositions)==1:self.create_resource_layer_from_resource(compositions[0].id);return
+            names=[item.name for item in compositions];name,ok=QInputDialog.getItem(self,self.localization.text("resource_layer.add"),self.localization.text("resource_layer.title"),names,0,False)
+            if ok:self.create_resource_layer_from_resource(compositions[names.index(name)].id)
+        else:QMessageBox.information(self,self.localization.text("resource_layer.title"),self.localization.text("effect.resource_required"))
 
     def add_default_particle_system(self) -> None:
         if self.project.resource_compositions:self.create_particle_from_resource("resource_composition",self.project.resource_compositions[0].id)
@@ -828,6 +878,8 @@ class MainWindow(QMainWindow):
         for layer in self.project.effect_composition_layers:
             if layer.resource_composition_id==identifier:
                 apply_effect_composition_layer(self.project,layer,render_effect_composition_layer(self.project,layer))
+        for layer in self.project.effect_resource_layers:
+            if layer.resource_composition_id==identifier:apply_effect_resource_layer(self.project,layer)
         self._refresh_effect_panels()
 
     def reimport_resource(self,kind: str,identifier: str) -> bool:
@@ -958,6 +1010,8 @@ class MainWindow(QMainWindow):
         self._clear_preview(); self.canvas.set_gizmo(None); self.canvas.set_effect_guide(None); self.properties_stack.setCurrentWidget(self.effect_properties); self.effect_properties.set_generator(None,self.project)
 
     def select_effect_composition_layer(self, identifier: str) -> None:
+        unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if unified is not None:self.select_resource_layer(identifier);return
         layer=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
         if layer is None:return
         self._clear_preview();self.canvas.set_gizmo(None);self.properties_stack.setCurrentWidget(self.composition_layer_properties)
@@ -967,8 +1021,41 @@ class MainWindow(QMainWindow):
             self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
 
     def update_composition_layer(self, identifier: str, value: EffectCompositionLayer) -> None:
+        unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if unified:
+            after=deepcopy(unified);after.single_settings=deepcopy(value);after.start_frame=value.start_frame;after.end_frame=value.end_frame
+            self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",unified,after,"Resource Layer Settings",701));return
         layer=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
         if layer:self.application_undo_stack.push(EditorValueCommand(self,identifier,"composition_layer_settings",layer,value,"Composition Layer Path",701))
+
+    def select_resource_layer(self, identifier: str) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        self._clear_preview();self.canvas.set_gizmo(None)
+        if layer.placement_mode==PLACEMENT_PARTICLE:
+            self.properties_stack.setCurrentWidget(self.particle_properties)
+            self.particle_properties.set_resource_layer(layer,self.project)
+            emitter=layer.as_particle_emitter();draft=self.particle_preview_manager.ensure_draft(emitter);self.particle_properties.set_settings(draft.settings)
+            self.canvas.set_effect_guide(layer.id,"particle_system",draft.settings)
+        else:
+            self.properties_stack.setCurrentWidget(self.composition_layer_properties)
+            self.composition_layer_properties.set_resource_layer(layer,self.project)
+            self.canvas.set_effect_guide(layer.id,"composition_layer",layer.as_composition_layer())
+        generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
+        if generated is not None:self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
+
+    def set_resource_layer_mode(self, identifier: str, mode: str) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None or mode==layer.placement_mode:return
+        after=deepcopy(layer);after.set_placement_mode(mode)
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Placement Mode",702))
+
+    def set_resource_layer_resource(self, identifier: str, resource_id: str) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None or layer.resource_composition_id==resource_id:return
+        after=deepcopy(layer);after.resource_composition_id=resource_id;after.single_settings.resource_composition_id=resource_id
+        after.particle_settings.resource_type="resource_composition";after.particle_settings.clip_asset_id=resource_id
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Resource Layer Resource",703))
 
     def open_resource_editor(self,kind: str,identifier: str) -> None:
         self.set_workspace("resource");self.resource_editor.select_resource(kind,identifier)
@@ -976,10 +1063,12 @@ class MainWindow(QMainWindow):
     def add_particle_emitter(self, clip_id: str):
         clip=next((c for c in self.project.animation_clips if c.id==clip_id),None)
         if clip is None:return None
-        emitter=ParticleEmitter(name=f"Particle System {len(self.project.particle_emitters)+1}",settings=ParticleEmitterSettings(clip_asset_id=clip.id,origin_x=self.project.width/2,origin_y=self.project.height/2,line_end_x=self.project.width*.75,line_end_y=self.project.height/2,radius=min(self.project.width,self.project.height)/4))
-        self.project.particle_emitters.append(emitter); self._mark_dirty(); self.effect_library.refresh(self.project); self.select_particle_emitter(emitter.id); return emitter
+        emitter=ParticleEmitter(name=f"Resource Layer {len(self.project.effect_resource_layers)+1}",settings=ParticleEmitterSettings(clip_asset_id=clip.id,origin_x=self.project.width/2,origin_y=self.project.height/2,line_end_x=self.project.width*.75,line_end_y=self.project.height/2,radius=min(self.project.width,self.project.height)/4))
+        layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
 
     def select_particle_emitter(self, emitter_id: str) -> None:
+        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        if unified is not None:self.select_resource_layer(emitter_id);return
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None); self.canvas.set_gizmo(None); self.properties_stack.setCurrentWidget(self.particle_properties); self.particle_properties.set_emitter(emitter,self.project)
         if emitter is None:return
         draft=self.particle_preview_manager.ensure_draft(emitter); self.particle_properties.set_settings(draft.settings)
@@ -989,6 +1078,11 @@ class MainWindow(QMainWindow):
         else:self._clear_preview()
 
     def update_particle_draft(self, emitter_id: str, settings: ParticleEmitterSettings) -> None:
+        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        if unified:
+            after=deepcopy(unified);after.particle_settings=deepcopy(settings)
+            if settings.resource_type=="resource_composition":after.resource_composition_id=settings.resource_id;after.single_settings.resource_composition_id=settings.resource_id
+            self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"resource_layer_settings",unified,after,"Resource Layer Particle Settings",700));return
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter:
             draft=self.particle_preview_manager.ensure_draft(emitter);before=draft.settings
@@ -1437,6 +1531,7 @@ class MainWindow(QMainWindow):
 
     def _effect_model_for_layer(self, layer):
         for collection_name, kind in (
+            ("effect_resource_layers", "resource_layer"),
             ("effect_composition_layers", "composition_layer"),
             ("particle_emitters", "particle_system"),
             ("generators", "legacy_generator"),
@@ -1472,9 +1567,10 @@ class MainWindow(QMainWindow):
                 if model_info["model"] in collection:
                     collection.remove(model_info["model"])
                 identifier = model_info["model"].id
-                manager = self.particle_preview_manager if model_info["kind"] == "particle_system" else self.preview_manager
+                manager = self.particle_preview_manager if model_info["kind"] in {"particle_system","resource_layer"} else self.preview_manager
                 manager.drafts.pop(identifier, None)
                 manager.sessions.pop(identifier, None)
+                if model_info["kind"]=="resource_layer":self._sync_resource_layer_adapters()
             if layer in self.project.layers:
                 self.project.layers.remove(layer)
             for frame in self.project.frames:
@@ -1499,6 +1595,7 @@ class MainWindow(QMainWindow):
             if model_info:
                 collection = getattr(self.project, model_info["collection"])
                 collection.insert(min(model_info["index"], len(collection)), model_info["model"])
+                if model_info["kind"]=="resource_layer":self._sync_resource_layer_adapters()
             self.layer_index = index
             self.frame_index = min(state["frame_index"], len(self.project.frames) - 1)
 
@@ -1525,9 +1622,11 @@ class MainWindow(QMainWindow):
         self.canvas.set_layer(layer_index)
         self.canvas.set_frame(frame_index)
         layer=self.project.layers[layer_index]
+        resource_layer=next((item for item in self.project.effect_resource_layers if item.generated_layer_id==layer.id),None)
         composition_layer=next((item for item in self.project.effect_composition_layers if item.generated_layer_id==layer.id),None)
         particle=next((item for item in self.project.particle_emitters if item.generated_layer_id==layer.id),None)
-        if composition_layer:self.select_effect_composition_layer(composition_layer.id)
+        if resource_layer:self.select_resource_layer(resource_layer.id)
+        elif composition_layer:self.select_effect_composition_layer(composition_layer.id)
         elif particle:self.select_particle_emitter(particle.id)
         self.timeline.set_current_cell(
             self.project,

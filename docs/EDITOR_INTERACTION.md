@@ -34,6 +34,8 @@ MainWindow의 단일 `application_undo_stack`을 모든 Workspace가 공유한�
 
 Full Rotation은 Loop Resource에서 마지막 프레임을 `±360 × turns × (N - 1) / N`으로 만들고, Non-loop에서는 `±360 × turns` 종점을 유지한다. 1프레임 Loop는 0° 키 하나만, 2프레임 Loop는 0°와 ±180°를 사용한다. 선택한 Effect Layer 삭제는 생성 모델과 렌더 출력 레이어를 한 명령으로 제거하며 Resource Composition 원본은 보존한다. 마지막 생성 레이어를 지우면 프로젝트 불변식을 위한 빈 일반 레이어를 두고 Undo 시 원래 모델·픽셀·선택을 복원한다.
 
+Effect Editor의 활성 레이어는 Resource Layer로 통일한다. Resource Editor의 `Add as Layer to Effect`는 Single 모드 레이어를 즉시 만들며, Inspector의 Placement Mode가 Single/Particle Emission을 Undo 가능한 값으로 전환한다. 전환은 ID·순서·Visibility·Resource 참조와 양쪽 설정을 유지한다.
+
 ## Gizmo
 
 Move의 이미지/중앙 영역은 Free, 빨간 X Handle은 X만, 초록 Y Handle은 Y만 정수 픽셀로 변경한다. Scale 모서리는 균등, X/Y Handle은 해당 축만 변경하며 최소 0.01이다. Rotate는 2D Z 회전만 제공하고 Shift는 15°로 스냅한다. Pivot→Rotate→Scale→Axis Move→Free Area 순으로 Hit-test하며 Handle 크기는 zoom과 무관한 화면 기준 픽셀이다.

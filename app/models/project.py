@@ -15,8 +15,9 @@ from .animation_clip import AnimationClipAsset
 from .particle_emitter import ParticleEmitter
 from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
+from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 
 class ProjectError(ValueError):
@@ -40,6 +41,7 @@ class Project:
     particle_emitters: list[ParticleEmitter] = field(default_factory=list)
     resource_compositions: list[ResourceComposition] = field(default_factory=list)
     effect_composition_layers: list[EffectCompositionLayer] = field(default_factory=list)
+    effect_resource_layers: list[EffectResourceLayer] = field(default_factory=list)
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
@@ -93,6 +95,9 @@ class Project:
         for composition_layer in self.effect_composition_layers:
             if composition_layer.generated_layer_id == layer.id:
                 composition_layer.generated_layer_id = None
+        for resource_layer in self.effect_resource_layers:
+            if resource_layer.generated_layer_id == layer.id:
+                resource_layer.generated_layer_id = None
         for frame in self.frames:
             frame.layer_pixels.pop(layer.id, None)
 
@@ -162,9 +167,8 @@ class Project:
             "source_assets": [asset.to_dict() for asset in self.source_assets],
             "generators": [generator.to_dict() for generator in self.generators],
             "animation_clips": [clip.to_dict() for clip in self.animation_clips],
-            "particle_emitters": [emitter.to_dict() for emitter in self.particle_emitters],
             "resource_compositions": [composition.to_dict() for composition in self.resource_compositions],
-            "effect_composition_layers": [layer.to_dict() for layer in self.effect_composition_layers],
+            "effect_resource_layers": [layer.to_dict() for layer in self.effect_resource_layers],
         }
 
     @classmethod
@@ -172,7 +176,7 @@ class Project:
         if not isinstance(data, dict):
             raise ProjectError("project root must be a JSON object")
         version = data.get("format_version")
-        if version not in (1, 2, 3, 4, FORMAT_VERSION):
+        if version not in (1, 2, 3, 4, 5, FORMAT_VERSION):
             raise ProjectError(f"unsupported format_version: {version!r}")
         try:
             canvas = data["canvas"]
@@ -204,7 +208,12 @@ class Project:
                 project.particle_emitters = [ParticleEmitter.from_dict(item) for item in data.get("particle_emitters", [])]
             if int(version) >= 5:
                 project.resource_compositions = [ResourceComposition.from_dict(item) for item in data.get("resource_compositions", [])]
+            if int(version) == 5:
                 project.effect_composition_layers = [EffectCompositionLayer.from_dict(item) for item in data.get("effect_composition_layers", [])]
+            if int(version) >= 6:
+                project.effect_resource_layers = [EffectResourceLayer.from_dict(item) for item in data.get("effect_resource_layers", [])]
+                project.effect_composition_layers = [item.as_composition_layer() for item in project.effect_resource_layers if item.placement_mode != PLACEMENT_PARTICLE]
+                project.particle_emitters = [item.as_particle_emitter() for item in project.effect_resource_layers if item.placement_mode == PLACEMENT_PARTICLE]
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(f"invalid project data: {exc}") from exc
         if not project.layers or not project.frames:
@@ -255,6 +264,13 @@ class Project:
                 raise ProjectError("Composition Layer references an unknown Resource Composition")
             if effect_layer.generated_layer_id is not None and effect_layer.generated_layer_id not in layer_ids:
                 raise ProjectError("Composition Layer references an unknown generated layer")
+        if len({item.id for item in project.effect_resource_layers}) != len(project.effect_resource_layers):
+            raise ProjectError("Resource Layer IDs must be unique")
+        for resource_layer in project.effect_resource_layers:
+            if resource_layer.resource_composition_id and resource_layer.resource_composition_id not in composition_ids:
+                raise ProjectError("Resource Layer references an unknown Resource Composition")
+            if resource_layer.generated_layer_id is not None and resource_layer.generated_layer_id not in layer_ids:
+                raise ProjectError("Resource Layer references an unknown generated layer")
         for composition in project.resource_compositions:
             for layer in composition.layers:
                 valid=asset_ids if layer.source_type=="source_asset" else clip_ids
@@ -263,4 +279,28 @@ class Project:
                 for property_id,track in layer.tracks.items():
                     if property_id!=track.property_id:raise ProjectError("composition track ID does not match its property")
                     if any(key.frame>=composition.frame_count for key in track.keyframes):raise ProjectError("composition keyframe is outside the composition")
+        if int(version) <= 5:
+            position = {layer.id: index for index, layer in enumerate(project.layers)}
+            migrated = [
+                EffectResourceLayer.from_composition_layer(
+                    item,
+                    next((layer.visible for layer in project.layers if layer.id == item.generated_layer_id), True),
+                ) for item in project.effect_composition_layers
+            ]
+            migrated.extend(
+                EffectResourceLayer.from_particle_emitter(
+                    item,
+                    next((layer.visible for layer in project.layers if layer.id == item.generated_layer_id), True),
+                ) for item in project.particle_emitters
+            )
+            project.effect_resource_layers = sorted(
+                migrated,
+                key=lambda item: position.get(item.generated_layer_id, len(position)),
+            )
+        if len({item.id for item in project.effect_resource_layers}) != len(project.effect_resource_layers):
+            raise ProjectError("Resource Layer IDs must be unique")
+        if int(version) >= 6:
+            by_id={layer.id:layer for layer in project.layers}
+            for item in project.effect_resource_layers:
+                if item.generated_layer_id in by_id:by_id[item.generated_layer_id].visible=item.visible
         return project

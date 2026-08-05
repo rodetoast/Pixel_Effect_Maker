@@ -10,10 +10,11 @@ from .tooltip_helper import apply_tooltip
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
     revert_requested = Signal(str); export_requested = Signal(str); gizmo_mode_changed = Signal(str)
+    mode_changed = Signal(str, str)
     def __init__(self, parent=None):
         super().__init__(parent); self.setWidgetResizable(True); self.setMinimumWidth(360); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.emitter_id = None; self._loading = False; self._localization = None
-        body=QWidget(); self.layout=QVBoxLayout(body); self.title=QLabel("Particle System"); self.layout.addWidget(self.title);self._group_records=[]
+        body=QWidget(); self.layout=QVBoxLayout(body); self.title=QLabel("Resource Layer"); self.layout.addWidget(self.title);self.resource_layer_id=None;self.mode=FocusWheelComboBox();self.mode.addItem("Single","single");self.mode.addItem("Particle Emission","particle");self.layout.addWidget(self.mode);self.mode_help=QLabel("Emit multiple instances of the same resource with direction, speed, and lifetime.");self.mode_help.setWordWrap(True);self.layout.addWidget(self.mode_help);self.mode.currentIndexChanged.connect(self._mode_changed);self._group_records=[]
         self.clip=FocusWheelComboBox(); self.output_frame_count=self._i(1,512); self.start_frame=self._i(0,511)
         self.emission_mode=self._combo(("burst","over_time")); self.count_min=self._i(0,4096); self.count_max=self._i(0,4096); self.emission_duration=self._i(1,512)
         self.spawn_shape=self._combo(("point","line","circle","box")); self.origin_x=self._n(-4096,4096); self.origin_y=self._n(-4096,4096); self.line_end_x=self._n(-4096,4096); self.line_end_y=self._n(-4096,4096); self.radius=self._n(0,4096); self.box_width=self._n(0,4096); self.box_height=self._n(0,4096); self.start_angle=self._n(-3600,3600); self.end_angle=self._n(-3600,3600)
@@ -51,6 +52,18 @@ class ParticlePropertiesPanel(QScrollArea):
         self.widget().setEnabled(emitter is not None)
         if emitter: self.set_settings(emitter.settings)
         self._loading=False
+    def set_resource_layer(self, layer, project):
+        self.resource_layer_id=None if layer is None else layer.id
+        self.set_emitter(None if layer is None else layer.as_particle_emitter(),project)
+        self._loading=True
+        if layer is not None:
+            self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
+            if layer.resource_composition_id:
+                self.clip.clear();[self.clip.addItem(item.name,("resource_composition",item.id)) for item in project.resource_compositions];self.clip.setCurrentIndex(max(0,self.clip.findData(("resource_composition",layer.resource_composition_id))))
+        self._loading=False
+    def _mode_changed(self,*args):
+        mode=str(self.mode.currentData());self.mode_help.setText(self._localization.text("resource_layer.single_help" if mode=="single" else "resource_layer.particle_help") if self._localization else ("Place one resource directly in the Effect Composition." if mode=="single" else "Emit multiple instances of the same resource with direction, speed, and lifetime."))
+        if not self._loading and self.resource_layer_id:self.mode_changed.emit(self.resource_layer_id,mode)
     def set_settings(self,s):
         self._loading=True
         mapping={"clip":"clip_asset_id","count_min":"particle_count_min","count_max":"particle_count_max"}
@@ -71,7 +84,7 @@ class ParticlePropertiesPanel(QScrollArea):
         if not self._loading and self.emitter_id: self.draft_changed.emit(self.emitter_id,self.settings())
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
-        self._localization=l; t=l.text; self.title.setText(t("particle.title")); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"))
+        self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"))
         group_keys={"Particle Resource":"particle.resource","Emission":"particle.emission","Spawn Shape":"particle.spawn_shape","Direction":"particle.direction","Random Range":"particle.random_range"}
         field_keys={"Resource":"particle.resource_label","Output Frames":"particle.output_frames","Start Frame":"particle.start_frame","Mode":"particle.mode","Count Min":"particle.count_min","Count Max":"particle.count_max","Duration":"particle.duration","Shape":"particle.shape","Origin X":"particle.origin_x","Origin Y":"particle.origin_y","Line End X":"particle.line_end_x","Line End Y":"particle.line_end_y","Radius":"particle.radius","Box Width":"particle.box_width","Box Height":"particle.box_height","Start Angle":"particle.start_angle","End Angle":"particle.end_angle","Direction":"particle.direction_value","Spread":"particle.spread","Speed Min":"particle.speed_min","Speed Max":"particle.speed_max","Lifetime Min":"particle.lifetime_min","Lifetime Max":"particle.lifetime_max","Scale Min":"particle.scale_min","Scale Max":"particle.scale_max","Rotation Min":"particle.rotation_min","Rotation Max":"particle.rotation_max","Angular Velocity Min":"particle.angular_velocity_min","Angular Velocity Max":"particle.angular_velocity_max","Start Delay Min":"particle.start_delay_min","Start Delay Max":"particle.start_delay_max","Clip Speed Min":"particle.clip_speed_min","Clip Speed Max":"particle.clip_speed_max","Random Start Frame":"particle.random_start_frame","Opacity Start":"particle.opacity_start","Opacity End":"particle.opacity_end","Seed":"particle.seed"}
         for title,group,form,records in self._group_records:

@@ -1,6 +1,6 @@
 # Pixel Effect Maker
 
-현재 버전은 **v0.0.04**이며, 가져온 에셋을 타임라인 기반 Resource Composition으로 애니메이션화해 Particle에 사용하는 첫 알파 체크포인트입니다.
+현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
 
 Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽셀 편집기가 되는 것이 아닙니다. 사용자가 만든 임의의 투명 PNG를 비파괴 Source Asset으로 가져오고, 범용 Emitter와 시간 기반 Transform으로 여러 프레임의 픽셀 이펙트를 반자동 생성하는 도구를 목표로 합니다. 파일명이나 특정 실루엣에 따른 특수 처리는 사용하지 않습니다.
 
@@ -22,7 +22,7 @@ Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽
 - 빈 캔버스에서도 보이는 Playing/Stopped, 현재 프레임, 전체 프레임 수, FPS 상태 표시
 - 현재 프레임 열 강조와 자동 스크롤
 - RGBA/RGB/인덱스/그레이스케일 PNG의 독립 Source Asset 가져오기와 프로젝트 내부 픽셀 저장
-- Imported Assets, Resource Compositions, Legacy Clip Generators, Particle Emitters를 구분하는 편집 흐름
+- Imported Assets, Resource Compositions, Resource Layers와 Legacy Clip Generators를 구분하는 편집 흐름
 - Point, Line, Circle 배치의 범용 Transform Emitter
 - Position, Rotation Z, 독립 Scale X/Y, 반전, Opacity의 수명 기반 보간
 - Horizontal Tilt, Vertical Tilt, Perspective의 최근접 사각형 변형
@@ -38,14 +38,14 @@ Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽
 - 독립 RGBA Animation Clip 생성·명시적 업데이트 및 공유
 - Seed 결정적 Particle Emitter와 Animated Particle Preview, Bake, PNG 시퀀스 출력
 - PNG/GIF Embedded Resource, GIF 프레임 duration과 정적 Resource Particle 재생
-- 프로젝트 레이어별 표시 전환과 형식 5 Resource Composition 저장
+- 프로젝트 레이어별 표시 전환과 형식 6 Resource Layer 저장
 - Effect Editor/Resource Editor Workspace 전환과 통합 Resource Library
 - PNG/GIF/Aseprite 다중 Drag and Drop, 전용 Preview·duration Timeline·Pivot 편집
 - 비어 있는 Resource Editor에서 에셋 가져오기 또는 빈 Resource Composition 생성을 선택하는 시작 패널
 - 정적/애니메이션 Resource 공통 Particle Picker와 Resource→Emitter 생성
 - QSettings 기반 External Tools Aseprite 경로 탐색·검증
 - 움직이는 8프레임 `Playback Test Project`
-- `.peffect.json` 형식 5 저장/불러오기와 형식 1·2·3·4 프로젝트 마이그레이션
+- `.peffect.json` 형식 6 저장/불러오기와 형식 1~5 프로젝트 자동 마이그레이션
 - 합성 프레임의 투명 PNG 순차 내보내기
 - 미저장 변경 표시와 닫기/새 프로젝트/불러오기 시 확인
 

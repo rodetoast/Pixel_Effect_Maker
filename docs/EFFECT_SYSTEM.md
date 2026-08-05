@@ -6,12 +6,12 @@
 
 ## 데이터 흐름
 
-외부 PNG/GIF/Aseprite는 Imported Asset이 된 뒤 Resource Editor의 Composition Layer에서 비파괴적으로 애니메이션화됩니다. Resource Composition은 Effect Editor에 Composition Layer로 직접 배치하거나 Particle System의 Resource로 연결하며 파일 형식별 별도 이동·방출 렌더 경로를 만들지 않습니다.
+외부 PNG/GIF/Aseprite는 Imported Asset이 된 뒤 Resource Editor에서 Resource Composition으로 비파괴 애니메이션화됩니다. Effect Editor에는 Resource Layer 하나로 추가하고 Placement Mode에서 Single 또는 Particle Emission을 선택합니다.
 
 ```text
 Imported Asset
 → Resource Composition
-→ Composition Layer 또는 Particle System
+→ Resource Layer (Single 또는 Particle Emission)
 → deterministic Particle Instances
 → non-destructive Preview
 → Bake / Preview Sequence Export
@@ -46,7 +46,7 @@ Canvas는 Preview 활성 Generator의 실제 Generated Layer를 transient Previe
 
 ## 파일 형식
 
-애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `5`입니다. 형식 5는 Imported Asset, 기존 Animation Clip/Particle/Legacy Generator와 함께 Resource Composition의 크기·FPS·길이·Loop, Layer, Track, Keyframe과 easing을 저장합니다. 형식 1~4는 기존 데이터를 유지하고 Composition 목록만 빈 상태로 보완합니다.
+애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `6`입니다. 형식 6은 `effect_resource_layers`에 Single과 Particle Emission 설정을 함께 저장하고 활성 모드만 렌더합니다. 형식 1~5는 로드 시 메모리에서 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
 
 ## Particle 규칙
 

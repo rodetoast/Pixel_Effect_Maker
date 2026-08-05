@@ -167,29 +167,24 @@ def resource_project(window):
     return composition
 
 
-def test_resource_can_be_added_by_both_effect_paths_and_round_trips(tmp_path):
+def test_resource_layer_preserves_both_modes_and_round_trips(tmp_path):
     window = MainWindow(service(tmp_path)); composition = resource_project(window)
     direct = window.create_composition_layer_from_resource(composition.id)
     particle = window.create_particle_from_resource("resource_composition", composition.id)
-    assert direct.resource_composition_id == composition.id and direct.layer_type == "animation_clip"
-    assert particle.settings.resource_type == "resource_composition" and particle.generator_type == "particle_emitter"
+    assert direct.resource_composition_id == composition.id and direct.placement_mode == "single"
+    assert particle.settings.resource_type == "resource_composition" and particle.placement_mode == "particle"
     loaded = type(window.project).from_dict(window.project.to_dict())
-    assert loaded.effect_composition_layers[0].to_dict() == direct.to_dict()
+    assert [item.to_dict() for item in loaded.effect_resource_layers] == [direct.to_dict(), particle.to_dict()]
     window.dirty=False; window.close()
 
 
-def test_resource_add_to_effect_cancel_is_noop(tmp_path, monkeypatch):
+def test_resource_add_to_effect_has_one_non_modal_path(tmp_path, monkeypatch):
     window = MainWindow(service(tmp_path)); composition = resource_project(window)
     editor = window.resource_editor; editor.refresh(window.project); editor.controller.select_composition(composition.id)
-    class CancelMenu:
-        def __init__(self, *args): pass
-        def addAction(self, text): return object()
-        def exec(self, *args): return None
-    before = deepcopy(window.project.to_dict())
-    monkeypatch.setattr("app.ui.resource_editor_v2.resource_editor_widget.QMenu", CancelMenu)
     editor._use_in_effect()
-    assert window.project.to_dict() == before
-    window.close()
+    assert len(window.project.effect_resource_layers)==1
+    assert window.project.effect_resource_layers[0].placement_mode=="single"
+    window.dirty=False;window.close()
 
 
 def test_composition_layer_canvas_drag_is_one_undo_step_and_escape_is_noop(tmp_path):
@@ -260,18 +255,18 @@ def test_composition_inspector_updates_canvas_guide_and_visibility_tooltip_is_dy
     window.dirty=False; window.close()
 
 
-def test_effect_editor_uses_new_user_terms_and_keeps_legacy_serialization(tmp_path):
+def test_effect_editor_uses_resource_layer_terms_and_v6_serialization(tmp_path):
     window = MainWindow(service(tmp_path)); composition = resource_project(window)
     direct = window.create_composition_layer_from_resource(composition.id)
     particle = window.create_particle_from_resource("resource_composition", composition.id)
-    assert window.effect_library.composition_group.title() == "Composition Layers"
-    assert window.effect_library.particle_group.title() == "Particle Systems"
-    assert window.particle_properties.title.text() == "Particle System"
-    assert "Composition Layer" in window.add_composition_layer_action.text()
-    assert "Particle System" in window.add_particle_system_action.text()
+    assert window.effect_library.composition_group.title() == "Resource Layers"
+    assert not window.effect_library.particle_group.isVisible()
+    assert window.particle_properties.title.text() == "Resource Layer"
+    assert "Resource Layer" in window.add_resource_layer_action.text()
+    assert window.add_particle_system_action not in window.layer_menu.actions()
     serialized = window.project.to_dict()
-    assert serialized["effect_composition_layers"][0]["layer_type"] == "animation_clip"
-    assert serialized["particle_emitters"][0]["generator_type"] == "particle_emitter"
+    assert "effect_composition_layers" not in serialized and "particle_emitters" not in serialized
+    assert [item["placement_mode"] for item in serialized["effect_resource_layers"]] == ["single", "particle"]
     assert direct.resource_composition_id == composition.id and particle.settings.resource_id == composition.id
     window.dirty=False; window.close()
 

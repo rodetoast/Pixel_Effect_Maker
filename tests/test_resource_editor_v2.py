@@ -61,12 +61,12 @@ def test_click_flow_asset_to_rotating_particle_preview(tmp_path,monkeypatch):
     QTest.mouseClick(editor.layer_inspector.full_rotation,Qt.MouseButton.LeftButton);assert [key.value for key in layer.tracks["rotation"].keyframes]==[0.0,330.0]
     first=render_composition_frame(window.project,composition,0);middle=render_composition_frame(window.project,composition,3);assert not np.array_equal(first,middle)
     editor.setFocus();QTest.keyClick(editor,Qt.Key.Key_Return);assert editor._playing and editor.timer.interval()==83;editor.stop()
-    assert editor.layer_inspector.use.isVisibleTo(window);editor.request_add_to_effect("particle_system");assert window.workspace_stack.currentIndex()==0
-    emitter=window.project.particle_emitters[-1];assert emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==composition.id
-    for _ in range(50):
-        QTest.qWait(20);APPLICATION.processEvents()
-        if emitter.id in window.particle_preview_manager.sessions:break
-    session=window.particle_preview_manager.sessions.get(emitter.id);assert session is not None and len(session.frames)==emitter.settings.output_frame_count;assert any(not np.array_equal(session.frames[0],frame) for frame in session.frames[1:])
+    assert editor.layer_inspector.use.isVisibleTo(window);editor.request_add_to_effect("resource_layer");assert window.workspace_stack.currentIndex()==0
+    effect_layer=window.project.effect_resource_layers[-1];assert effect_layer.resource_composition_id==composition.id and effect_layer.placement_mode=="single"
+    window.set_resource_layer_mode(effect_layer.id,"particle");assert effect_layer.placement_mode=="particle"
+    assert effect_layer.particle_settings.resource_type=="resource_composition" and effect_layer.particle_settings.resource_id==composition.id
+    window.application_undo_stack.undo();assert effect_layer.placement_mode=="single"
+    window.application_undo_stack.redo();assert effect_layer.placement_mode=="particle"
     window.dirty=False;window.close()
 
 

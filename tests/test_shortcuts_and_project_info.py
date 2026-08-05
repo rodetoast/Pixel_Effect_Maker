@@ -238,7 +238,7 @@ def test_project_settings_uses_latest_project_state(application, tmp_path) -> No
     assert "File: Not Saved" in first.info_label.text()
     assert "Frames: 1" in first.info_label.text()
     assert "Layers: 1" in first.info_label.text()
-    assert "Format: 5" in first.info_label.text()
+    assert "Format: 6" in first.info_label.text()
 
     window.project.name = "Burst"
     window.project.add_frame()

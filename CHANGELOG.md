@@ -4,6 +4,8 @@
 
 ### Added
 
+- Effect Editor의 직접 배치와 파티클 방출을 하나의 Resource Layer와 Undo 가능한 Single/Particle Emission Placement Mode로 통합
+- 형식 1~5의 직접 배치·Particle 데이터를 ID·순서·Visibility·설정과 함께 형식 6 Resource Layer로 메모리 마이그레이션
 - 활성 Editor, Timeline, Gizmo, Particle, Resource 작업과 주요 Dialog에 행동·조건을 설명하는 한국어·영어 Hover Tooltip 추가
 - 현재 사용자 설정 단축키와 Play/Pause·Show/Hide 상태를 반영하는 공통 Tooltip 적용 구조 및 누락 자동 감사 테스트 추가
 - Resource Composition을 컴포지션 레이어로 직접 배치하거나 파티클 시스템 리소스로 사용하는 두 가지 Effect 추가 경로
@@ -12,6 +14,8 @@
 
 ### Changed
 
+- Resource Editor의 Add to Effect 선택 메뉴를 `Add as Layer to Effect` 단일 흐름으로 변경하고 Effect Inspector에서 배치 방식을 선택하도록 단순화
+- 프로젝트 `FORMAT_VERSION`을 6으로 올리고 새 저장에서 중복된 직접 배치·Particle 배열 대신 `effect_resource_layers`만 기록
 - Resource Editor V2의 기본 우측 Inspector를 약 300px로 조정하고, 유효한 사용자 Splitter 저장값은 유지하되 과도하게 넓은 기존 값은 정규화
 - SpinBox 일반 Wheel은 상위 패널 스크롤에 맡기고, 명시적인 Ctrl+Wheel만 현재 `singleStep` 단위로 값을 변경
 - 사용자 용어를 Effect Composition, Resource Composition, Composition Layer, Particle System, Emission Origin/Shape로 정리

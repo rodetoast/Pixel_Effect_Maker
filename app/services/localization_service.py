@@ -260,6 +260,14 @@ KO = {
 }
 
 EN.update({
+    "resource_layer.title": "Resource Layer", "resource_layer.plural": "Resource Layers",
+    "resource_layer.add": "Add Resource Layer", "resource_layer.placement_mode": "Placement Mode",
+    "resource_layer.single": "Single", "resource_layer.particle": "Particle Emission",
+    "resource_layer.single_help": "Place one resource directly in the Effect Composition.",
+    "resource_layer.particle_help": "Emit multiple instances of the same resource with direction, speed, and lifetime.",
+    "tooltip.resource_layer.add": "Add a Resource Composition as a Resource Layer. Choose Single or Particle Emission in its Inspector.",
+    "tooltip.resource_layer.mode": "Choose whether this Resource Layer places one instance or emits multiple particles. Both configurations are preserved.",
+    "tooltip.resource_layer.resource": "Choose the Resource Composition shared by both placement modes.",
     "action.undo":"Undo","action.redo":"Redo","action.undo_named":"Undo: {name}","action.redo_named":"Redo: {name}",
     "interface.title":"Interface Settings…","interface.timeline_frame_width":"Timeline Frame Width","interface.restore_default":"Restore Default",
     "tooltip.timeline_frame_width":"Changes the width of frame cells in every open timeline (20–96 px).",
@@ -547,17 +555,25 @@ EN.update({
     "particle.resource": "Particle Resource",
     "composition.in_use": "This composition is used by an Effect layer.",
     "resource.create_emitter": "Add to Effect…",
-    "v2.use_in_effect": "Add to Effect…",
+    "v2.use_in_effect": "Add as Layer to Effect",
     "tooltip.effect.add_composition_layer": "Place one Resource Composition directly in the effect timeline with an editable start and end path.",
     "tooltip.effect.add_particle_system": "Spawn multiple instances of a Resource Composition using emission, direction, speed, and lifetime settings.",
     "tooltip.effect.composition_path": "Edit the Composition Layer start and end points. The canvas guide updates immediately.",
     "tooltip.effect.show_guides": "Show emission position, direction, range, and representative paths without playing Preview.",
     "tooltip.effect.canvas_guides": "Drag the selected Composition Layer start/end points or Particle System emission origin, direction, expected endpoint, and shape handles. Hold Shift for 15° direction snapping; Escape cancels a drag.",
     "tooltip.effect.add_particle": "Add a Particle System using the selected animated resource.",
-    "tooltip.resource.use": "Choose whether to add this Resource Composition directly or use it as a Particle System resource.",
+    "tooltip.resource.use": "Add this Resource Composition as a Resource Layer in the Effect Editor.",
 })
 
 KO.update({
+    "resource_layer.title": "리소스 레이어", "resource_layer.plural": "리소스 레이어",
+    "resource_layer.add": "리소스 레이어 추가", "resource_layer.placement_mode": "배치 방식",
+    "resource_layer.single": "단일 배치", "resource_layer.particle": "파티클 방출",
+    "resource_layer.single_help": "리소스 하나를 이펙트 컴포지션에 직접 배치합니다.",
+    "resource_layer.particle_help": "같은 리소스를 여러 개 생성해 방향, 속도와 수명에 따라 움직입니다.",
+    "tooltip.resource_layer.add": "리소스 컴포지션을 리소스 레이어로 추가합니다. Inspector에서 단일 배치 또는 파티클 방출을 선택하세요.",
+    "tooltip.resource_layer.mode": "리소스 하나를 직접 배치할지 여러 파티클로 방출할지 선택합니다. 두 설정은 모두 보존됩니다.",
+    "tooltip.resource_layer.resource": "두 배치 방식이 공유할 리소스 컴포지션을 선택합니다.",
     "effect.composition": "이펙트 컴포지션",
     "effect.composition_layer": "컴포지션 레이어",
     "effect.composition_layers": "컴포지션 레이어",
@@ -584,14 +600,14 @@ KO.update({
     "particle.resource": "파티클 리소스",
     "composition.in_use": "이 컴포지션은 이펙트 레이어에서 사용 중입니다.",
     "resource.create_emitter": "이펙트에 추가…",
-    "v2.use_in_effect": "이펙트에 추가…",
+    "v2.use_in_effect": "이펙트에 레이어로 추가",
     "tooltip.effect.add_composition_layer": "리소스 컴포지션 하나를 편집 가능한 시작점과 끝점 경로로 이펙트 타임라인에 직접 배치합니다.",
     "tooltip.effect.add_particle_system": "리소스 컴포지션을 방출, 방향, 속도와 수명 설정에 따라 여러 인스턴스로 생성합니다.",
     "tooltip.effect.composition_path": "컴포지션 레이어의 시작점과 끝점을 편집합니다. 캔버스 가이드가 즉시 갱신됩니다.",
     "tooltip.effect.show_guides": "Preview를 재생하지 않아도 방출 위치, 방향, 범위와 대표 경로를 표시합니다.",
     "tooltip.effect.canvas_guides": "선택한 컴포지션 레이어의 시작·끝점 또는 파티클 시스템의 방출 원점·방향·예상 도달점·형태 핸들을 드래그합니다. Shift는 방향을 15°로 맞추고 Escape는 드래그를 취소합니다.",
     "tooltip.effect.add_particle": "선택한 애니메이션 리소스를 사용하는 파티클 시스템을 추가합니다.",
-    "tooltip.resource.use": "이 리소스 컴포지션을 직접 배치할지 파티클 시스템 리소스로 사용할지 선택합니다.",
+    "tooltip.resource.use": "이 리소스 컴포지션을 이펙트 에디터의 리소스 레이어로 추가합니다.",
 })
 
 
