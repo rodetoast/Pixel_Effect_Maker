@@ -121,6 +121,10 @@ class MainWindow(QMainWindow):
         self._dirty_resource_transform_layers=set()
         self.resource_transform_render_timer=QTimer(self);self.resource_transform_render_timer.setSingleShot(True);self.resource_transform_render_timer.timeout.connect(self._flush_resource_transform_current)
         self.resource_transform_finalize_timer=QTimer(self);self.resource_transform_finalize_timer.setSingleShot(True);self.resource_transform_finalize_timer.timeout.connect(self._flush_resource_transform_final)
+        self._pending_particle_motion={}
+        self._dirty_particle_motion_layers=set()
+        self.particle_motion_render_timer=QTimer(self);self.particle_motion_render_timer.setSingleShot(True);self.particle_motion_render_timer.timeout.connect(self._flush_particle_motion_current)
+        self.particle_motion_finalize_timer=QTimer(self);self.particle_motion_finalize_timer.setSingleShot(True);self.particle_motion_finalize_timer.timeout.connect(self._flush_particle_motion_final)
         self._timeline_scrubbing=False
 
         self._build_ui()
@@ -496,6 +500,7 @@ class MainWindow(QMainWindow):
         self.composition_layer_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.composition_layer_properties.resource_changed.connect(self.set_resource_layer_resource)
         self.particle_properties.mode_changed.connect(self.set_resource_layer_mode)
+        self.particle_properties.motion_keyframe_requested.connect(self.add_particle_motion_keyframe)
         for panel in (self.composition_layer_properties,self.particle_properties):
             panel.transform_changed.connect(self.update_resource_layer_transform)
             panel.transform_panel.interactive_transform_changed.connect(self.update_resource_layer_transform_property)
@@ -603,10 +608,17 @@ class MainWindow(QMainWindow):
         elif field=="resource_layer_settings":
             current=next((item for item in self.project.effect_resource_layers if item.id==target_id),None)
             if current:
+                motion_only=self._is_particle_motion_only_change(current,value)
+                if motion_only:
+                    current.__dict__.update(deepcopy(value).__dict__);invalidate_effect_resource_layer_base(current.id);self._sync_resource_layer_adapters()
+                    draft=self.particle_preview_manager.ensure_draft(current.as_particle_emitter());draft.settings=deepcopy(current.particle_settings);draft.revision+=1;draft.is_dirty=False;self.particle_preview_manager.sessions.pop(current.id,None)
+                    if self.particle_properties.emitter_id==current.id:self.particle_properties.set_resource_layer(current,self.project);self.canvas.set_effect_guide(current.id,"particle_system",current.particle_settings)
+                    self._queue_particle_motion_render(current);return
                 self.canvas.clear_interactive_transform_proxy(update=False);self.canvas.proxy_base_image_cache.clear(current.id)
                 current.__dict__.update(deepcopy(value).__dict__)
                 invalidate_effect_resource_layer_base(current.id)
                 generated=apply_effect_resource_layer(self.project,current)
+                self._dirty_particle_motion_layers.discard(current.id)
                 self._dirty_resource_transform_layers.discard(current.id)
                 self._sync_resource_layer_adapters()
                 if current.placement_mode==PLACEMENT_PARTICLE:self.particle_preview_manager.revert(current.as_particle_emitter())
@@ -631,6 +643,37 @@ class MainWindow(QMainWindow):
             self.canvas.queue_interactive_transform_proxy(layer,base,base_key)
         if not self.resource_transform_render_timer.isActive():self.resource_transform_render_timer.start(33)
         self.resource_transform_finalize_timer.start(120)
+
+    @staticmethod
+    def _is_particle_motion_only_change(before,after) -> bool:
+        if before.placement_mode!=PLACEMENT_PARTICLE or after.placement_mode!=PLACEMENT_PARTICLE:return False
+        left=before.to_dict();right=after.to_dict();left_settings=left.pop("particle_settings");right_settings=right.pop("particle_settings")
+        left_settings.pop("motion",None);right_settings.pop("motion",None)
+        return left==right and left_settings==right_settings and before.particle_settings.motion!=after.particle_settings.motion
+
+    def _queue_particle_motion_render(self,layer,final=False) -> None:
+        draft=self.particle_preview_manager.ensure_draft(layer.as_particle_emitter());draft.settings=deepcopy(layer.particle_settings);self.particle_preview_manager.sessions.pop(layer.id,None)
+        revision=int(layer.particle_settings.motion.revision);self._pending_particle_motion[layer.id]=(revision,int(self.frame_index));self._dirty_particle_motion_layers.add(layer.id)
+        if final:self._flush_particle_motion_final();return
+        if not self.particle_motion_render_timer.isActive():self.particle_motion_render_timer.start(33)
+        self.particle_motion_finalize_timer.start(120)
+
+    def _flush_particle_motion_current(self) -> None:
+        for identifier,(revision,frame) in dict(self._pending_particle_motion).items():
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is None or layer.particle_settings.motion.revision!=revision:continue
+            generated=apply_effect_resource_layer_current_frame(self.project,layer,frame)
+            if generated is not None and generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
+        self.canvas.update()
+
+    def _flush_particle_motion_final(self) -> None:
+        self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self._flush_particle_motion_current();self._pending_particle_motion.clear()
+
+    def _render_dirty_particle_motion_frame(self,frame: int) -> None:
+        if self.active_preview_generator_id is not None:return
+        for identifier in tuple(self._dirty_particle_motion_layers):
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is not None and layer.placement_mode==PLACEMENT_PARTICLE:apply_effect_resource_layer_current_frame(self.project,layer,frame)
 
     def _flush_resource_transform_current(self) -> None:
         pending=dict(self._pending_resource_transforms)
@@ -689,8 +732,8 @@ class MainWindow(QMainWindow):
         self._timeline_scrubbing=False;self._schedule_resource_transform_prewarm()
 
     def _materialize_resource_transform_sequences(self) -> None:
-        self._flush_resource_transform_final()
-        identifiers=set(self._dirty_resource_transform_layers);self._dirty_resource_transform_layers.clear()
+        self._flush_resource_transform_final();self._flush_particle_motion_final()
+        identifiers=set(self._dirty_resource_transform_layers)|set(self._dirty_particle_motion_layers);self._dirty_resource_transform_layers.clear();self._dirty_particle_motion_layers.clear()
         for identifier in identifiers:
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is not None:apply_effect_resource_layer(self.project,layer)
@@ -1225,6 +1268,12 @@ class MainWindow(QMainWindow):
         after=deepcopy(layer.layer_transform);after.set_keyframe(property_id,frame,value,easing)
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,after,"Add 2.5D Transform Keyframe"))
 
+    def add_particle_motion_keyframe(self,identifier,property_id,value,easing) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None or layer.placement_mode!=PLACEMENT_PARTICLE:return
+        before=deepcopy(layer);after=deepcopy(layer);after.particle_settings.motion.set_keyframe(property_id,self.frame_index,float(value),str(easing))
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,after,"Add Particle Motion Keyframe"))
+
     def _set_resource_transform_gizmo(self,identifier,mode) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer:self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
@@ -1292,7 +1341,10 @@ class MainWindow(QMainWindow):
             if self._effect_guide_before is None:self._effect_guide_before=deepcopy(unified)
             if isinstance(settings,EffectCompositionLayer):unified.single_settings=deepcopy(settings);unified.start_frame=settings.start_frame;unified.end_frame=settings.end_frame
             else:unified.particle_settings=deepcopy(settings)
-            generated=apply_effect_resource_layer(self.project,unified);self.layer_index=self.project.layers.index(generated);self._sync_resource_layer_adapters()
+            if isinstance(settings,ParticleEmitterSettings) and settings.motion.mode in {"orbit","helix"}:
+                invalidate_effect_resource_layer_base(unified.id);self._sync_resource_layer_adapters();self._queue_particle_motion_render(unified,final=final)
+            else:
+                generated=apply_effect_resource_layer(self.project,unified);self.layer_index=self.project.layers.index(generated);self._sync_resource_layer_adapters()
             if isinstance(settings,EffectCompositionLayer):self.composition_layer_properties.set_resource_layer(unified,self.project)
             else:self.particle_properties.set_resource_layer(unified,self.project);self.particle_properties.set_settings(settings)
             if final:
@@ -1361,7 +1413,7 @@ class MainWindow(QMainWindow):
             after=deepcopy(unified);after.particle_settings=deepcopy(settings)
             try:layer=apply_effect_resource_layer(self.project,after)
             except (ValueError,MemoryError) as exc:QMessageBox.critical(self,self.localization.text("effects.bake"),str(exc));return False
-            unified.__dict__.update(after.__dict__);self._sync_resource_layer_adapters();self._clear_preview();self.layer_index=self.project.layers.index(layer);self._mark_dirty();self._refresh_all();return True
+            unified.__dict__.update(after.__dict__);self._dirty_particle_motion_layers.discard(unified.id);self._sync_resource_layer_adapters();self._clear_preview();self.layer_index=self.project.layers.index(layer);self._mark_dirty();self._refresh_all();return True
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter is None:return False
         draft=self.particle_preview_manager.update(self.project,emitter,settings,immediate=True); session=self.particle_preview_manager.sessions.get(emitter_id)
@@ -1847,6 +1899,7 @@ class MainWindow(QMainWindow):
             return
         self.layer_index = layer_index
         self.frame_index = frame_index
+        self._render_dirty_particle_motion_frame(frame_index)
         self.canvas.set_layer(layer_index)
         self.canvas.set_frame(frame_index)
         layer=self.project.layers[layer_index]
@@ -1869,6 +1922,7 @@ class MainWindow(QMainWindow):
     def select_frame(self, index: int) -> None:
         if 0 <= index < self._display_frame_count():
             self.frame_index = index
+            self._render_dirty_particle_motion_frame(index)
             self.canvas.set_frame(index)
             self.project._current_effect_frame=index
             if 0<=self.layer_index<len(self.project.layers):
@@ -1992,6 +2046,7 @@ class MainWindow(QMainWindow):
         if self._confirm_unapplied_previews() and self._confirm_discard():
             self.preview_manager.close()
             self.particle_preview_manager.reset_context()
+            self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self._pending_particle_motion.clear()
             event.accept()
         else:
             event.ignore()

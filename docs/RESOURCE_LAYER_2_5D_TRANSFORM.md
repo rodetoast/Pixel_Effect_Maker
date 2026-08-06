@@ -1,5 +1,9 @@
 # Resource Layer 2.5D Transform
 
+## Particle-local ordering
+
+Particle Local Z sorts billboards inside the particle base. Resource Layer Position Z sorts the completed layer. The order is Spawn → local Orbit/Helix → local perspective/depth sort → particle RGBA → Resource Layer 2.5D → Effect Layer Z composite. The two Perspective controls are intentionally independent.
+
 ## Scope
 
 The final RGBA output of a Resource Layer is treated as one flat plane. This is not a mesh or volumetric 3D system. Single and Particle Emission keep their content controls; the common transform runs after either renderer and before Effect Composition.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Particle Orbit & Helix Motion
+
+- Added deterministic Linear, Orbit, and X/Y/Z Helix motion for Particle Emission.
+- Added easing, phase spread, local perspective, stable particle-local Z sorting, shared Canvas guides, and current-frame latest-wins rendering.
+- Advanced saves to format v8; v1-v7 particles migrate to Linear while compact v7 frame payloads remain unchanged.
+
 ## Unreleased
 
 ### Added

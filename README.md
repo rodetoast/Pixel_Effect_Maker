@@ -1,5 +1,9 @@
 # Pixel Effect Maker
 
+Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. Orbit provides radius, ellipse, angle, turns, direction, phase spread, and plane rotation; Helix adds X/Y/Z axis travel and particle-local perspective. The exact evaluator is shared by Canvas guides, preview, playback, bake, and export before the common Resource Layer 2.5D transform.
+
+New saves use project format v8. v1-v7 projects load with Linear motion by default. The application remains `Pixel Effect Maker v0.0.04`.
+
 현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
 
 Resource Layer의 최종 출력에는 Position/Rotation X/Y/Z, Scale, Opacity, Pivot, Perspective, Keyframe과 안정적 Z 정렬을 갖춘 공통 평면 기반 2.5D Transform을 적용할 수 있습니다. 자세한 좌표계와 제한은 `docs/RESOURCE_LAYER_2_5D_TRANSFORM.md`를 참고합니다.

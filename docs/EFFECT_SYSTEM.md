@@ -1,5 +1,9 @@
 # Effect System Foundation
 
+## Particle motion pipeline
+
+Spawn state is deterministic and cached independently from Motion metadata. A live particle is evaluated as `spawn point + local Orbit/Helix`, projected and stably sorted by particle-local Z, rendered as a nearest-neighbor billboard, then passed through Resource Layer 2.5D and stable Effect Layer Z composition. Linear retains the legacy `start + velocity * age` path and generation-order composite. See `PARTICLE_ORBIT_HELIX_MOTION.md`.
+
 ## 목적
 
 Single과 Particle Renderer는 Canvas 크기 RGBA 결과에서 합류한 뒤 공통 Resource Layer 2.5D Transform을 거친다. 이 후처리는 Nearest-Neighbor 역매핑, 프레임별 Track 평가, Resource Layer끼리의 Stable Z 정렬을 사용한다. Particle 개별 인스턴스는 계속 2D다.
@@ -54,7 +58,7 @@ Canvas는 Preview 활성 Generator의 실제 Generated Layer를 transient Previe
 
 ## 파일 형식
 
-애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `7`입니다. 형식 7은 형식 6의 통합 `effect_resource_layers` 의미를 유지하면서 모든 영구 RGBA Frame을 compact `rgba8-zlib-base64` Payload로 기록합니다. 형식 1~6의 Nested List 픽셀과 기존 모델은 로드 시 메모리에서 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
+애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `8`입니다. 형식 8은 형식 7의 compact `rgba8-zlib-base64` Payload를 그대로 유지하고 Particle Motion Metadata를 추가합니다. 형식 1~7은 로드 시 Linear Motion 기본값으로 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
 
 ## Particle 규칙
 

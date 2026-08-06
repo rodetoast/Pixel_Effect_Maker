@@ -3,8 +3,133 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 from typing import Any
 from uuid import uuid4
+
+from .resource_composition import AnimationTrack
+
+
+MOTION_TRACK_PROPERTIES = {
+    "center_x": "motion_center_x", "center_y": "motion_center_y", "center_z": "motion_center_z",
+    "radius_start": "motion_radius_start", "radius_end": "motion_radius_end",
+    "ellipse_scale_x": "motion_ellipse_scale_x", "ellipse_scale_y": "motion_ellipse_scale_y",
+    "start_angle_degrees": "motion_start_angle_degrees", "turns": "motion_turns",
+    "phase_spread_degrees": "motion_phase_spread_degrees",
+    "orbit_plane_rotation_degrees": "motion_orbit_plane_rotation_degrees",
+    "axis_start": "motion_axis_start", "axis_end": "motion_axis_end",
+    "perspective_strength": "motion_perspective_strength",
+}
+
+
+@dataclass
+class ParticleMotionSettings:
+    """Deterministic local particle motion; Resource Layer 2.5D is applied later."""
+
+    mode: str = "linear"
+    center_x: float = 0.0
+    center_y: float = 0.0
+    center_z: float = 0.0
+    radius_start: float = 0.0
+    radius_end: float = 0.0
+    ellipse_scale_x: float = 1.0
+    ellipse_scale_y: float = 1.0
+    start_angle_degrees: float = 0.0
+    turns: float = 1.0
+    direction: str = "counter_clockwise"
+    phase_spread_degrees: float = 0.0
+    orbit_plane_rotation_degrees: float = 0.0
+    helix_axis: str = "z"
+    axis_start: float = 0.0
+    axis_end: float = 0.0
+    perspective_strength: float = 0.0
+    radius_easing: str = "Linear"
+    angle_easing: str = "Linear"
+    axis_easing: str = "Linear"
+    tracks: dict[str, AnimationTrack] = field(default_factory=dict)
+    revision: int = 0
+
+    def validate(self) -> None:
+        if self.mode not in {"linear", "orbit", "helix"}: raise ValueError("unsupported particle motion mode")
+        if self.direction not in {"clockwise", "counter_clockwise"}: raise ValueError("unsupported particle motion direction")
+        if self.helix_axis not in {"x", "y", "z"}: raise ValueError("unsupported helix axis")
+        if self.radius_easing not in {"Linear", "Ease In", "Ease Out", "Ease In/Out"}: raise ValueError("unsupported radius easing")
+        if self.angle_easing not in {"Linear", "Ease In", "Ease Out", "Ease In/Out"}: raise ValueError("unsupported angle easing")
+        if self.axis_easing not in {"Linear", "Ease In", "Ease Out", "Ease In/Out"}: raise ValueError("unsupported axis easing")
+        numeric = (
+            self.center_x, self.center_y, self.center_z, self.radius_start, self.radius_end,
+            self.ellipse_scale_x, self.ellipse_scale_y, self.start_angle_degrees, self.turns,
+            self.phase_spread_degrees, self.orbit_plane_rotation_degrees, self.axis_start,
+            self.axis_end, self.perspective_strength,
+        )
+        if not all(math.isfinite(float(value)) for value in numeric): raise ValueError("particle motion values must be finite")
+        if self.radius_start < 0 or self.radius_end < 0: raise ValueError("particle motion radius must be non-negative")
+        if self.ellipse_scale_x < 0 or self.ellipse_scale_y < 0: raise ValueError("particle motion ellipse scale must be non-negative")
+        if not 0.0 <= self.perspective_strength <= 1.0: raise ValueError("particle local perspective must be 0..1")
+        for name, track in self.tracks.items():
+            expected = MOTION_TRACK_PROPERTIES.get(name)
+            if expected is None or track.property_id != expected: raise ValueError("unsupported particle motion track")
+            for keyframe in track.keyframes:
+                try: number=float(keyframe.value)
+                except (TypeError,ValueError) as exc: raise ValueError("particle motion keyframes must be numeric") from exc
+                if not math.isfinite(number): raise ValueError("particle motion keyframes must be finite")
+                if name in {"radius_start","radius_end","ellipse_scale_x","ellipse_scale_y"} and number<0: raise ValueError("particle motion keyframe must be non-negative")
+                if name=="perspective_strength" and not 0<=number<=1: raise ValueError("particle local perspective keyframe must be 0..1")
+
+    def value(self, property_id: str, frame: int) -> float:
+        if property_id not in MOTION_TRACK_PROPERTIES: raise ValueError("unsupported particle motion property")
+        track = self.tracks.get(property_id)
+        return float(track.evaluate(frame)) if track and track.keyframes else float(getattr(self, property_id))
+
+    def set_keyframe(self, property_id: str, frame: int, value: float, easing: str = "Linear"):
+        if property_id not in MOTION_TRACK_PROPERTIES: raise ValueError("unsupported particle motion property")
+        track = self.tracks.setdefault(property_id, AnimationTrack(MOTION_TRACK_PROPERTIES[property_id], float(getattr(self, property_id))))
+        keyframe = track.set_keyframe(frame, float(value), easing); self.revision += 1; return keyframe
+
+    def evaluated(self, frame: int) -> "ParticleMotionSettings":
+        values = {name: self.value(name, frame) for name in MOTION_TRACK_PROPERTIES}
+        return ParticleMotionSettings(**values, mode=self.mode, direction=self.direction, helix_axis=self.helix_axis,
+            radius_easing=self.radius_easing, angle_easing=self.angle_easing, axis_easing=self.axis_easing)
+
+    def reset_base(self) -> None:
+        defaults = ParticleMotionSettings()
+        for name in MOTION_TRACK_PROPERTIES: setattr(self, name, getattr(defaults, name))
+        self.mode=defaults.mode; self.direction=defaults.direction; self.helix_axis=defaults.helix_axis
+        self.radius_easing=defaults.radius_easing; self.angle_easing=defaults.angle_easing; self.axis_easing=defaults.axis_easing
+        self.revision += 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode, "center": [self.center_x, self.center_y, self.center_z],
+            "radius_start": self.radius_start, "radius_end": self.radius_end,
+            "ellipse_scale": [self.ellipse_scale_x, self.ellipse_scale_y],
+            "start_angle_degrees": self.start_angle_degrees, "turns": self.turns,
+            "direction": self.direction, "phase_spread_degrees": self.phase_spread_degrees,
+            "orbit_plane_rotation_degrees": self.orbit_plane_rotation_degrees,
+            "helix_axis": self.helix_axis, "axis_start": self.axis_start, "axis_end": self.axis_end,
+            "perspective_strength": self.perspective_strength,
+            "easing": {"radius": self.radius_easing, "angle": self.angle_easing, "axis": self.axis_easing},
+            "tracks": {name: track.to_dict() for name, track in self.tracks.items() if track.keyframes},
+            "revision": self.revision,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ParticleMotionSettings":
+        if not data: return cls()
+        center=data.get("center",(0.0,0.0,0.0)); ellipse=data.get("ellipse_scale",(1.0,1.0)); easing=data.get("easing",{})
+        if not isinstance(center,(list,tuple)) or len(center)!=3: raise ValueError("particle motion center must contain three numbers")
+        if not isinstance(ellipse,(list,tuple)) or len(ellipse)!=2: raise ValueError("particle ellipse scale must contain two numbers")
+        if not isinstance(easing,dict): raise ValueError("particle motion easing must be an object")
+        value=cls(mode=str(data.get("mode","linear")),center_x=float(center[0]),center_y=float(center[1]),center_z=float(center[2]),
+            radius_start=float(data.get("radius_start",0)),radius_end=float(data.get("radius_end",0)),
+            ellipse_scale_x=float(ellipse[0]),ellipse_scale_y=float(ellipse[1]),start_angle_degrees=float(data.get("start_angle_degrees",0)),
+            turns=float(data.get("turns",1)),direction=str(data.get("direction","counter_clockwise")),
+            phase_spread_degrees=float(data.get("phase_spread_degrees",0)),orbit_plane_rotation_degrees=float(data.get("orbit_plane_rotation_degrees",0)),
+            helix_axis=str(data.get("helix_axis","z")),axis_start=float(data.get("axis_start",0)),axis_end=float(data.get("axis_end",0)),
+            perspective_strength=float(data.get("perspective_strength",0)),radius_easing=str(easing.get("radius","Linear")),
+            angle_easing=str(easing.get("angle","Linear")),axis_easing=str(easing.get("axis","Linear")),
+            tracks={name:AnimationTrack.from_dict(track) for name,track in data.get("tracks",{}).items()},revision=int(data.get("revision",0)))
+        value.validate(); return value
 
 
 @dataclass
@@ -49,6 +174,7 @@ class ParticleEmitterSettings:
     opacity_end: float = 0.0
     easing: str = "Linear"
     seed: int = 0
+    motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
 
     def validate(self) -> None:
         if not self.clip_asset_id: raise ValueError("an animation clip is required")
@@ -66,9 +192,10 @@ class ParticleEmitterSettings:
         if self.lifetime_min < 1 or self.start_delay_min < 0: raise ValueError("invalid lifetime or start delay")
         if self.scale_min <= 0 or self.clip_speed_min <= 0: raise ValueError("scale and clip speed must be positive")
         if not (0 <= self.opacity_start <= 1 and 0 <= self.opacity_end <= 1): raise ValueError("opacity must be 0..1")
+        self.motion.validate()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value=asdict(self); value["motion"]=self.motion.to_dict(); return value
 
     @property
     def resource_id(self) -> str:
@@ -79,6 +206,7 @@ class ParticleEmitterSettings:
         values = dict(data)
         if "resource_id" in values and "clip_asset_id" not in values:
             values["clip_asset_id"] = values.pop("resource_id")
+        values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
         value = cls(**values); value.validate(); return value
 
 
@@ -96,6 +224,9 @@ class ParticleInstance:
     clip_start_frame: int
     clip_playback_speed: float
     random_seed: int
+    particle_id: int = 0
+    motion_phase_degrees: float = 0.0
+    motion_phase_unit: float = 0.0
 
 
 @dataclass

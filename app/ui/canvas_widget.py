@@ -14,7 +14,7 @@ from app.models.project import Project
 from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.models.particle_emitter import ParticleEmitterSettings
-from app.services.particle_render_service import representative_particle_guide
+from app.services.particle_render_service import particle_motion_guide, project_particle_billboard, representative_particle_guide
 from app.services.resource_composition_render_service import render_composition_frames
 from app.services.effect_layer_transform_3d_render_service import project_points_3d,unproject_point_2d
 from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
@@ -523,6 +523,20 @@ class CanvasWidget(QWidget):
                 "end": self.canvas_to_widget(*self._project_effect_point(settings.end_x, settings.end_y)),
             }
         if isinstance(settings, ParticleEmitterSettings):
+            if settings.motion.mode in {"orbit","helix"}:
+                path=particle_motion_guide(settings,self.project.width if self.project else 64,self.project.height if self.project else 64)
+                projected=[]
+                for item in path:
+                    x,y,_,valid=project_particle_billboard(item,settings.motion.perspective_strength,self.project.width if self.project else 64,self.project.height if self.project else 64)
+                    if valid:projected.append(self.canvas_to_widget(*self._project_effect_point(x,y)))
+                if not projected:return {}
+                center_raw=(settings.origin_x+settings.motion.center_x,settings.origin_y+settings.motion.center_y)
+                center=self.canvas_to_widget(*self._project_effect_point(*center_raw))
+                points={"motion_center":center,"radius_start":projected[0],"radius_end":projected[-1]}
+                vector=projected[0]-center;length=max(1.0,math.hypot(vector.x(),vector.y()));points["start_angle"]=projected[0]+QPointF(-vector.y()/length*14,vector.x()/length*14)
+                if settings.motion.mode=="helix":points["axis_end"]=projected[-1]+QPointF(10,-10)
+                self._motion_guide_path=projected
+                return points
             guide = representative_particle_guide(settings)
             origin = self.canvas_to_widget(*self._project_effect_point(guide["origin_x"], guide["origin_y"]))
             endpoint = self.canvas_to_widget(*self._project_effect_point(guide["endpoint_x"], guide["endpoint_y"]))
@@ -556,6 +570,14 @@ class CanvasWidget(QWidget):
             painter.drawLine(points["start"], points["end"])
             self._paint_ghosts(painter, settings.resource_composition_id, points["start"], points["end"])
         else:
+            if isinstance(settings,ParticleEmitterSettings) and settings.motion.mode in {"orbit","helix"}:
+                path=getattr(self,"_motion_guide_path",[])
+                if len(path)>1:painter.drawPolyline(QPolygonF(path))
+                painter.drawLine(points["motion_center"],points["radius_start"]);painter.drawLine(points["motion_center"],points["radius_end"])
+                if "axis_end" in points:painter.drawLine(points["motion_center"],points["axis_end"])
+                for name,point in points.items():
+                    painter.setPen(QPen(QColor("#ffd43b") if name==self._guide_hover else QColor("#51cf66"),2));painter.setBrush(QColor("#20242b"));painter.drawEllipse(point,6,6)
+                return
             origin, endpoint = points["origin"], points["endpoint"]
             painter.drawLine(origin, endpoint)
             painter.drawLine(origin, points["direction"])
@@ -769,6 +791,19 @@ class CanvasWidget(QWidget):
             elif self._guide_handle == "end": settings.end_x, settings.end_y = x, y
             return
         if not isinstance(settings, ParticleEmitterSettings):
+            return
+        if settings.motion.mode in {"orbit","helix"}:
+            center_x=settings.origin_x+settings.motion.center_x;center_y=settings.origin_y+settings.motion.center_y
+            if self._guide_handle=="motion_center":settings.motion.center_x=x-settings.origin_x;settings.motion.center_y=y-settings.origin_y
+            elif self._guide_handle=="radius_start":settings.motion.radius_start=max(0.0,math.hypot(x-center_x,y-center_y))
+            elif self._guide_handle=="radius_end":settings.motion.radius_end=max(0.0,math.hypot(x-center_x,y-center_y))
+            elif self._guide_handle=="start_angle":
+                angle=math.degrees(math.atan2(y-center_y,x-center_x));settings.motion.start_angle_degrees=round(angle/15)*15 if modifiers&Qt.KeyboardModifier.ShiftModifier else angle
+            elif self._guide_handle=="axis_end":
+                if settings.motion.helix_axis=="x":settings.motion.axis_end=x-center_x
+                elif settings.motion.helix_axis=="y":settings.motion.axis_end=y-center_y
+                else:settings.motion.axis_end=(x-center_x)-(y-center_y)
+            settings.motion.revision+=1
             return
         if self._guide_handle == "origin":
             dx, dy = x-settings.origin_x, y-settings.origin_y

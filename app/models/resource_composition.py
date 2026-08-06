@@ -10,6 +10,13 @@ PROPERTY_DEFAULTS={
     "position_x":0.0,"position_y":0.0,"position_z":0.0,
     "rotation_x":0.0,"rotation_y":0.0,"rotation_z":0.0,
     "scale_x":1.0,"scale_y":1.0,"perspective_strength":0.0,
+    "motion_center_x":0.0,"motion_center_y":0.0,"motion_center_z":0.0,
+    "motion_radius_start":0.0,"motion_radius_end":0.0,
+    "motion_ellipse_scale_x":1.0,"motion_ellipse_scale_y":1.0,
+    "motion_start_angle_degrees":0.0,"motion_turns":1.0,
+    "motion_phase_spread_degrees":0.0,"motion_orbit_plane_rotation_degrees":0.0,
+    "motion_axis_start":0.0,"motion_axis_end":0.0,
+    "motion_perspective_strength":0.0,
 }
 
 @dataclass

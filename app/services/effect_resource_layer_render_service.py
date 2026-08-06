@@ -7,7 +7,7 @@ from app.services.effect_composition_layer_render_service import (
     apply_effect_composition_layer,
     render_effect_composition_layer,
 )
-from app.services.particle_render_service import apply_particle_frames, render_particle_frames
+from app.services.particle_render_service import apply_particle_frames, render_particle_frame, render_particle_frames
 from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
 
 _BASE_CACHE: dict[str, tuple[tuple, list]] = {}
@@ -78,6 +78,14 @@ def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame:
     return cached
 
 
+def render_effect_resource_layer_current_frame(project, layer: EffectResourceLayer, frame: int):
+    """Render one exact particle frame without materializing its output sequence."""
+    if layer.placement_mode != PLACEMENT_PARTICLE:
+        return render_effect_resource_layer_frame(project,layer,frame)
+    base=render_particle_frame(project,layer.as_particle_emitter(),int(frame))
+    return transform_rgba_frame(base,layer.layer_transform,int(frame))
+
+
 def render_effect_resource_layer(project, layer: EffectResourceLayer):
     frames=render_effect_resource_layer_base(project,layer)
     return [render_effect_resource_layer_frame(project,layer,index) for index in range(len(frames))]
@@ -86,7 +94,7 @@ def render_effect_resource_layer(project, layer: EffectResourceLayer):
 def apply_effect_resource_layer_current_frame(project,layer: EffectResourceLayer,frame: int):
     generated=next((item for item in project.layers if item.id==layer.generated_layer_id),None)
     if generated is None:return apply_effect_resource_layer(project,layer)
-    pixels=render_effect_resource_layer_frame(project,layer,frame)
+    pixels=render_effect_resource_layer_current_frame(project,layer,frame)
     if pixels is None:return generated
     while len(project.frames)<=frame:project.add_frame()
     project.frames[frame].layer_pixels[generated.id]=pixels.copy();generated.visible=layer.visible

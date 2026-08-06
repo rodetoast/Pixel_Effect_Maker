@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import random
+import hashlib
+from dataclasses import dataclass
 from uuid import uuid4
 
 import numpy as np
@@ -11,12 +13,83 @@ import numpy as np
 from app.models.animation_clip import AnimationClipAsset
 from app.models.frame import empty_pixels
 from app.models.layer import Layer
-from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings, ParticleInstance
+from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings, ParticleInstance, ParticleMotionSettings
 from app.models.project import Project
 from app.models.source_asset import SourceAsset
 from app.services.effect_render_service import EffectRenderError, render_transformed_source
 from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
+from app.services.effect_layer_transform_3d_render_service import focal_length
+
+
+_SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
+_RESOURCE_CLIP_CACHE: dict[tuple, AnimationClipAsset] = {}
+PARTICLE_RENDER_STATS = {"spawn_cache_hits": 0, "spawn_cache_misses": 0, "resource_cache_hits":0, "resource_cache_misses":0, "full_sequence_renders": 0, "current_frame_renders": 0}
+
+
+@dataclass(frozen=True)
+class ParticleMotionPosition:
+    x: float
+    y: float
+    z: float = 0.0
+
+
+def _motion_ease(value: float, easing: str) -> float:
+    value=max(0.0,min(1.0,float(value)))
+    if easing=="Ease In": return value*value
+    if easing=="Ease Out": return 1.0-(1.0-value)*(1.0-value)
+    if easing=="Ease In/Out": return 2.0*value*value if value<0.5 else 1.0-((-2.0*value+2.0)**2)/2.0
+    return value
+
+
+def _stable_motion_phase(seed: int, particle_id: int, spread: float) -> float:
+    if spread == 0.0: return 0.0
+    digest=hashlib.sha256(f"{int(seed)}:{int(particle_id)}:motion-phase".encode("ascii")).digest()
+    fraction=int.from_bytes(digest[:8],"big")/float(1<<64)
+    return fraction*float(spread)
+
+
+def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: ParticleInstance, normalized_age: float, effect_frame: int = 0) -> ParticleMotionPosition:
+    """Evaluate Linear, Orbit, or Helix in particle-local XYZ coordinates."""
+    motion=settings.motion.evaluated(effect_frame)
+    t=max(0.0,min(1.0,float(normalized_age)))
+    if motion.mode=="linear":
+        age=t*instance.lifetime
+        return ParticleMotionPosition(instance.start_x+instance.velocity_x*age,instance.start_y+instance.velocity_y*age,0.0)
+    radius_t=_motion_ease(t,motion.radius_easing);angle_t=_motion_ease(t,motion.angle_easing)
+    radius=motion.radius_start+(motion.radius_end-motion.radius_start)*radius_t
+    # Screen Y grows downward, so positive angles are visually clockwise.
+    sign=1.0 if motion.direction=="clockwise" else -1.0
+    phase=instance.motion_phase_unit*motion.phase_spread_degrees if instance.motion_phase_unit else instance.motion_phase_degrees
+    angle=math.radians(motion.start_angle_degrees+sign*motion.turns*360.0*angle_t+phase)
+    orbit_x=math.cos(angle)*radius*motion.ellipse_scale_x
+    orbit_y=math.sin(angle)*radius*motion.ellipse_scale_y
+    plane=math.radians(motion.orbit_plane_rotation_degrees)
+    orbit_x,orbit_y=(orbit_x*math.cos(plane)-orbit_y*math.sin(plane),orbit_x*math.sin(plane)+orbit_y*math.cos(plane))
+    cx=instance.start_x+motion.center_x;cy=instance.start_y+motion.center_y;cz=motion.center_z
+    if motion.mode=="orbit": return ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz)
+    axis_t=_motion_ease(t,motion.axis_easing);axis=motion.axis_start+(motion.axis_end-motion.axis_start)*axis_t
+    if motion.helix_axis=="x": return ParticleMotionPosition(cx+axis,cy+orbit_x,cz+orbit_y)
+    if motion.helix_axis=="y": return ParticleMotionPosition(cx+orbit_x,cy+axis,cz+orbit_y)
+    return ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz+axis)
+
+
+def project_particle_billboard(position: ParticleMotionPosition, strength: float, width: int, height: int) -> tuple[float,float,float,bool]:
+    """Project a billboard center and return x, y, scale, visibility safety."""
+    if not all(math.isfinite(value) for value in (position.x,position.y,position.z,strength)): return 0.0,0.0,1.0,False
+    if strength<=0.0:return position.x,position.y,1.0,True
+    focal=focal_length(width,height,strength);denominator=focal-position.z
+    if denominator<=focal*0.05:return 0.0,0.0,1.0,False
+    factor=min(20.0,focal/denominator);cx=width/2.0;cy=height/2.0
+    x=cx+(position.x-cx)*factor;y=cy+(position.y-cy)*factor
+    return x,y,factor,math.isfinite(x) and math.isfinite(y)
+
+
+def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height: int, samples: int | None = None) -> list[ParticleMotionPosition]:
+    """Sample the exact renderer motion evaluator for Canvas guides."""
+    count=samples or max(32,min(256,32+round(abs(settings.motion.turns)*24)))
+    instance=ParticleInstance(0,1,settings.origin_x,settings.origin_y,0,0,1,0,0,0,1,0)
+    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),0) for index in range(count)]
 
 
 def velocity_from_direction_speed(direction_degrees: float, speed: float) -> tuple[float, float]:
@@ -58,6 +131,7 @@ def build_particle_instances(settings: ParticleEmitterSettings, clip_length: int
         direction += rng.uniform(-settings.direction_spread_degrees, settings.direction_spread_degrees)
         speed = rng.uniform(settings.speed_min, settings.speed_max)
         velocity_x, velocity_y = velocity_from_direction_speed(direction, speed)
+        phase_unit=_stable_motion_phase(settings.seed,index,1.0);phase=phase_unit*settings.motion.phase_spread_degrees
         result.append(ParticleInstance(
             birth_frame=settings.start_frame + spread_birth + delay,
             lifetime=rng.randint(settings.lifetime_min, settings.lifetime_max),
@@ -68,7 +142,7 @@ def build_particle_instances(settings: ParticleEmitterSettings, clip_length: int
             angular_velocity=rng.uniform(settings.angular_velocity_min, settings.angular_velocity_max),
             clip_start_frame=rng.randrange(clip_length) if settings.random_start_frame else 0,
             clip_playback_speed=rng.uniform(settings.clip_speed_min, settings.clip_speed_max),
-            random_seed=rng.getrandbits(31)))
+            random_seed=rng.getrandbits(31),particle_id=index,motion_phase_degrees=phase,motion_phase_unit=phase_unit))
     return result
 
 
@@ -107,35 +181,73 @@ def particle_clip_frame(clip: AnimationClipAsset, instance: ParticleInstance, ag
     return clip.frames[index]
 
 
-def render_particle_frames(project: Project, emitter: ParticleEmitter) -> list[np.ndarray]:
-    settings = emitter.settings; settings.validate()
+def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) -> AnimationClipAsset:
     clip = next((item for item in project.animation_clips if item.id == settings.clip_asset_id), None)
     if settings.resource_type == "source_asset":
         source = next((item for item in project.source_assets if item.id == settings.clip_asset_id), None)
-        clip = None if source is None else AnimationClipAsset(source.name, [source.pixels], fps=project.fps,
-            pivot_x=source.pivot_x, pivot_y=source.pivot_y, playback_mode="hold",
-            source_format=source.source_format, source_path=source.source_path)
+        key=None if source is None else (id(project),"source_asset",source.id,id(source.pixels),source.pivot_x,source.pivot_y)
+        clip=None if key is None else _RESOURCE_CLIP_CACHE.get(key)
+        if key is not None and clip is None:
+            PARTICLE_RENDER_STATS["resource_cache_misses"]+=1;clip=AnimationClipAsset(source.name, [source.pixels], fps=project.fps,
+                pivot_x=source.pivot_x, pivot_y=source.pivot_y, playback_mode="hold",source_format=source.source_format, source_path=source.source_path);_RESOURCE_CLIP_CACHE[key]=clip
+        elif clip is not None:PARTICLE_RENDER_STATS["resource_cache_hits"]+=1
     elif settings.resource_type == "resource_composition":
         composition=next((item for item in project.resource_compositions if item.id==settings.resource_id),None)
-        clip=None if composition is None else composition_as_clip(project,composition)
+        key=None if composition is None else (id(project),"resource_composition",composition.id,composition.revision)
+        clip=None if key is None else _RESOURCE_CLIP_CACHE.get(key)
+        if key is not None and clip is None:PARTICLE_RENDER_STATS["resource_cache_misses"]+=1;clip=composition_as_clip(project,composition);_RESOURCE_CLIP_CACHE[key]=clip
+        elif clip is not None:PARTICLE_RENDER_STATS["resource_cache_hits"]+=1
     if clip is None: raise EffectRenderError("the particle animation clip does not exist")
-    outputs = [empty_pixels(project.width, project.height) for _ in range(settings.output_frame_count)]
-    instances = build_particle_instances(settings, len(clip.frames))
-    for frame_index, output in enumerate(outputs):
-        for instance in instances:
+    if len(_RESOURCE_CLIP_CACHE)>16:_RESOURCE_CLIP_CACHE.pop(next(iter(_RESOURCE_CLIP_CACHE)))
+    return clip
+
+
+def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
+    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None)
+    return repr(values),int(clip_length)
+
+
+def particle_spawn_states(settings: ParticleEmitterSettings, clip_length: int) -> tuple[ParticleInstance,...]:
+    key=_spawn_cache_key(settings,clip_length);cached=_SPAWN_STATE_CACHE.get(key)
+    if cached is not None:PARTICLE_RENDER_STATS["spawn_cache_hits"]+=1;return cached
+    PARTICLE_RENDER_STATS["spawn_cache_misses"]+=1;cached=tuple(build_particle_instances(settings,clip_length));_SPAWN_STATE_CACHE[key]=cached
+    if len(_SPAWN_STATE_CACHE)>32:_SPAWN_STATE_CACHE.pop(next(iter(_SPAWN_STATE_CACHE)))
+    return cached
+
+
+def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None) -> np.ndarray:
+    """Render one exact frame while reusing deterministic spawn/resource state."""
+    settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
+    instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
+    output=empty_pixels(project.width,project.height);alive=[]
+    for order,instance in enumerate(instances):
             age = frame_index - instance.birth_frame
             if age < 0 or age >= instance.lifetime: continue
             pixels = particle_clip_frame(clip, instance, age, project.fps)
             if pixels is None: continue
             amount = 1.0 if instance.lifetime <= 1 else ease(age / (instance.lifetime - 1), settings.easing)
+            normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
+            position=evaluate_particle_motion(settings,instance,normalized,frame_index)
+            x,y,perspective_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
+            if not visible:continue
+            alive.append((position.z,order,instance,pixels,amount,x,y,perspective_scale,age))
+    if settings.motion.mode!="linear":alive.sort(key=lambda item:item[0])
+    for _,_,instance,pixels,amount,x,y,perspective_scale,age in alive:
             asset = SourceAsset(name="particle", pixels=pixels, pivot_x=clip.pivot_x, pivot_y=clip.pivot_y)
             render_transformed_source(output, asset,
-                position_x=instance.start_x + instance.velocity_x * age,
-                position_y=instance.start_y + instance.velocity_y * age,
+                position_x=x, position_y=y,
                 rotation=instance.rotation + instance.angular_velocity * age,
-                scale_x=instance.scale, scale_y=instance.scale,
+                scale_x=instance.scale*perspective_scale, scale_y=instance.scale*perspective_scale,
                 horizontal_tilt=0, vertical_tilt=0, perspective=0,
                 opacity=settings.opacity_start + (settings.opacity_end - settings.opacity_start) * amount)
+    PARTICLE_RENDER_STATS["current_frame_renders"]+=1
+    return output
+
+
+def render_particle_frames(project: Project, emitter: ParticleEmitter) -> list[np.ndarray]:
+    settings = emitter.settings; settings.validate();clip=_resolve_particle_clip(project,settings)
+    instances=particle_spawn_states(settings,len(clip.frames));PARTICLE_RENDER_STATS["full_sequence_renders"]+=1
+    outputs=[render_particle_frame(project,emitter,index,clip=clip,instances=instances) for index in range(settings.output_frame_count)]
     return outputs
 
 

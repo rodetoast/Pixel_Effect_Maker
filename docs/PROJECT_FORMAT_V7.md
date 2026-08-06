@@ -1,5 +1,7 @@
 # Project Format v7
 
+> New saves use format v8. The compact `rgba8-zlib-base64` payload defined here is retained unchanged in v8.
+
 애플리케이션 버전은 `0.0.04`를 유지하고, 호환되지 않는 Pixel 디스크 표현 교체를 명시하기 위해 `FORMAT_VERSION`을 7로 올린다. 형식 6의 Resource Layer 모델 의미는 바뀌지 않는다.
 
 ## Compact RGBA Payload

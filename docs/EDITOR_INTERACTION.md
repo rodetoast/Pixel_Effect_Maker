@@ -1,5 +1,9 @@
 # Editor Interaction Policy
 
+## Particle Motion direct manipulation
+
+Orbit/Helix guides expose Motion Center, Radius Start/End, Start Angle, and Helix Axis End. Shift snaps Start Angle to 15 degrees. Press captures one snapshot; moves update only the latest current frame on a 33 ms cadence; release creates one undo command and an exact final render; Escape restores without undo. Middle-drag pan and wheel zoom remain available.
+
 ## 감사 결과와 입력 동기화
 
 Effect Editor의 Resource Layer Inspector는 기본 약 300px, 최소 실사용 280px을 기준으로 한다. 내부 ScrollArea 콘텐츠는 Viewport 폭을 따르고 가로 Scroll은 사용하지 않으며, 긴 설정은 세로 Scroll로 접근한다. Transform 조작 모드는 2열 Grid, 숫자와 Keyframe/Easing은 폭을 합산하지 않는 2단 필드로 배치한다.

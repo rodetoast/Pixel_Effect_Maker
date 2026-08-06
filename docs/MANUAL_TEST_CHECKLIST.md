@@ -1,5 +1,15 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Particle Orbit & Helix Motion
+
+- [ ] Point Spawn에서 Orbit, 반지름 100, 1회전으로 Clockwise/Counter-clockwise를 비교한다.
+- [ ] Radius 100→0 수축과 Phase Spread 360의 전체 원 분산을 확인한다.
+- [ ] Helix Z, X(YZ), Y(XZ) 축과 Local Perspective 0/증가 결과를 비교한다.
+- [ ] Helix 뒤에 Resource Layer Rotation X/Y, Position Z, Perspective가 순서대로 적용되는지 확인한다.
+- [ ] Center, Radius Start/End, Start Angle Shift 15°, Axis, Escape, Undo/Redo를 확인한다.
+- [ ] Timeline Scrub, Playback, Bake, PNG/Sequence Export, Save, 재시작, Load를 비교한다.
+- [ ] Inspector 280/300/320px, Windows DPI 100/125/150%, 한국어/영어를 확인한다.
+
 이 문서는 사용자가 실제 Windows GUI에서 확인할 항목입니다. 자동 테스트 또는 오프스크린 시작 점검이 통과했더라도 수동 확인 전에는 체크하지 않습니다.
 
 ## Resource Layer 2.5D Transform

@@ -314,6 +314,27 @@ KO.update({
     "resource_layer.position_z":"위치 Z","resource_layer.rotation_x":"회전 X","resource_layer.rotation_y":"회전 Y","resource_layer.rotation_z":"회전 Z","resource_layer.perspective":"원근 강도","resource_layer.move_xyz":"이동 XYZ",
     "resource_layer.resource_composition":"리소스 컴포지션",
 })
+
+EN.update({
+    "particle.motion":"Motion","particle.motion_mode":"Motion Mode","particle.motion_center_x":"Center X","particle.motion_center_y":"Center Y","particle.motion_center_z":"Center Z",
+    "particle.motion_radius_start":"Radius Start","particle.motion_radius_end":"Radius End","particle.motion_ellipse_x":"Ellipse X","particle.motion_ellipse_y":"Ellipse Y",
+    "particle.motion_start_angle":"Start Angle","particle.motion_turns":"Turns","particle.motion_direction":"Direction","particle.motion_phase_spread":"Phase Spread",
+    "particle.motion_plane_rotation":"Orbit Plane Rotation","particle.motion_helix_axis":"Helix Axis","particle.motion_axis_start":"Axis Start","particle.motion_axis_end":"Axis End",
+    "particle.motion_radius_easing":"Radius Easing","particle.motion_angle_easing":"Angle Easing","particle.motion_axis_easing":"Axis Easing","particle.motion_perspective":"Local Perspective","particle.motion_reset":"Reset Motion",
+    "particle.motion_keyframe_property":"Keyframe Property","particle.motion_keyframe_easing":"Keyframe Easing","particle.motion_add_keyframe":"Add Keyframe",
+    "tooltip.particle.motion":"Orbit and Helix replace Linear Direction and Speed. Each spawn point becomes the local motion center; Local Perspective is applied before the Resource Layer 2.5D transform.",
+    "tooltip.particle.motion_reset":"Reset base Motion values. Existing Animation Tracks are preserved.",
+})
+KO.update({
+    "particle.motion":"움직임","particle.motion_mode":"움직임 모드","particle.motion_center_x":"중심 X","particle.motion_center_y":"중심 Y","particle.motion_center_z":"중심 Z",
+    "particle.motion_radius_start":"시작 반지름","particle.motion_radius_end":"끝 반지름","particle.motion_ellipse_x":"타원 X","particle.motion_ellipse_y":"타원 Y",
+    "particle.motion_start_angle":"시작 각도","particle.motion_turns":"회전 횟수","particle.motion_direction":"회전 방향","particle.motion_phase_spread":"위상 분산",
+    "particle.motion_plane_rotation":"궤도 평면 회전","particle.motion_helix_axis":"나선 축","particle.motion_axis_start":"축 시작","particle.motion_axis_end":"축 끝",
+    "particle.motion_radius_easing":"반지름 Easing","particle.motion_angle_easing":"각도 Easing","particle.motion_axis_easing":"축 Easing","particle.motion_perspective":"로컬 원근","particle.motion_reset":"Motion 초기화",
+    "particle.motion_keyframe_property":"키프레임 속성","particle.motion_keyframe_easing":"키프레임 Easing","particle.motion_add_keyframe":"키프레임 추가",
+    "tooltip.particle.motion":"궤도와 나선은 직선 방향·속도를 대신합니다. 각 방출 지점이 로컬 움직임 중심이 되며 로컬 원근은 리소스 레이어 2.5D 변환보다 먼저 적용됩니다.",
+    "tooltip.particle.motion_reset":"기본 Motion 값을 초기화합니다. 기존 Animation Track은 유지됩니다.",
+})
 KO.update({
     "action.undo":"실행 취소","action.redo":"다시 실행","action.undo_named":"실행 취소: {name}","action.redo_named":"다시 실행: {name}",
     "interface.title":"인터페이스 설정…","interface.timeline_frame_width":"타임라인 프레임 너비","interface.restore_default":"기본값 복원",
