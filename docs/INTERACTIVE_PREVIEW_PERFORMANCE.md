@@ -63,4 +63,4 @@ The cold prefix/suffix alpha composite remains the largest preparation cost, but
 
 ## Exact-output boundary
 
-Mouse Release, Escape, SpinBox `editingFinished`, and 120ms idle run one exact current-frame CPU render. Playback, Save, Bake, PNG Export, and Preview Sequence Export use the exact CPU sequence path. Proxy images never enter Project frames, serialization, or exports.
+Mouse Release, Escape, SpinBox `editingFinished`, and 120ms idle run one exact current-frame CPU render. Playback, Bake, PNG Export, and Preview Sequence Export use the exact CPU frame/sequence path. Ordinary Save/Save As serializes Motion metadata and existing pixels without invoking particle current/full rendering. Proxy images never enter Project frames, serialization, or exports.

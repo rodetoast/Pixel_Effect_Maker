@@ -31,6 +31,26 @@ def test_v7_missing_motion_migrates_to_linear():
     loaded=Project.from_dict(data);assert loaded.effect_resource_layers[0].particle_settings.motion==ParticleMotionSettings()
 
 
+@pytest.mark.parametrize("version",range(1,8))
+def test_v1_through_v7_migrate_existing_particles_to_linear(version):
+    project,layer=project_with_particle();data=project.to_dict();data["format_version"]=version
+    if version>=6:
+        data["effect_resource_layers"][0]["particle_settings"].pop("motion")
+    elif version>=3:
+        emitter=layer.as_particle_emitter().to_dict();emitter["settings"].pop("motion")
+        if version<5:
+            pixels=np.zeros((2,2,4),dtype=np.uint8);clip=AnimationClipAsset("legacy",[pixels])
+            data["animation_clips"]=[clip.to_dict()]
+            emitter["settings"]["clip_asset_id"]=clip.id
+            emitter["settings"]["resource_type"]="animation_clip"
+        data["particle_emitters"]=[emitter];data["effect_resource_layers"]=[]
+    else:
+        data["effect_resource_layers"]=[]
+    loaded=Project.from_dict(data)
+    assert loaded.format_version==8
+    assert all(item.particle_settings.motion.mode=="linear" for item in loaded.effect_resource_layers)
+
+
 @pytest.mark.parametrize("value",[float("nan"),float("inf"),-float("inf")])
 def test_nonfinite_motion_values_are_rejected(value):
     with pytest.raises(ValueError):ParticleMotionSettings(center_x=value).validate()

@@ -81,6 +81,16 @@ def test_motion_guide_uses_exact_evaluator():
     assert path[8]==evaluate_particle_motion(value,probe,.25)
 
 
+def test_motion_guide_uses_current_effect_frame_tracks():
+    value=settings(direction="clockwise",turns=0,radius_start=10,radius_end=10)
+    value.motion.set_keyframe("radius_start",5,30)
+    value.motion.set_keyframe("radius_end",5,30)
+    path=particle_motion_guide(value,256,256,33,effect_frame=5)
+    probe=instance(start_x=value.origin_x,start_y=value.origin_y,particle_id=0)
+    assert path[0]==evaluate_particle_motion(value,probe,0,5)
+    assert path[0].x==pytest.approx(value.origin_x+30)
+
+
 def test_local_perspective_zero_and_positive_z_billboard_scale():
     point=evaluate_particle_motion(settings(center_z=50),instance(),0)
     assert project_particle_billboard(point,0,200,160)==(point.x,point.y,1,True)

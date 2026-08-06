@@ -86,6 +86,14 @@ def render_effect_resource_layer_current_frame(project, layer: EffectResourceLay
     return transform_rgba_frame(base,layer.layer_transform,int(frame))
 
 
+def render_effect_resource_layer_current_base_frame(project, layer: EffectResourceLayer, frame: int):
+    """Render one exact untransformed frame for the shared Canvas proxy."""
+    if layer.placement_mode == PLACEMENT_PARTICLE:
+        return render_particle_frame(project, layer.as_particle_emitter(), int(frame))
+    base, _ = render_effect_resource_layer_base_frame(project, layer, int(frame))
+    return base
+
+
 def render_effect_resource_layer(project, layer: EffectResourceLayer):
     frames=render_effect_resource_layer_base(project,layer)
     return [render_effect_resource_layer_frame(project,layer,index) for index in range(len(frames))]

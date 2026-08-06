@@ -85,11 +85,11 @@ def project_particle_billboard(position: ParticleMotionPosition, strength: float
     return x,y,factor,math.isfinite(x) and math.isfinite(y)
 
 
-def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height: int, samples: int | None = None) -> list[ParticleMotionPosition]:
+def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height: int, samples: int | None = None, effect_frame: int = 0) -> list[ParticleMotionPosition]:
     """Sample the exact renderer motion evaluator for Canvas guides."""
     count=samples or max(32,min(256,32+round(abs(settings.motion.turns)*24)))
     instance=ParticleInstance(0,1,settings.origin_x,settings.origin_y,0,0,1,0,0,0,1,0)
-    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),0) for index in range(count)]
+    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),effect_frame) for index in range(count)]
 
 
 def velocity_from_direction_speed(direction_degrees: float, speed: float) -> tuple[float, float]:
@@ -231,7 +231,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             x,y,perspective_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
             if not visible:continue
             alive.append((position.z,order,instance,pixels,amount,x,y,perspective_scale,age))
-    if settings.motion.mode!="linear":alive.sort(key=lambda item:item[0])
+    if settings.motion.mode!="linear":alive.sort(key=lambda item:(item[0],item[1]))
     for _,_,instance,pixels,amount,x,y,perspective_scale,age in alive:
             asset = SourceAsset(name="particle", pixels=pixels, pivot_x=clip.pivot_x, pivot_y=clip.pivot_y)
             render_transformed_source(output, asset,

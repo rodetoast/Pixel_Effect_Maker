@@ -99,6 +99,7 @@ class ParticleMotionSettings:
         self.revision += 1
 
     def to_dict(self) -> dict[str, Any]:
+        self.validate()
         return {
             "mode": self.mode, "center": [self.center_x, self.center_y, self.center_z],
             "radius_start": self.radius_start, "radius_end": self.radius_end,

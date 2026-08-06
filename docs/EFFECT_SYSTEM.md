@@ -42,7 +42,7 @@ Pseudo-3D는 실제 카메라나 3D 모델이 아닙니다. Source를 네 모서
 
 Generate는 언제나 원본 Source Asset과 현재 settings에서 전체 출력 버퍼를 새로 계산합니다. 이전 Generated Layer를 다시 변형하지 않습니다. 계산을 완료한 뒤 해당 Emitter의 전용 레이어만 교체하며 일반 레이어, 다른 Emitter 결과와 Source 원본은 바꾸지 않습니다. 출력 프레임이 부족하면 확장하지만 기존 프레임은 삭제하지 않습니다.
 
-통합 Resource Layer에서는 콘텐츠 생성과 공통 2.5D 후처리를 분리한다. Particle/Single 설정, Resource revision, Canvas 크기와 FPS가 바뀌면 Base RGBA를 무효화한다. 공통 2.5D Transform만 바뀌면 Base는 유지하고 현재 프레임의 Nearest-Neighbor 후처리만 다시 계산한다. 고주파 입력은 Transform revision으로 병합하며 오래된 결과를 적용하지 않는다. 전체 Sequence는 재생·저장·Export가 요구할 때 캐시된 Base에서 지연 생성한다.
+통합 Resource Layer에서는 콘텐츠 생성과 공통 2.5D 후처리를 분리한다. Particle/Single 설정, Resource revision, Canvas 크기와 FPS가 바뀌면 Base RGBA를 무효화한다. 공통 2.5D Transform만 바뀌면 Base는 유지하고 현재 프레임의 Nearest-Neighbor 후처리만 다시 계산한다. 고주파 입력은 Transform revision으로 병합하며 오래된 결과를 적용하지 않는다. 전체 Sequence는 재생·Bake·Export가 요구할 때 캐시된 Base에서 지연 생성한다. 일반 Save는 Motion metadata와 기존 Pixel Payload만 원자적으로 직렬화하며 렌더러를 호출하지 않는다.
 
 편집 중에는 현재 프레임의 정확한 Project Buffer를 쓰지 않는다. Canvas가 Base RGBA의 Alpha Bounds Crop을 QPixmap으로 한 번 변환하고, 정확 Renderer와 공유하는 `projected_quad()` 결과에 QPainter Projective Transform을 적용한다. 다른 레이어 합성은 Underlay/Overlay로 고정되며 Depth signature가 달라질 때만 다시 만든다. 이 프록시는 모델 직렬화, Preview/Bake/Export 서비스와 분리된 UI 상태다.
 
@@ -68,4 +68,4 @@ Resource Composition 재생 시간은 Effect 프레임 번호를 Composition FPS
 
 ## 후속 확장 지점
 
-현재 deformation 값은 `none`만 허용하며 작동하지 않는 컨트롤은 표시하지 않습니다. Particle 기즈모, 수명 기반 Scale curve, Spread 드래그 핸들, 실행 중 worker 강제 취소는 후속 확장입니다. Bend, Twist, Mesh Deform, Orbit, Custom Path와 힘장도 아직 구현되지 않았습니다.
+현재 deformation 값은 `none`만 허용하며 작동하지 않는 컨트롤은 표시하지 않습니다. 수명 기반 Scale curve, Spread 드래그 핸들, 실행 중 worker 강제 취소는 후속 확장입니다. Bend, Twist, Mesh Deform, Custom Path, 별도 Orbit spawn distribution과 힘장은 아직 구현되지 않았습니다. Particle lifetime Orbit/Helix Motion과 전용 Canvas 기즈모는 구현되어 있습니다.

@@ -5,6 +5,10 @@
 - Added deterministic Linear, Orbit, and X/Y/Z Helix motion for Particle Emission.
 - Added easing, phase spread, local perspective, stable particle-local Z sorting, shared Canvas guides, and current-frame latest-wins rendering.
 - Advanced saves to format v8; v1-v7 particles migrate to Linear while compact v7 frame payloads remain unchanged.
+- Changed ordinary Save/Save As to serialize Motion metadata without rendering the current frame or materializing a particle sequence; Bake, playback, and exports retain their exact output boundaries.
+- Reused prewarmed Underlay/Overlay composites while Orbit/Helix values change and limited repaint invalidation to the old/new particle, guide, and gizmo bounds.
+- Fixed current-frame guide evaluation, Helix axis-end placement, Start Angle continuity across ±180°, Escape restoration, stable equal-depth ordering, and non-finite Motion serialization.
+- Added direct/current/full/Bake/PNG output parity, v1-v7 migration, real compact-v8 smoke, save-regression, and composite-cache performance coverage.
 
 ## Unreleased
 

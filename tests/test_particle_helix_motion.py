@@ -45,3 +45,13 @@ def test_equal_local_z_preserves_generation_order(monkeypatch):
     monkeypatch.setattr(renderer,"particle_clip_frame",sprite)
     output=renderer.render_particle_frame(project,emitter,0,clip=clip,instances=instances)
     assert tuple(output[4,4])==(0,255,0,255)
+
+
+@pytest.mark.parametrize("axis",["x","y","z"])
+def test_helix_guide_matches_renderer_for_all_axes(axis):
+    motion=ParticleMotionSettings(mode="helix",radius_start=6,radius_end=12,turns=1.5,direction="counter_clockwise",helix_axis=axis,axis_start=-4,axis_end=9)
+    settings=ParticleEmitterSettings("c",origin_x=10,origin_y=20,motion=motion)
+    path=renderer.particle_motion_guide(settings,64,64,41)
+    probe=particle(start_x=10,start_y=20)
+    for index in (0,10,20,30,40):
+        assert path[index]==renderer.evaluate_particle_motion(settings,probe,index/40)

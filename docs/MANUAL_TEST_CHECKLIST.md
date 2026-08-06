@@ -7,7 +7,10 @@
 - [ ] Helix Z, X(YZ), Y(XZ) 축과 Local Perspective 0/증가 결과를 비교한다.
 - [ ] Helix 뒤에 Resource Layer Rotation X/Y, Position Z, Perspective가 순서대로 적용되는지 확인한다.
 - [ ] Center, Radius Start/End, Start Angle Shift 15°, Axis, Escape, Undo/Redo를 확인한다.
-- [ ] Timeline Scrub, Playback, Bake, PNG/Sequence Export, Save, 재시작, Load를 비교한다.
+- [ ] Timeline Scrub, 정방향/역방향 Playback, Bake, PNG/Sequence Export 결과를 같은 프레임에서 비교한다.
+- [ ] Motion 값 변경 직후 Save가 긴 Sequence 계산 없이 끝나고, 재시작·Load 뒤 metadata와 정확 출력이 유지되는지 확인한다.
+- [ ] 여러 레이어에서 Motion 값을 연속 드래그할 때 다른 레이어가 매 입력마다 재합성되지 않고, Release 뒤 정확 출력으로 한 번 확정되는지 확인한다.
+- [ ] 재생 헤드가 중간 프레임에 있을 때 Guide와 Helix Axis End가 해당 프레임의 실제 경로를 따라가는지 확인한다.
 - [ ] Inspector 280/300/320px, Windows DPI 100/125/150%, 한국어/영어를 확인한다.
 
 이 문서는 사용자가 실제 Windows GUI에서 확인할 항목입니다. 자동 테스트 또는 오프스크린 시작 점검이 통과했더라도 수동 확인 전에는 체크하지 않습니다.

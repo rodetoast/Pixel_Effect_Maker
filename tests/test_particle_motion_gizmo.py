@@ -50,6 +50,36 @@ def test_motion_center_radius_and_shift_angle_handles_use_shared_settings(tmp_pa
     window.dirty=False;window.close()
 
 
+def test_start_angle_drag_is_continuous_across_negative_x_axis(tmp_path):
+    window,layer=window_context(tmp_path);canvas=window.canvas;settings=canvas.effect_guide_settings
+    settings.motion.start_angle_degrees=179;center_x=settings.origin_x+settings.motion.center_x;center_y=settings.origin_y+settings.motion.center_y
+    canvas._guide_handle="start_angle";canvas._move_effect_guide(QPointF(center_x-20,center_y-.5),Qt.KeyboardModifier.NoModifier)
+    assert 179 < settings.motion.start_angle_degrees < 182
+    window.dirty=False;window.close()
+
+
+def test_motion_mode_switch_preserves_orbit_and_helix_settings():
+    panel=ParticlePropertiesPanel();project=__import__("app.models.project",fromlist=["Project"]).Project.create_default();composition=ResourceComposition("c");project.resource_compositions.append(composition);layer=EffectResourceLayer("p",composition.id,placement_mode=PLACEMENT_PARTICLE)
+    layer.particle_settings.motion=ParticleMotionSettings(mode="orbit",radius_start=37,radius_end=9,helix_axis="x",axis_start=-8,axis_end=22)
+    panel.set_resource_layer(layer,project)
+    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("linear"));linear=panel.settings().motion
+    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("helix"));helix=panel.settings().motion
+    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("orbit"));orbit=panel.settings().motion
+    assert (linear.radius_start,linear.axis_end)==(37,22)
+    assert (helix.radius_start,helix.axis_start,helix.axis_end,helix.helix_axis)==(37,-8,22,"x")
+    assert (orbit.radius_start,orbit.radius_end)==(37,9)
+
+
+@pytest.mark.parametrize("width",[280,300,320])
+def test_motion_inspector_has_visible_labels_without_horizontal_scroll(width):
+    panel=ParticlePropertiesPanel();project=__import__("app.models.project",fromlist=["Project"]).Project.create_default();composition=ResourceComposition("c");project.resource_compositions.append(composition);layer=EffectResourceLayer("p",composition.id,placement_mode=PLACEMENT_PARTICLE)
+    layer.particle_settings.motion.mode="helix";panel.set_resource_layer(layer,project);panel.resize(width,720);panel.show();APP.processEvents()
+    assert panel.horizontalScrollBar().maximum()==0
+    records=next(records for title,_,_,records in panel._group_records if title=="Motion")
+    assert all(label.isVisible() for _,widget in records if widget.isEnabled() for label in [next(form.labelForField(widget) for title,_,form,items in panel._group_records if title=="Motion")])
+    panel.close()
+
+
 def test_motion_canvas_drag_creates_one_undo_and_escape_creates_none(tmp_path):
     window,layer=window_context(tmp_path);canvas=window.canvas;center=canvas._guide_points()["motion_center"].toPoint();before=window.application_undo_stack.count()
     QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=center);QTest.mouseMove(canvas,center+QPoint(18,12));QTest.mouseRelease(canvas,Qt.MouseButton.LeftButton,pos=center+QPoint(18,12));APP.processEvents()
@@ -57,6 +87,35 @@ def test_motion_canvas_drag_creates_one_undo_and_escape_creates_none(tmp_path):
     snapshot=deepcopy(layer.particle_settings.motion.to_dict());before=window.application_undo_stack.count();start=canvas._guide_points()["radius_start"].toPoint()
     QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=start);QTest.mouseMove(canvas,start+QPoint(30,0));QTest.keyClick(canvas,Qt.Key.Key_Escape);APP.processEvents()
     assert layer.particle_settings.motion.to_dict()==snapshot and window.application_undo_stack.count()==before
+    window.dirty=False;window.close()
+
+
+def test_motion_escape_restores_with_one_exact_render_and_no_undo(tmp_path,monkeypatch):
+    window,layer=window_context(tmp_path);canvas=window.canvas;generated=next(item for item in window.project.layers if item.id==layer.generated_layer_id);calls=[]
+    monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer_current_frame",lambda project,item,frame:calls.append((item.id,frame)) or generated)
+    before_count=window.application_undo_stack.count();snapshot=deepcopy(layer.particle_settings.motion.to_dict());start=canvas._guide_points()["radius_start"].toPoint()
+    QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=start);QTest.mouseMove(canvas,start+QPoint(24,0));QTest.keyClick(canvas,Qt.Key.Key_Escape);APP.processEvents()
+    assert layer.particle_settings.motion.to_dict()==snapshot
+    assert window.application_undo_stack.count()==before_count
+    assert calls==[(layer.id,window.frame_index)]
+    window.dirty=False;window.close()
+
+
+def test_motion_reset_is_one_undo_and_preserves_tracks(tmp_path):
+    window,layer=window_context(tmp_path);layer.particle_settings.motion.set_keyframe("radius_start",3,81);window.particle_properties.set_resource_layer(layer,window.project);before=window.application_undo_stack.count()
+    window.particle_properties.reset_motion.click();APP.processEvents()
+    assert window.application_undo_stack.count()==before+1
+    assert layer.particle_settings.motion.mode=="linear" and layer.particle_settings.motion.value("radius_start",3)==81
+    window.application_undo_stack.undo();assert layer.particle_settings.motion.mode=="orbit"
+    window.dirty=False;window.close()
+
+
+def test_motion_handle_has_priority_over_resource_transform_handle(tmp_path):
+    window,layer=window_context(tmp_path);canvas=window.canvas;motion=canvas._guide_points()["motion_center"].toPoint()
+    canvas.resource_transform_handle_positions=lambda:{"center":motion,"x":motion,"y":motion,"z":motion}
+    QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=motion)
+    assert canvas._guide_handle=="motion_center" and canvas._resource_transform_drag is None
+    QTest.mouseRelease(canvas,Qt.MouseButton.LeftButton,pos=motion)
     window.dirty=False;window.close()
 
 

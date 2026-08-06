@@ -68,7 +68,7 @@ class CanvasWidget(QWidget):
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.proxy_base_image_cache=ProxyBaseImageCache()
         self.proxy_composite_cache=InteractiveCompositeCache()
-        self.proxy_stats={"apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
+        self.proxy_stats={"apply_calls":0,"motion_apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
         self.last_proxy_dirty_rect=QRect()
         self.last_prewarm_install_timings={}
         self.last_prewarm_payload_timings={}
@@ -223,7 +223,7 @@ class CanvasWidget(QWidget):
         )
 
     def proxy_prewarm_payload(self,token,base_frame) -> ProxyPrewarmPayload | None:
-        if self.project is None or self.preview_frames is not None or self._resource_transform_drag:return None
+        if self.project is None or self.preview_frames is not None or self._resource_transform_drag or self._guide_handle:return None
         self.last_prewarm_payload_timings={};started=perf_counter()
         layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
         self.last_prewarm_payload_timings["selected_layer_lookup"]=(perf_counter()-started)*1000.0
@@ -353,6 +353,55 @@ class CanvasWidget(QWidget):
         left=min(point.x() for point in points);right=max(point.x() for point in points)
         top=min(point.y() for point in points);bottom=max(point.y() for point in points)
         return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
+
+    def _motion_guide_bounds(self):
+        if not isinstance(self.effect_guide_settings,ParticleEmitterSettings) or self.effect_guide_settings.motion.mode not in {"orbit","helix"}:return QRect()
+        points=list(self._guide_points().values())+list(getattr(self,"_motion_guide_path",()))
+        if not points:return QRect()
+        left=min(point.x() for point in points);right=max(point.x() for point in points)
+        top=min(point.y() for point in points);bottom=max(point.y() for point in points)
+        return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
+
+    def apply_interactive_motion_proxy(self,layer,base_frame,base_key,motion_revision) -> bool:
+        """Replace only the selected particle image and reuse cached composites."""
+        if self.project is None or self.preview_frames is not None or base_frame is None:return False
+        cache_key=tuple(base_key);token=self.proxy_prewarm_token(layer,cache_key)
+        previous=self.interactive_transform_proxy
+        old_bounds=QRect()
+        reusable=False
+        if previous is not None and previous.resource_layer_id==layer.id and previous.frame==self.frame_index:
+            old_bounds=previous.current_projected_bounds if not previous.current_projected_bounds.isNull() else previous.previous_projected_bounds
+            old_token=previous.prewarm_token
+            reusable=old_token is not None and old_token.composite_key==token.composite_key and previous.underlay_pixmap is not None and previous.overlay_pixmap is not None
+        if previous is not None and previous.render_in_progress:
+            self.proxy_stats["overlap_rejections"]+=1;return False
+        base=self.proxy_base_image_cache.get(cache_key,base_frame);transform=deepcopy(layer.layer_transform)
+        state=InteractiveTransformProxyState(layer.id,self.frame_index,cache_key,base,active=True,applied_transform=transform)
+        state.render_in_progress=True
+        try:
+            state.prewarm_token=token;state.depth_order_signature=token.depth_signature
+            if reusable:
+                state.underlay_pixmap=previous.underlay_pixmap;state.overlay_pixmap=previous.overlay_pixmap
+            else:
+                entry=self.proxy_composite_cache.get(token.composite_key)
+                if entry is not None:
+                    state.underlay_pixmap=entry.underlay;state.overlay_pixmap=entry.overlay
+                else:
+                    self._rebuild_proxy_depth_buffers(state,layer,transform)
+            evaluated=transform.evaluated(self.frame_index);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,evaluated)
+            current=self._proxy_polygon_bounds(polygon) if valid and evaluated.opacity>0 else QRect()
+            state.projected_quad=polygon if valid else QPolygonF();state.previous_projected_bounds=old_bounds;state.current_projected_bounds=current
+            state.paint_signature=(cache_key,int(motion_revision),token.depth_signature);state.last_applied_revision=int(motion_revision)
+            self.interactive_transform_proxy=state;self.proxy_stats["motion_apply_calls"]+=1;self.proxy_stats["partial_updates"]+=1
+            dirty=old_bounds.united(current).united(self._motion_guide_bounds()).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
+            self.last_proxy_dirty_rect=dirty;self.update(dirty if not dirty.isNull() else current)
+            return True
+        finally:
+            state.render_in_progress=False
+
+    def finish_interactive_motion_proxy(self,identifier) -> None:
+        state=self.interactive_transform_proxy
+        if state is not None and state.resource_layer_id==identifier:self.clear_interactive_transform_proxy(update=True)
 
     def apply_interactive_transform_proxy(self,layer) -> bool:
         state=self.interactive_transform_proxy
@@ -524,17 +573,18 @@ class CanvasWidget(QWidget):
             }
         if isinstance(settings, ParticleEmitterSettings):
             if settings.motion.mode in {"orbit","helix"}:
-                path=particle_motion_guide(settings,self.project.width if self.project else 64,self.project.height if self.project else 64)
+                path=particle_motion_guide(settings,self.project.width if self.project else 64,self.project.height if self.project else 64,effect_frame=self.frame_index)
+                evaluated_motion=settings.motion.evaluated(self.frame_index)
                 projected=[]
                 for item in path:
-                    x,y,_,valid=project_particle_billboard(item,settings.motion.perspective_strength,self.project.width if self.project else 64,self.project.height if self.project else 64)
+                    x,y,_,valid=project_particle_billboard(item,evaluated_motion.perspective_strength,self.project.width if self.project else 64,self.project.height if self.project else 64)
                     if valid:projected.append(self.canvas_to_widget(*self._project_effect_point(x,y)))
                 if not projected:return {}
-                center_raw=(settings.origin_x+settings.motion.center_x,settings.origin_y+settings.motion.center_y)
+                center_raw=(settings.origin_x+evaluated_motion.center_x,settings.origin_y+evaluated_motion.center_y)
                 center=self.canvas_to_widget(*self._project_effect_point(*center_raw))
                 points={"motion_center":center,"radius_start":projected[0],"radius_end":projected[-1]}
                 vector=projected[0]-center;length=max(1.0,math.hypot(vector.x(),vector.y()));points["start_angle"]=projected[0]+QPointF(-vector.y()/length*14,vector.x()/length*14)
-                if settings.motion.mode=="helix":points["axis_end"]=projected[-1]+QPointF(10,-10)
+                if settings.motion.mode=="helix":points["axis_end"]=projected[-1]
                 self._motion_guide_path=projected
                 return points
             guide = representative_particle_guide(settings)
@@ -798,7 +848,9 @@ class CanvasWidget(QWidget):
             elif self._guide_handle=="radius_start":settings.motion.radius_start=max(0.0,math.hypot(x-center_x,y-center_y))
             elif self._guide_handle=="radius_end":settings.motion.radius_end=max(0.0,math.hypot(x-center_x,y-center_y))
             elif self._guide_handle=="start_angle":
-                angle=math.degrees(math.atan2(y-center_y,x-center_x));settings.motion.start_angle_degrees=round(angle/15)*15 if modifiers&Qt.KeyboardModifier.ShiftModifier else angle
+                angle=math.degrees(math.atan2(y-center_y,x-center_x));previous=float(settings.motion.start_angle_degrees)
+                angle+=round((previous-angle)/360.0)*360.0
+                settings.motion.start_angle_degrees=round(angle/15)*15 if modifiers&Qt.KeyboardModifier.ShiftModifier else angle
             elif self._guide_handle=="axis_end":
                 if settings.motion.helix_axis=="x":settings.motion.axis_end=x-center_x
                 elif settings.motion.helix_axis=="y":settings.motion.axis_end=y-center_y

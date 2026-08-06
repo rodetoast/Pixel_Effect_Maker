@@ -61,7 +61,7 @@ from app.services.aseprite_import_service import import_aseprite
 from app.services.aseprite_locator_service import locate_aseprite, validate_aseprite
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.services.effect_composition_layer_render_service import render_effect_composition_layer, apply_effect_composition_layer
-from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, effect_resource_layer_base_frame_key
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, render_effect_resource_layer_current_base_frame, effect_resource_layer_base_frame_key
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
@@ -662,12 +662,22 @@ class MainWindow(QMainWindow):
         for identifier,(revision,frame) in dict(self._pending_particle_motion).items():
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is None or layer.particle_settings.motion.revision!=revision:continue
-            generated=apply_effect_resource_layer_current_frame(self.project,layer,frame)
-            if generated is not None and generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
-        self.canvas.update()
+            base_key=effect_resource_layer_base_frame_key(self.project,layer,frame)
+            base=render_effect_resource_layer_current_base_frame(self.project,layer,frame)
+            self.canvas.apply_interactive_motion_proxy(layer,base,base_key,revision)
 
     def _flush_particle_motion_final(self) -> None:
-        self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self._flush_particle_motion_current();self._pending_particle_motion.clear()
+        if self.canvas._guide_handle:
+            self.particle_motion_finalize_timer.start(120);return
+        self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop()
+        pending=dict(self._pending_particle_motion);self._pending_particle_motion.clear()
+        for identifier,(revision,frame) in pending.items():
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is None or layer.particle_settings.motion.revision!=revision:continue
+            generated=apply_effect_resource_layer_current_frame(self.project,layer,frame)
+            if generated is not None and generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
+            self.canvas.finish_interactive_motion_proxy(identifier)
+        if pending:self._schedule_resource_transform_prewarm()
 
     def _render_dirty_particle_motion_frame(self,frame: int) -> None:
         if self.active_preview_generator_id is not None:return
@@ -699,7 +709,7 @@ class MainWindow(QMainWindow):
     def _schedule_resource_transform_prewarm(self) -> None:
         if not hasattr(self,"interactive_proxy_prewarm"):return
         layer=self._selected_resource_layer()
-        if layer is None or self.play_timer.isActive() or self._timeline_scrubbing or self.canvas.preview_frames is not None or self.canvas._resource_transform_drag:
+        if layer is None or self.play_timer.isActive() or self._timeline_scrubbing or self.canvas.preview_frames is not None or self.canvas._resource_transform_drag or self.canvas._guide_handle:
             self.interactive_proxy_prewarm.cancel();return
         base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
         token=self.canvas.proxy_prewarm_token(layer,base_key)
@@ -711,7 +721,11 @@ class MainWindow(QMainWindow):
         if layer is None:return None
         base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
         if self.canvas.proxy_prewarm_token(layer,base_key,token.request_revision)!=token:return None
-        started=perf_counter();base,rendered_key=render_effect_resource_layer_base_frame(self.project,layer,self.frame_index)
+        started=perf_counter()
+        if layer.placement_mode==PLACEMENT_PARTICLE and layer.particle_settings.motion.mode in {"orbit","helix"}:
+            base=render_effect_resource_layer_current_base_frame(self.project,layer,self.frame_index);rendered_key=base_key
+        else:
+            base,rendered_key=render_effect_resource_layer_base_frame(self.project,layer,self.frame_index)
         self.interactive_proxy_prewarm.collector.record("particle_base_render_cache_lookup",(perf_counter()-started)*1000.0)
         if base is None or tuple(rendered_key)!=tuple(base_key):return None
         payload=self.canvas.proxy_prewarm_payload(token,base)
@@ -888,7 +902,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.localization.text("status.save_in_progress"),3000);return False
         self._save_in_progress=True;self.save_action.setEnabled(False);self.save_as_action.setEnabled(False)
         try:
-            self._materialize_resource_transform_sequences();saved_revision=self._project_edit_revision
+            # Project Save persists the editable Resource Layer metadata.  It
+            # must not materialize dirty preview/output sequences; exact
+            # materialization remains an explicit playback/export/bake concern.
+            saved_revision=self._project_edit_revision
             saved_path=save_project(self.project,target)
         except ProjectIOError as exc:
             key={"save_directory":"error.save_directory","save_serialize":"error.save_serialize","save_temporary":"error.save_temporary","save_replace":"error.save_replace"}.get(exc.code,"error.save_failed_body")
@@ -1377,7 +1394,11 @@ class MainWindow(QMainWindow):
 
     def _effect_guide_cancelled(self, identifier: str, before) -> None:
         stored=self._effect_guide_before;self._effect_guide_before=None
-        if isinstance(stored,EffectResourceLayer):self.apply_undo_value(identifier,"resource_layer_settings",stored);return
+        if isinstance(stored,EffectResourceLayer):
+            self.apply_undo_value(identifier,"resource_layer_settings",stored)
+            restored=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if restored is not None and restored.placement_mode==PLACEMENT_PARTICLE and restored.particle_settings.motion.mode in {"orbit","helix"}:self._queue_particle_motion_render(restored,final=True)
+            return
         field="composition_layer_settings" if isinstance(before,EffectCompositionLayer) else "particle_settings"
         self.apply_undo_value(identifier,field,before)
 
