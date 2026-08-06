@@ -1,5 +1,7 @@
 # Project Format v6
 
+> 형식 6은 계속 로드할 수 있는 Legacy 형식이다. 최신 저장 형식은 Pixel Payload를 압축한 [Project Format v7](PROJECT_FORMAT_V7.md)이다.
+
 애플리케이션 버전은 `0.0.04`를 유지하며 프로젝트 `FORMAT_VERSION`만 6으로 변경한다.
 
 `effect_resource_layers[].layer_transform`은 선택적인 v6 확장 필드다. 없는 기존 v6은 Identity로 읽는다. `position[3]`, `rotation[3]`, `scale[2]`, `opacity`, Canvas 중심 기준 `pivot[2]`, `perspective_strength`, 비어 있지 않은 `tracks`, `revision`을 저장한다. 기존 문서를 계속 읽을 수 있으므로 포맷 번호는 6을 유지한다.

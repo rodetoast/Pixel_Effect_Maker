@@ -40,14 +40,14 @@ Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽
 - 독립 RGBA Animation Clip 생성·명시적 업데이트 및 공유
 - Seed 결정적 Particle Emitter와 Animated Particle Preview, Bake, PNG 시퀀스 출력
 - PNG/GIF Embedded Resource, GIF 프레임 duration과 정적 Resource Particle 재생
-- 프로젝트 레이어별 표시 전환과 형식 6 Resource Layer 저장
+- 프로젝트 레이어별 표시 전환과 형식 7 compact Pixel/Resource Layer 저장
 - Effect Editor/Resource Editor Workspace 전환과 통합 Resource Library
 - PNG/GIF/Aseprite 다중 Drag and Drop, 전용 Preview·duration Timeline·Pivot 편집
 - 비어 있는 Resource Editor에서 에셋 가져오기 또는 빈 Resource Composition 생성을 선택하는 시작 패널
 - 정적/애니메이션 Resource 공통 Particle Picker와 Resource→Emitter 생성
 - QSettings 기반 External Tools Aseprite 경로 탐색·검증
 - 움직이는 8프레임 `Playback Test Project`
-- `.peffect.json` 형식 6 저장/불러오기와 형식 1~5 프로젝트 자동 마이그레이션
+- `.peffect.json` 형식 7 저장/불러오기와 형식 1~6 프로젝트 자동 마이그레이션
 - 합성 프레임의 투명 PNG 순차 내보내기
 - 미저장 변경 표시와 닫기/새 프로젝트/불러오기 시 확인
 
@@ -136,6 +136,10 @@ GUI를 생성하지 않고 버전 확인:
 
 파일 대화상자에서 다른 위치도 선택할 수 있습니다. 생성된 프로젝트와 내보내기 결과는 기본적으로 Git에서 제외됩니다.
 
+프로젝트 형식 7은 일반 Canvas Frame, PNG Source Asset과 GIF/Aseprite Animated Resource의 RGBA를 프로젝트 안에 무손실로 내장합니다. `source_path`는 Reimport 위치일 뿐이므로 원본 파일이 이동하거나 삭제돼도 저장된 픽셀과 Resource Composition은 계속 편집할 수 있습니다. 기존 형식 1~6의 숫자 배열 Pixel Payload도 읽으며, 다음 Save에서 compact `rgba8-zlib-base64` 표현으로 기록합니다.
+
+저장은 대상과 같은 폴더에 Temporary File을 완성하고 flush/fsync한 뒤 atomic replace합니다. 실패하면 기존 파일, Dirty 표시와 이전 Save As 경로가 유지됩니다. Preview, QImage/QPixmap, Interactive Proxy와 Prewarm Cache는 프로젝트에 저장되지 않습니다.
+
 ## 현재 지원하지 않는 기능
 
 - 브러시, 지우개, 스포이트, 채우기, 선택
@@ -145,7 +149,6 @@ GUI를 생성하지 않고 버전 확인:
 - Resource Composition 레이어 재정렬과 중첩 Composition
 - 스프라이트 시트, GIF, Unity, Godot 내보내기
 - PyInstaller 실행 파일 배포
-- 대형 프로젝트용 압축 픽셀 저장 형식
 
 프레임은 타임라인에서 현재 배열 순서를 기준으로 `1`, `2`, `3`처럼 표시됩니다. 프로젝트 파일 호환성을 위해 프레임의 기존 `name` 필드는 유지하지만 타임라인 번호에는 사용하지 않습니다. 새 프로젝트의 캔버스 범위는 현재 모델 제약에 맞춘 `1–1024`, FPS 범위는 `1–120`입니다.
 

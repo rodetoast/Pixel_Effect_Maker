@@ -17,7 +17,7 @@ from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 
-FORMAT_VERSION = 6
+FORMAT_VERSION = 7
 
 
 class ProjectError(ValueError):
@@ -186,7 +186,7 @@ class Project:
         if not isinstance(data, dict):
             raise ProjectError("project root must be a JSON object")
         version = data.get("format_version")
-        if version not in (1, 2, 3, 4, 5, FORMAT_VERSION):
+        if version not in (1, 2, 3, 4, 5, 6, FORMAT_VERSION):
             raise ProjectError(f"unsupported format_version: {version!r}")
         try:
             canvas = data["canvas"]

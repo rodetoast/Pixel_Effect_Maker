@@ -472,3 +472,12 @@
 - [ ] 다른 Resource Layer의 표시, Opacity 또는 정확 출력과 Position Z 앞뒤 순서를 바꾼 뒤 올바른 합성으로 갱신되는지 확인한다.
 - [ ] Undo/Redo를 빠르게 반복한 뒤 마지막 상태의 첫 Drag와 정확 Release 결과가 일치하는지 확인한다.
 - [ ] Prewarm 완료 자체로 Canvas가 깜박이거나 상세 Guide/Ghost가 사라지지 않는지 확인한다.
+
+## Project Save Reliability & Performance
+
+- [ ] PNG/GIF/Aseprite를 각각 Import하고 Resource Composition과 Effect Resource Layer에 연결한 뒤 Save·종료·Load해 ID, Pixel, Pivot, Duration/Tag와 참조를 확인한다.
+- [ ] 세 원본 파일을 다른 위치로 옮긴 뒤 프로젝트를 열어 내장 Asset·Composition·Effect가 유지되고 Reimport만 새 경로를 요청하는지 확인한다.
+- [ ] Source가 많은 프로젝트에서 첫 Save, 변경 없는 두 번째 Save, 이름만 변경, Pivot만 변경, 한 Source Reimport 후 Save 체감을 비교한다.
+- [ ] Save As 취소와 쓰기 불가능한 폴더, 잠긴 대상 파일에서 기존 저장 경로·기존 파일·Dirty 표시가 유지되는지 확인한다.
+- [ ] 저장 중 Save/Save As가 비활성화되고 완료 뒤 다시 활성화되며 성공 Status가 실패 시 표시되지 않는지 확인한다.
+- [ ] 한국어와 영어에서 폴더/인코딩/Temporary/Atomic Replace 오류 안내가 내부 Traceback 없이 표시되는지 확인한다.

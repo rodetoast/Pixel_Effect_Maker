@@ -100,6 +100,8 @@ class MainWindow(QMainWindow):
         self.layer_index = 0
         self.dirty = False
         self._non_undo_dirty=False
+        self._project_edit_revision=0
+        self._save_in_progress=False
         self.settings_service = settings_service or ShortcutSettingsService()
         self.localization = LocalizationService(self.settings_service.settings)
         self.application_undo_stack = QUndoStack(self)
@@ -559,11 +561,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{get_display_name()} - {self.project.name}{marker}")
 
     def _mark_dirty(self) -> None:
+        self._project_edit_revision+=1
         self._non_undo_dirty=True
         self.dirty = True
         self._update_title()
 
     def _undo_index_changed(self, *args) -> None:
+        self._project_edit_revision+=1
         self.dirty = self._non_undo_dirty or not self.application_undo_stack.isClean()
         self._update_title()
         self._refresh_undo_action_texts()
@@ -813,7 +817,8 @@ class MainWindow(QMainWindow):
         try:
             self.project = load_project(path)
         except ProjectIOError as exc:
-            QMessageBox.critical(self, self.localization.text("error.open"), str(exc))
+            key="error.load_payload" if exc.code=="load_payload" else "error.load_failed_body"
+            QMessageBox.critical(self,self.localization.text("error.open"),self.localization.text(key).format(reason=str(exc)))
             return
         self.set_playing(False)
         self.preview_manager.reset_context()
@@ -831,17 +836,26 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.localization.text("status.opened").format(path=path), 4000)
 
     def save(self) -> bool:
-        self._materialize_resource_transform_sequences()
         if self.project_path is None:
             return self.save_as()
+        return self._save_to_path(self.project_path)
+
+    def _save_to_path(self,target: Path) -> bool:
+        if self._save_in_progress:
+            self.statusBar().showMessage(self.localization.text("status.save_in_progress"),3000);return False
+        self._save_in_progress=True;self.save_action.setEnabled(False);self.save_as_action.setEnabled(False)
         try:
-            self.project_path = save_project(self.project, self.project_path)
+            self._materialize_resource_transform_sequences();saved_revision=self._project_edit_revision
+            saved_path=save_project(self.project,target)
         except ProjectIOError as exc:
-            QMessageBox.critical(self, self.localization.text("error.save"), str(exc))
+            key={"save_directory":"error.save_directory","save_serialize":"error.save_serialize","save_temporary":"error.save_temporary","save_replace":"error.save_replace"}.get(exc.code,"error.save_failed_body")
+            QMessageBox.critical(self,self.localization.text("error.save"),self.localization.text(key).format(reason=str(exc)))
             return False
-        self.dirty = False
-        self._non_undo_dirty=False
-        self.application_undo_stack.setClean()
+        finally:
+            self._save_in_progress=False;self.save_action.setEnabled(True);self.save_as_action.setEnabled(True)
+        self.project_path=saved_path
+        if self._project_edit_revision==saved_revision:
+            self.dirty=False;self._non_undo_dirty=False;self.application_undo_stack.setClean()
         self._update_title()
         self.statusBar().showMessage(self.localization.text("status.saved").format(path=self.project_path), 4000)
         if self.preview_manager.dirty_generator_ids():
@@ -859,8 +873,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return False
-        self.project_path = Path(path)
-        return self.save()
+        return self._save_to_path(Path(path))
 
     def export_frames(self) -> None:
         self._materialize_resource_transform_sequences()

@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+from app.frame_payload_codec import DEFAULT_FRAME_PAYLOAD_CODEC
 
 
 @dataclass
@@ -68,14 +69,12 @@ class AnimationClipAsset:
                 "frame_durations_ms": self.frame_durations_ms, "loop": self.loop,
                 "source_format": self.source_format, "source_path": self.source_path, "tags": self.tags,
                 "width": self.width, "height": self.height,
-                "frames": [frame.tolist() for frame in self.frames]}
+                "frames": [DEFAULT_FRAME_PAYLOAD_CODEC.encode(frame,("clip",self.id,index)) for index,frame in enumerate(self.frames)]}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AnimationClipAsset":
         width, height = int(data["width"]), int(data["height"])
-        frames = [np.asarray(item, dtype=np.uint8) for item in data["frames"]]
-        if any(frame.shape != (height, width, 4) for frame in frames):
-            raise ValueError("invalid animation clip frame shape")
+        frames=[DEFAULT_FRAME_PAYLOAD_CODEC.decode(item,width,height,("clip",str(data["id"]),index)) for index,item in enumerate(data["frames"])]
         pivot = data.get("pivot", {})
         return cls(id=str(data["id"]), name=str(data.get("name", "Animation Clip")),
                    frames=frames, fps=int(data.get("fps", 12)),

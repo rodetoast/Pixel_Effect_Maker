@@ -54,7 +54,7 @@ Canvas는 Preview 활성 Generator의 실제 Generated Layer를 transient Previe
 
 ## 파일 형식
 
-애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `6`입니다. 형식 6은 `effect_resource_layers`에 Single과 Particle Emission 설정을 함께 저장하고 활성 모드만 렌더합니다. 형식 1~5는 로드 시 메모리에서 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
+애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `7`입니다. 형식 7은 형식 6의 통합 `effect_resource_layers` 의미를 유지하면서 모든 영구 RGBA Frame을 compact `rgba8-zlib-base64` Payload로 기록합니다. 형식 1~6의 Nested List 픽셀과 기존 모델은 로드 시 메모리에서 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
 
 ## Particle 규칙
 

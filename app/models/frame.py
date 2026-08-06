@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+from app.frame_payload_codec import DEFAULT_FRAME_PAYLOAD_CODEC
 
 
 def empty_pixels(width: int, height: int) -> np.ndarray:
@@ -27,7 +28,8 @@ class Frame:
             "id": self.id,
             "name": self.name,
             "layer_pixels": {
-                layer_id: pixels.tolist() for layer_id, pixels in self.layer_pixels.items()
+                layer_id: DEFAULT_FRAME_PAYLOAD_CODEC.encode(pixels,("project_frame",self.id,layer_id))
+                for layer_id, pixels in self.layer_pixels.items()
             },
         }
 
@@ -40,11 +42,7 @@ class Frame:
             raise ValueError("frame layer_pixels must be an object")
         layers: dict[str, np.ndarray] = {}
         for layer_id, raw_pixels in raw_layers.items():
-            pixels = np.asarray(raw_pixels, dtype=np.uint8)
-            if pixels.shape != (height, width, 4):
-                raise ValueError(
-                    f"invalid pixel buffer shape for layer {layer_id}: {pixels.shape}"
-                )
+            pixels=DEFAULT_FRAME_PAYLOAD_CODEC.decode(raw_pixels,width,height,("project_frame",str(data["id"]),str(layer_id)))
             layers[str(layer_id)] = pixels
         return cls(
             id=str(data["id"]),

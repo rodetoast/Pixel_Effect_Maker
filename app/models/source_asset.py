@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+from app.frame_payload_codec import DEFAULT_FRAME_PAYLOAD_CODEC
 
 
 @dataclass
@@ -47,7 +48,7 @@ class SourceAsset:
             "name": self.name,
             "width": self.width,
             "height": self.height,
-            "pixels": self.pixels.tolist(),
+            "pixels": DEFAULT_FRAME_PAYLOAD_CODEC.encode(self.pixels,("source",self.id,0)),
             "pivot": {"x": self.pivot_x, "y": self.pivot_y},
             "source_path": self.source_path,
             "source_format": self.source_format,
@@ -57,9 +58,7 @@ class SourceAsset:
     def from_dict(cls, data: dict[str, Any]) -> "SourceAsset":
         width = int(data["width"])
         height = int(data["height"])
-        pixels = np.asarray(data["pixels"], dtype=np.uint8)
-        if pixels.shape != (height, width, 4):
-            raise ValueError(f"invalid source asset pixel shape: {pixels.shape}")
+        pixels=DEFAULT_FRAME_PAYLOAD_CODEC.decode(data["pixels"],width,height,("source",str(data["id"]),0))
         pivot = data.get("pivot", {})
         return cls(
             id=str(data["id"]),

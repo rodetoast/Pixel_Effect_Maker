@@ -4,6 +4,8 @@
 
 ### Added
 
+- 프로젝트 형식 7에 결정적·무손실 `rgba8-zlib-base64` Pixel Payload, SHA-256 검증, 64MB Encoded Payload LRU와 v1~v6 Nested List 로드 호환 추가
+- PNG/GIF/Aseprite 내장 프레임·경로·Timing·Tag·Resource/Effect 참조 및 원본 파일 부재 Round-trip 테스트 추가
 - Resource Layer 선택·최종 Frame 이동 뒤 80ms Idle에 Particle Base Crop, QImage/QPixmap, Underlay/Overlay를 미리 준비하는 latest-only Prewarm 추가
 - 선택 레이어를 제외한 Layer/Frame/Visibility/Depth/Render signature 기반 Prefix/Suffix Composite Cache와 64MB LRU 상한 추가
 - Particle Emission/Single 2.5D 연속 조작을 위한 Canvas 전용 QPainter Projective Proxy, Alpha Bounds Crop, Base QImage/QPixmap Cache와 Underlay/Overlay 고정 합성 추가
@@ -20,6 +22,8 @@
 
 ### Changed
 
+- 프로젝트 저장을 compact JSON, 동일 디렉터리 Temporary File, flush/fsync, `os.replace` 순서로 강화하고 변경 없는 두 번째 저장과 Metadata-only 저장의 Pixel 재인코딩을 제거
+- Save/Save As는 성공 후에만 경로·Dirty 상태를 갱신하고 중복 요청을 거부하며 Directory/Encoding/Temporary/Replace 실패를 한국어·영어로 구분
 - Prewarm의 NumPy Alpha Scan과 Underlay/Overlay 합성을 기존 Qt 작업 풀에서 낮은 우선순위로 실행하고, GUI 스레드에는 최신 요청의 이미지 설치만 전달
 - 첫 2.5D Gizmo Press가 유효한 Prewarm을 즉시 활성화하며 선택·Frame·Project·Visibility·Depth·Revision 변경 결과와 Scrub/Playback 중 요청을 폐기
 - 2.5D 인터랙티브 화면 갱신을 최대 약 30FPS(33ms) latest-wins로 제한하고 SpinBox 종료·120ms Idle·Gizmo Release/Escape에서만 정확한 CPU 결과를 확정
