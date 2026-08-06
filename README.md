@@ -4,6 +4,8 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 New saves use project format v8. v1-v7 projects load with Linear motion by default. The application remains `Pixel Effect Maker v0.0.04`.
 
+This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
+
 현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
 
 Resource Layer의 최종 출력에는 Position/Rotation X/Y/Z, Scale, Opacity, Pivot, Perspective, Keyframe과 안정적 Z 정렬을 갖춘 공통 평면 기반 2.5D Transform을 적용할 수 있습니다. 자세한 좌표계와 제한은 `docs/RESOURCE_LAYER_2_5D_TRANSFORM.md`를 참고합니다.
@@ -101,6 +103,8 @@ GUI를 생성하지 않고 버전 확인:
 ```bat
 .venv\Scripts\python.exe -m app.main --version
 ```
+
+임시 공유 빌드는 `Pixel_Effect_Maker.spec`과 `build_preview.bat`의 one-folder 구성을 사용합니다. 빌드 환경에는 `requirements.txt`와 별도 `requirements-build.txt`를 설치하며, 사용자 `projects`, `exports`, Archive, Snapshot, 테스트와 캐시는 포함하지 않습니다.
 
 ## 키보드 단축키
 

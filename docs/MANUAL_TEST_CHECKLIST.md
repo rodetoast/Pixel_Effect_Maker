@@ -1,5 +1,17 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Early Preview Build 안내
+
+- [ ] 새 QSettings 상태에서 일반 실행 시 Startup Dialog보다 먼저 안내창이 열린다.
+- [ ] 명시적 `.peffect.json` 경로 실행도 프로젝트를 읽기 전에 안내창을 거친다.
+- [ ] 종료, 창 닫기와 Escape는 Startup Dialog와 프로젝트 Load 없이 앱을 끝낸다.
+- [ ] `확인하고 시작`과 Enter만 시작을 계속한다.
+- [ ] `이 빌드에서는 다시 표시하지 않기`를 선택하면 같은 Notice Revision에서 자동 표시되지 않는다.
+- [ ] 도움말의 `프로젝트 소개 및 개발 현황…`은 수락 상태와 관계없이 열리고 체크박스나 종료 버튼을 표시하지 않는다.
+- [ ] 한국어·영어 전환 뒤 제목, 경고, 목적, 현재 기능, 향후 기능과 버튼이 함께 바뀐다.
+- [ ] Windows DPI 100%/125%/150%와 작은 화면에서 세로 Scroll은 가능하고 가로 Scroll이나 잘림은 없다.
+- [ ] 중요한 프로젝트 복사본 경고와 앱 v0.0.04, Project Format 8, Early Preview 채널이 표시된다.
+
 ## Particle Orbit & Helix Motion
 
 - [ ] Point Spawn에서 Orbit, 반지름 100, 1회전으로 Clockwise/Counter-clockwise를 비교한다.

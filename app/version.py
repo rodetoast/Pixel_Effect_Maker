@@ -4,6 +4,12 @@ APP_NAME = "Pixel Effect Maker"
 __version__ = "0.0.04"
 VERSION_LABEL = f"v{__version__}"
 
+# Distribution channel metadata is intentionally independent from the public
+# application version and the project file format.
+PREVIEW_BUILD = True
+PREVIEW_LABEL = "Early Preview Build"
+PREVIEW_NOTICE_REVISION = 1
+
 
 def get_display_name() -> str:
     """Return the application name with its user-facing version label."""

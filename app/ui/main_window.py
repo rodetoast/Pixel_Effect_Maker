@@ -83,6 +83,7 @@ from .interface_settings_dialog import InterfaceSettingsDialog, timeline_frame_w
 from .undo_commands import EditorOperationCommand, EditorValueCommand
 from .tooltip_helper import apply_tooltip
 from .interactive_proxy_prewarm import InteractiveProxyPrewarmManager
+from .preview_build_notice_dialog import PreviewBuildNoticeDialog
 
 
 class MainWindow(QMainWindow):
@@ -312,6 +313,10 @@ class MainWindow(QMainWindow):
             lambda: self.localization.set_language("en")
         )
 
+        self.help_menu = self.menuBar().addMenu("Help")
+        self.project_overview_action = QAction("Project Overview and Development Status…", self)
+        self.help_menu.addAction(self.project_overview_action)
+
         # Compatibility aliases for the existing action-oriented tests and code.
         self.add_layer_action = self.new_layer_action
         self.duplicate_frame_action = self.new_frame_action
@@ -335,6 +340,7 @@ class MainWindow(QMainWindow):
         self.view_menu.setTitle(t("menu.view"))
         self.export_menu.setTitle(t("menu.export"))
         self.settings_menu.setTitle(t("menu.settings"))
+        self.help_menu.setTitle(t("menu.help"))
         self.language_menu.setTitle(t("menu.language"))
         mapping = {
             self.new_action: "action.new_project",
@@ -359,6 +365,7 @@ class MainWindow(QMainWindow):
             self.interface_settings_action: "interface.title",
             self.add_resource_layer_action: "resource_layer.add",
             self.editing_guides_action: "effect.editing_guides",
+            self.project_overview_action: "action.project_overview",
         }
         for action, key in mapping.items():
             action.setText(t(key))
@@ -396,6 +403,7 @@ class MainWindow(QMainWindow):
             self.redo_action: "tooltip.redo",
             self.add_resource_layer_action: "tooltip.resource_layer.add",
             self.editing_guides_action: "tooltip.effect.show_guides",
+            self.project_overview_action: "tooltip.main.project_overview",
         }
         for action, key in action_keys.items():
             apply_tooltip(action, self.localization, key, action)
@@ -444,6 +452,7 @@ class MainWindow(QMainWindow):
         self.status_bar_action.toggled.connect(self.statusBar().setVisible)
         self.editing_guides_action.toggled.connect(self._set_effect_guides_visible)
         self.add_resource_layer_action.triggered.connect(self.add_default_resource_layer)
+        self.project_overview_action.triggered.connect(self.show_project_overview)
         self.timeline.add_requested.connect(self.add_frame)
         self.timeline.duplicate_requested.connect(self.duplicate_frame)
         self.timeline.delete_requested.connect(self.delete_frame)
@@ -1782,6 +1791,14 @@ class MainWindow(QMainWindow):
         dialog=InterfaceSettingsDialog(self.settings_service.settings,self.localization,self)
         dialog.frame_width_changed.connect(self.apply_timeline_frame_width)
         dialog.exec()
+
+    def show_project_overview(self) -> None:
+        PreviewBuildNoticeDialog(
+            self.localization,
+            self.settings_service.settings,
+            self,
+            manual_open=True,
+        ).exec()
 
     def apply_timeline_frame_width(self,width:int) -> None:
         width=max(20,min(96,int(width)));self.settings_service.settings.setValue("ui/timeline_frame_width",width)

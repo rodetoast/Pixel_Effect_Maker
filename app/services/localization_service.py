@@ -662,6 +662,50 @@ KO.update({
     "tooltip.resource.use": "이 리소스 컴포지션을 이펙트 에디터의 리소스 레이어로 추가합니다.",
 })
 
+EN.update({
+    "menu.help": "Help",
+    "action.project_overview": "Project Overview and Development Status…",
+    "preview.title": "{display_name} — {preview_label}",
+    "preview.badge": "Work in progress · Temporary test distribution",
+    "preview.warning_heading": "Important preview-build notice",
+    "preview.warning_body": "This is an in-development preview build intended for feature testing and feedback.\n\nIt may contain known and unknown defects, unexpected crashes, performance issues, or project compatibility problems.\n\nKeep separate backups of important source files and project files.\n\nDo not use this build as the only storage location for important work.",
+    "preview.purpose_heading": "What this project is for",
+    "preview.purpose_body": "Pixel Effect Maker is not intended to replace Aseprite as a general-purpose pixel editor.\n\nIt is designed to import PNG, GIF, and Aseprite assets, organize them as reusable Resource Compositions, and combine Resource Layers and Particle Emission to create, preview, bake, and export multi-frame pixel effects.",
+    "preview.current_heading": "Currently implemented",
+    "preview.current_items": "PNG, GIF, and Aseprite asset import\nResource Composition authoring and keyframe animation\nSingle and Particle Emission Resource Layers\nLinear, Orbit, and Helix particle motion\nParticle-local perspective and stable depth sorting\nPosition/Rotation XYZ, Scale, Pivot, and Perspective 2.5D transforms\nCanvas guides and direct-manipulation gizmos\nTimeline playback, scrubbing, and Undo/Redo\nPreview, Bake, PNG, and PNG Sequence export\nCompact Project Format v8 and atomic save\nMigration of earlier project formats\nKorean and English interfaces",
+    "preview.future_heading": "Planned development",
+    "preview.future_items": "Further stabilization and user-feedback fixes\nLayer duplication, reordering, locking, and multi-selection\nKeyframe dragging, copy/paste, and a Graph Editor\nAdvanced per-particle 3D position, rotation, and depth\nCustom Path, presets, and additional motion/deformation\nBasic pixel-editing tools\nAutosave and recovery\nAdditional export formats and a production distribution pipeline",
+    "preview.footer": "Development plans and feature scope may change based on testing results.",
+    "preview.build_info": "Application version: {version}\nProject format: {format_version}\nBuild channel: {preview_label}",
+    "preview.exit": "Exit",
+    "preview.accept": "I Understand — Start",
+    "preview.close": "Close",
+    "preview.do_not_show": "Do not show this again for this build",
+    "tooltip.main.project_overview": "Review the Early Preview risks, current capabilities, and planned development at any time.",
+})
+
+KO.update({
+    "menu.help": "도움말",
+    "action.project_overview": "프로젝트 소개 및 개발 현황…",
+    "preview.title": "{display_name} — {preview_label}",
+    "preview.badge": "개발 중 · 테스트용 임시 배포",
+    "preview.warning_heading": "Early Preview Build 주의사항",
+    "preview.warning_body": "이 프로그램은 기능 검증과 피드백 수집을 위한 개발 중인 임시 버전입니다.\n\n알려진 오류와 아직 발견되지 않은 오류, 예기치 않은 종료, 성능 저하 또는 프로젝트 호환성 문제가 발생할 수 있습니다.\n\n중요한 작업은 반드시 원본 파일과 프로젝트 복사본을 별도로 보관한 상태에서 진행해 주세요.\n\n이 빌드는 제작 중인 작업의 유일한 저장본을 보관하는 용도로 권장하지 않습니다.",
+    "preview.purpose_heading": "프로그램의 목적",
+    "preview.purpose_body": "Pixel Effect Maker는 Aseprite를 대체하는 범용 픽셀 편집기가 아닙니다.\n\nPNG, GIF, Aseprite 에셋을 가져와 재사용 가능한 Resource Composition으로 구성하고, Resource Layer와 Particle Emission을 조합하여 여러 프레임의 픽셀 이펙트를 제작·미리보기·굽기·내보내기 위한 도구입니다.",
+    "preview.current_heading": "현재 구현 기능",
+    "preview.current_items": "PNG, GIF, Aseprite 에셋 가져오기\nResource Composition 제작과 키프레임 애니메이션\nSingle 및 Particle Emission Resource Layer\nLinear, Orbit, Helix 파티클 이동\nParticle Local Perspective와 안정적 깊이 정렬\nPosition/Rotation XYZ, Scale, Pivot, Perspective 기반 2.5D 변형\nCanvas Guide와 직접 조작 Gizmo\nTimeline 재생, 스크러빙, Undo/Redo\nPreview, Bake, PNG 및 PNG Sequence 내보내기\nCompact Project Format v8과 Atomic Save\n기존 프로젝트 형식 마이그레이션\n한국어와 영어 인터페이스",
+    "preview.future_heading": "앞으로 개발할 기능",
+    "preview.future_items": "전체 기능의 추가 안정화와 사용자 피드백 반영\n레이어 복제, 재정렬, 잠금과 다중 선택\n키프레임 드래그, 복사·붙여넣기와 Graph Editor\nParticle별 고급 3D 위치·회전과 깊이 표현\nCustom Path, Preset과 추가 Motion/Deformation\n기본 픽셀 편집 도구\n자동 저장과 복구\n추가 Export 형식과 정식 배포 환경",
+    "preview.footer": "개발 계획과 기능 범위는 테스트 결과에 따라 변경될 수 있습니다.",
+    "preview.build_info": "앱 버전: {version}\n프로젝트 형식: {format_version}\n빌드 채널: {preview_label}",
+    "preview.exit": "종료",
+    "preview.accept": "확인하고 시작",
+    "preview.close": "닫기",
+    "preview.do_not_show": "이 빌드에서는 다시 표시하지 않기",
+    "tooltip.main.project_overview": "Early Preview 위험, 현재 기능과 개발 계획을 언제든 다시 확인합니다.",
+})
+
 
 class LocalizationService(QObject):
     language_changed = Signal(str)

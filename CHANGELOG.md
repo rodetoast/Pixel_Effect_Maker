@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Early Preview Build Notice
+
+- Added a bilingual, scrollable Early Preview risk and project-overview dialog before normal and explicit-project startup.
+- Added revision-scoped QSettings acceptance and a Help menu action that always reopens the overview without changing project JSON.
+- Added diagnostic startup bypass coverage, responsive offscreen UI tests, and a reproducible one-folder PyInstaller build definition with a bilingual Preview README.
+
 ## Unreleased — Particle Orbit & Helix Motion
 
 - Added deterministic Linear, Orbit, and X/Y/Z Helix motion for Particle Emission.

@@ -4,9 +4,9 @@
 
 프로그램 버전의 단일 원천은 `app/version.py`입니다. `APP_NAME`, `__version__`, `VERSION_LABEL`, `get_display_name()`을 정의하며, UI 제목과 `--version` 출력은 이 값을 가져와 사용합니다. 다른 Python 파일에 버전 문자열을 직접 중복 작성하지 않습니다.
 
-현재 프로그램 버전은 `0.0.03`, 사용자 표시 버전은 `v0.0.03`입니다. 초기 개발 단계에서는 `v0.0.01`, `v0.0.02` … `v0.0.10`처럼 증가시키고, 큰 기능 단계가 완성되면 `v0.1.0`, `v0.2.0`처럼 올릴 수 있습니다.
+현재 프로그램 버전은 `0.0.04`, 사용자 표시 버전은 `v0.0.04`입니다. `PREVIEW_BUILD`, `PREVIEW_LABEL`, `PREVIEW_NOTICE_REVISION`은 같은 파일에서 배포 채널을 설명하지만 `--version` 문자열에는 포함하지 않습니다.
 
-프로그램 버전과 프로젝트 파일의 `format_version`은 서로 독립적입니다. 앱 버전은 `0.0.03`을 유지하고 최신 파일 형식은 `format_version = 5`입니다. 형식 5는 Resource Composition, Layer, Track과 Keyframe을 저장합니다. 형식 1~4 파일은 기존 데이터를 유지하고 `resource_compositions = []`를 보완하며, 이후 사용자가 저장할 때 형식 5로 기록합니다. 미래 형식은 거부합니다.
+프로그램 버전과 프로젝트 파일의 `format_version`은 서로 독립적입니다. 앱 버전은 `0.0.04`이고 최신 파일 형식은 `format_version = 8`입니다. 형식 8은 형식 7 compact pixel payload에 Particle Motion metadata를 추가합니다. 형식 1~7은 기존 데이터를 유지해 메모리에서 마이그레이션하며 이후 사용자가 저장할 때 형식 8로 기록합니다. 미래 형식은 거부합니다.
 
 ## 구조와 주요 클래스
 
@@ -154,4 +154,4 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 
 `TimelineScrubController`는 Effect와 Resource Composition 테이블 viewport의 실제 mouse press/move/release를 공통 처리한다. 열이 바뀔 때만 프레임을 선택하며 양쪽 바깥 이동은 첫/마지막 열로 clamp한다. 스크러빙 시작 신호는 재생만 정지하고 모델이나 Undo Stack을 변경하지 않는다.
 
-일반 앱 진입은 MainWindow를 표시하기 전에 `StartupDialog`에서 새 프로젝트 설정 또는 기존 프로젝트 열기를 결정한다. `--version`, `--check`, 명시적 프로젝트 경로 및 테스트에서 직접 생성하는 MainWindow는 이 대화상자를 거치지 않는다. Resource Editor의 빈 시작 상태는 자동 Popup이 아니라 반복 노출 문제가 없는 Empty State Panel로 제공한다.
+일반 앱 진입은 MainWindow를 표시하기 전에 Early Preview Notice를 확인한 뒤 `StartupDialog`에서 새 프로젝트 설정 또는 기존 프로젝트 열기를 결정한다. 명시적 프로젝트 경로도 Notice 수락 뒤에만 읽는다. `--version`, `--check` 및 테스트에서 직접 생성하는 MainWindow는 이 모달 시작 흐름을 거치지 않는다. 수락은 버전·형식·Notice Revision별 QSettings에만 저장하며 프로젝트 JSON과 분리한다. Resource Editor의 빈 시작 상태는 자동 Popup이 아니라 반복 노출 문제가 없는 Empty State Panel로 제공한다.
