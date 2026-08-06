@@ -44,7 +44,11 @@ Full Rotation은 Loop Resource에서 마지막 프레임을 `±360 × turns × (
 
 Effect Editor의 활성 레이어는 Resource Layer로 통일한다. Resource Editor의 `Add as Layer to Effect`는 Single 모드 레이어를 즉시 만들며, Inspector의 Placement Mode가 Single/Particle Emission을 Undo 가능한 값으로 전환한다. 전환은 ID·순서·Visibility·Resource 참조와 양쪽 설정을 유지한다.
 
-공통 2.5D 값과 Canvas Gizmo는 Inspector나 Timeline 모델을 재구성하지 않는다. 입력은 Layer Transform revision만 갱신하고 단일 16ms Timer에 합쳐져 현재 프레임만 후처리한다. 오래된 Layer ID/revision 요청은 버린다. 재생, 저장과 PNG Export처럼 전체 Sequence가 실제로 필요한 경계에서만 캐시된 원본 RGBA에 최종 Transform을 materialize한다.
+공통 2.5D 값과 Canvas Gizmo는 Inspector나 Timeline 모델을 재구성하지 않는다. 입력은 Layer Transform revision만 갱신하며 오래된 Layer ID/revision 요청은 버린다. 재생, 저장과 PNG Export처럼 전체 Sequence가 실제로 필요한 경계에서만 캐시된 원본 RGBA에 최종 Transform을 materialize한다.
+
+현재 인터랙티브 경로는 33ms 단일 Shot Scheduler를 사용한다. Gizmo Press에서 Particle Base의 Alpha Crop과 QPixmap, 선택 레이어를 제외한 Underlay/Overlay를 한 번 준비한다. Move와 연속 SpinBox 입력은 모델의 정확한 Float를 유지하면서 최신 Projected Quad만 Canvas Proxy에 전달한다. Inspector는 변경된 필드만 동기화하며 상세 Particle Guide와 Ghost는 세션 동안 유예된다.
+
+Gizmo Release·Escape, SpinBox `editingFinished` 또는 마지막 입력 120ms 뒤에는 검증된 NumPy Nearest-Neighbor Renderer를 현재 프레임에 한 번 적용하고 Proxy를 제거한다. Playback·Save·Bake·PNG/Sequence Export는 필요하면 전체 정확 Sequence를 materialize하며 Proxy Pixmap은 Project나 출력 데이터에 접근하지 않는다.
 
 ## Gizmo
 

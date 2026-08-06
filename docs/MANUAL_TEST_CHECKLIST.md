@@ -450,3 +450,14 @@
 - [ ] 조작 중 Guide가 따라오고 Particle Ghost 지연이 조작 후 해제되며 Escape는 복원·Undo 없음, Release는 Undo 하나인지 확인한다.
 - [ ] Timeline/Playback/Status에 `사용자 레이어 이름 · 파티클 방출` 또는 `· Particle Emission`이 표시되고 활성 UI에 `Particle System:` 접두사가 없는지 확인한다.
 - [ ] 조작 후 재생, Save/Load, Preview, Bake와 PNG Export 결과가 동일한지 확인한다.
+
+## Interactive 2.5D Proxy
+
+- [ ] 600×600 Particle Emission에서 Position/Rotation XYZ, Scale, Pivot, Perspective를 드래그해 화면이 약 30FPS로 최신 포인터를 따라오는지 확인한다.
+- [ ] Drag 중 픽셀 가장자리가 부드럽게 보간되지 않고, Release 뒤 정확한 Nearest-Neighbor 결과로 한 번 확정되는지 확인한다.
+- [ ] Ctrl+Wheel·키보드 Up/Down을 빠르게 반복한 뒤 입력 중 멈춤이 없고 약 120ms 후 정확 결과가 반영되는지 확인한다.
+- [ ] 작은 파티클을 이동할 때 Canvas 전체가 깜박이지 않고 이전 위치 잔상도 남지 않는지 확인한다.
+- [ ] Position Z가 다른 Resource Layer 앞뒤를 실제로 넘을 때만 합성 순서가 바뀌며, 같은 순서 안의 Z 조작은 계속 부드러운지 확인한다.
+- [ ] Escape는 시작 Transform과 정확 픽셀을 복원하고 Undo를 만들지 않으며, Release는 Undo 하나만 만드는지 확인한다.
+- [ ] 조작 중 상세 Particle Ghost/Guide가 유예되고 Release/Escape 뒤 즉시 복원되는지 확인한다.
+- [ ] Proxy 활성 직후 Playback, Bake, Save와 PNG/Sequence Export를 실행해 Proxy 화면이 출력이나 프로젝트 파일에 섞이지 않는지 확인한다.

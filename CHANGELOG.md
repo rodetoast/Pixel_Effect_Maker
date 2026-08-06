@@ -4,6 +4,7 @@
 
 ### Added
 
+- Particle Emission/Single 2.5D 연속 조작을 위한 Canvas 전용 QPainter Projective Proxy, Alpha Bounds Crop, Base QImage/QPixmap Cache와 Underlay/Overlay 고정 합성 추가
 - Effect Editor 오른쪽 Resource Layer Inspector를 약 280~320px에서도 가로 Scroll 없이 사용할 수 있도록 반응형으로 변경하고, 2.5D 조작 버튼 2열 배치와 Transform/Path/Particle 입력 폭 및 한국어·영어·큰 글꼴 대응을 추가
 - Resource Layer 공통 2.5D Transform(Position X/Y/Z, Rotation X/Y/Z, Scale X/Y, Opacity, Pivot, Perspective), Keyframe/Easing, Stable Z 정렬, 3축 Canvas 조작을 Single과 Particle Emission 최종 출력에 동일하게 적용
 - FORMAT_VERSION 6을 유지하며 기존 v6과 v1~v5 마이그레이션에 Identity 기본값을 적용하고 Identity 출력은 기존 픽셀과 동일하게 보존
@@ -17,7 +18,9 @@
 
 ### Changed
 
-- Particle Emission의 원본 RGBA와 공통 2.5D 후처리 캐시를 분리하고, 조작 중 현재 프레임 요청을 16ms latest-wins 방식으로 병합
+- 2.5D 인터랙티브 화면 갱신을 최대 약 30FPS(33ms) latest-wins로 제한하고 SpinBox 종료·120ms Idle·Gizmo Release/Escape에서만 정확한 CPU 결과를 확정
+- 작은 Projected Quad 이동은 이전·현재 Bounds와 Gizmo의 합집합 Dirty Rect만 갱신하며, 실제 Z 정렬 경계를 넘을 때만 고정 Depth Buffer를 재구성
+- Particle Emission의 원본 RGBA와 공통 2.5D 후처리 캐시를 분리하고 Transform 변경이 Particle Simulation을 무효화하지 않도록 변경
 - 좁은 Effect Inspector에서 모든 활성 Property Label을 입력 위로 줄바꿈할 수 있게 하고 한국어·영어 및 125%·150% 글꼴에서도 화면 라벨을 유지
 - 통합 Resource Layer의 생성 레이어 표시 이름을 `사용자 이름 · Single/Particle Emission` 형식으로 정리
 - Resource Editor의 Add to Effect 선택 메뉴를 `Add as Layer to Effect` 단일 흐름으로 변경하고 Effect Inspector에서 배치 방식을 선택하도록 단순화

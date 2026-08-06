@@ -40,6 +40,8 @@ Generate는 언제나 원본 Source Asset과 현재 settings에서 전체 출력
 
 통합 Resource Layer에서는 콘텐츠 생성과 공통 2.5D 후처리를 분리한다. Particle/Single 설정, Resource revision, Canvas 크기와 FPS가 바뀌면 Base RGBA를 무효화한다. 공통 2.5D Transform만 바뀌면 Base는 유지하고 현재 프레임의 Nearest-Neighbor 후처리만 다시 계산한다. 고주파 입력은 Transform revision으로 병합하며 오래된 결과를 적용하지 않는다. 전체 Sequence는 재생·저장·Export가 요구할 때 캐시된 Base에서 지연 생성한다.
 
+편집 중에는 현재 프레임의 정확한 Project Buffer를 쓰지 않는다. Canvas가 Base RGBA의 Alpha Bounds Crop을 QPixmap으로 한 번 변환하고, 정확 Renderer와 공유하는 `projected_quad()` 결과에 QPainter Projective Transform을 적용한다. 다른 레이어 합성은 Underlay/Overlay로 고정되며 Depth signature가 달라질 때만 다시 만든다. 이 프록시는 모델 직렬화, Preview/Bake/Export 서비스와 분리된 UI 상태다.
+
 생성 출력의 활성 UI 이름은 사용자 Resource Layer 이름을 보존하고 현재 모드를 덧붙인 `이름 · Single/Particle Emission` 형식이다. Legacy 모델과 Migration 내부 식별자는 호환성을 위해 유지한다.
 
 ## Live Preview와 Draft

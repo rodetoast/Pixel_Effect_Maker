@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 from copy import deepcopy
 import math
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QWheelEvent
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from app.models.project import Project
@@ -20,6 +20,10 @@ from app.services.effect_layer_transform_3d_render_service import transform_rgba
 from app.services.effect_render_service import render_transformed_source
 from app.models.frame import empty_pixels
 from app.models.source_asset import SourceAsset
+from app.ui.interactive_transform_proxy import (
+    InteractiveTransformProxyState, ProxyBaseImageCache,
+    projective_pixmap_transform, proxy_projected_quad,
+)
 
 
 class CanvasWidget(QWidget):
@@ -55,6 +59,11 @@ class CanvasWidget(QWidget):
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
         self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None
+        self.resource_transform_changed_fields: tuple[str,...] = ()
+        self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
+        self.proxy_base_image_cache=ProxyBaseImageCache()
+        self.proxy_stats={"apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0}
+        self.last_proxy_dirty_rect=QRect()
         self.setMinimumSize(320, 320)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -67,6 +76,8 @@ class CanvasWidget(QWidget):
         self.frame_index = 0
         self.layer_index = 0
         if context_changed:
+            self.clear_interactive_transform_proxy(update=False)
+            self.proxy_base_image_cache.clear()
             self.pan_offset = QPointF()
             self._ghost_cache.clear()
             self._fit_initial_zoom()
@@ -76,6 +87,7 @@ class CanvasWidget(QWidget):
         self, frames: list[np.ndarray], generated_layer_id: str | None
     ) -> None:
         """Display transient frames without writing them into the project."""
+        self.clear_interactive_transform_proxy(update=False)
         self.preview_frames = frames or None
         self.preview_layer_id = generated_layer_id
         if self.preview_frames is not None:
@@ -83,6 +95,7 @@ class CanvasWidget(QWidget):
         self.update()
 
     def clear_preview(self) -> None:
+        self.clear_interactive_transform_proxy(update=False)
         self.preview_frames = None
         self.preview_layer_id = None
         if self.project is not None:
@@ -109,6 +122,8 @@ class CanvasWidget(QWidget):
         self.update()
 
     def set_resource_layer_transform(self, identifier=None, transform=None, *, mode="move") -> None:
+        if self.interactive_transform_proxy is not None and self.interactive_transform_proxy.resource_layer_id!=identifier:
+            self.clear_interactive_transform_proxy(update=False)
         self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None
         for key in list(self._ghost_cache):
             if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
@@ -134,6 +149,7 @@ class CanvasWidget(QWidget):
                       round((self.height() - self.project.height * self.zoom) / 2 + self.pan_offset.y()))
 
     def set_frame(self, index: int) -> None:
+        if index!=self.frame_index:self.clear_interactive_transform_proxy(update=False)
         self.frame_index = index
         self.update()
 
@@ -146,10 +162,131 @@ class CanvasWidget(QWidget):
             self.zoom = max(1, min(16, 512 // max(self.project.width, self.project.height)))
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        self.clear_interactive_transform_proxy(update=False)
         delta = 1 if event.angleDelta().y() > 0 else -1
         self.zoom = max(1, min(32, self.zoom + delta))
         self.update()
         event.accept()
+
+    def _ordered_proxy_layers(self, selected, transform=None):
+        resource_by_generated={item.generated_layer_id:item for item in self.project.effect_resource_layers}
+        slots=[index for index,item in enumerate(self.project.layers) if item.id in resource_by_generated]
+        ordered=list(self.project.layers)
+        def depth(item):
+            resource=resource_by_generated[item.id]
+            value=transform if selected is resource and transform is not None else resource.layer_transform
+            return value.value("position_z",self.frame_index)
+        resources=sorted((self.project.layers[index] for index in slots),key=depth)
+        for slot,item in zip(slots,resources,strict=True):ordered[slot]=item
+        return ordered
+
+    def _proxy_depth_signature(self,layer,transform):
+        generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
+        if generated is None:return (),[],[]
+        ordered=self._ordered_proxy_layers(layer,transform);index=ordered.index(generated)
+        before=[item for item in ordered[:index] if item.visible]
+        after=[item for item in ordered[index+1:] if item.visible]
+        return (tuple(item.id for item in before),tuple(item.id for item in after)),before,after
+
+    def _proxy_layers_pixmap(self,layers):
+        output=np.zeros((self.project.height,self.project.width,4),dtype=np.float32)
+        frame=self.project.frames[self.frame_index]
+        for layer in layers:
+            source=frame.layer_pixels.get(layer.id)
+            if source is not None:self._composite(output,source,layer.opacity)
+        pixels=np.ascontiguousarray(np.clip(output*255.0,0,255).astype(np.uint8))
+        image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy()
+        return QPixmap.fromImage(image)
+
+    def _rebuild_proxy_depth_buffers(self,state,layer,transform):
+        signature,before,after=self._proxy_depth_signature(layer,transform)
+        if signature==state.depth_order_signature and state.underlay_pixmap is not None:return False
+        state.depth_order_signature=signature
+        state.underlay_pixmap=self._proxy_layers_pixmap(before)
+        state.overlay_pixmap=self._proxy_layers_pixmap(after)
+        self.proxy_stats["depth_rebuilds"]+=1
+        return True
+
+    def _proxy_widget_quad(self,bounds,transform):
+        destination,valid=proxy_projected_quad(bounds,transform,self.project.width,self.project.height)
+        if not valid or destination is None:return QPolygonF(),False
+        return QPolygonF(tuple(self.canvas_to_widget(float(x),float(y)) for x,y in destination)),True
+
+    @staticmethod
+    def _proxy_polygon_bounds(polygon):
+        return polygon.boundingRect().toAlignedRect() if len(polygon)==4 else QRect()
+
+    def queue_interactive_transform_proxy(self,layer,base_frame,base_key) -> bool:
+        if self.project is None or self.preview_frames is not None or base_frame is None:return False
+        cache_key=tuple(base_key);base=self.proxy_base_image_cache.get(cache_key,base_frame)
+        state=self.interactive_transform_proxy
+        if state is None or state.resource_layer_id!=layer.id or state.frame!=self.frame_index or state.base_key!=cache_key:
+            if self._resource_transform_drag and self._resource_transform_before is not None:
+                previous=deepcopy(self._resource_transform_before)
+            else:
+                previous=deepcopy(self.resource_transform) if self.resource_transform_id==layer.id and self.resource_transform is not None else deepcopy(layer.layer_transform)
+            state=InteractiveTransformProxyState(layer.id,self.frame_index,cache_key,base,applied_transform=previous)
+            previous_quad,valid=self._proxy_widget_quad(base.alpha_bounds,previous.evaluated(self.frame_index))
+            if valid:state.previous_projected_bounds=self._proxy_polygon_bounds(previous_quad)
+            old_signature,_,_=self._proxy_depth_signature(layer,previous)
+            self._rebuild_proxy_depth_buffers(state,layer,layer.layer_transform)
+            if old_signature!=state.depth_order_signature:self.proxy_stats["full_updates"]+=1
+            self.interactive_transform_proxy=state
+        state.queue(layer.layer_transform)
+        return True
+
+    def _resource_transform_gizmo_bounds(self):
+        points=self.resource_transform_handle_positions().values()
+        if not points:return QRect()
+        left=min(point.x() for point in points);right=max(point.x() for point in points)
+        top=min(point.y() for point in points);bottom=max(point.y() for point in points)
+        return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
+
+    def apply_interactive_transform_proxy(self,layer) -> bool:
+        state=self.interactive_transform_proxy
+        if state is None or not state.active or state.resource_layer_id!=layer.id or state.frame!=self.frame_index:return False
+        if state.render_in_progress:
+            self.proxy_stats["overlap_rejections"]+=1;return False
+        pending=state.pending_transform
+        if pending is None or pending.revision!=layer.layer_transform.revision:return False
+        state.render_in_progress=True
+        try:
+            evaluated=pending.evaluated(self.frame_index)
+            polygon,valid=self._proxy_widget_quad(state.base.alpha_bounds,evaluated)
+            current=self._proxy_polygon_bounds(polygon) if valid and evaluated.opacity>0 else QRect()
+            depth_changed=self._rebuild_proxy_depth_buffers(state,layer,pending)
+            signature=(tuple(round(value*16) for point in polygon for value in (point.x(),point.y())),round(evaluated.opacity*255),state.depth_order_signature) if valid else ("invalid",state.depth_order_signature)
+            state.pending_transform=None;state.render_scheduled=False
+            if signature==state.paint_signature and not depth_changed:
+                state.last_applied_revision=int(pending.revision);self.proxy_stats["paint_skips"]+=1;return False
+            old=state.current_projected_bounds if not state.current_projected_bounds.isNull() else state.previous_projected_bounds
+            state.previous_projected_bounds=old;state.current_projected_bounds=current;state.projected_quad=polygon if valid else QPolygonF();state.paint_signature=signature
+            state.applied_transform=deepcopy(pending);state.last_applied_revision=int(pending.revision)
+            self.resource_transform=deepcopy(pending);self.proxy_stats["apply_calls"]+=1
+            canvas_rect=QRect(self._canvas_origin(),QSize(self.project.width*self.zoom,self.project.height*self.zoom))
+            if depth_changed:
+                dirty=canvas_rect;self.proxy_stats["full_updates"]+=1
+            else:
+                dirty=old.united(current).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
+                self.proxy_stats["partial_updates"]+=1
+            self.last_proxy_dirty_rect=dirty
+            self.update(dirty)
+            return True
+        finally:
+            state.render_in_progress=False
+
+    def clear_interactive_transform_proxy(self,update=True) -> None:
+        state=self.interactive_transform_proxy
+        if state is None:return
+        dirty=state.previous_projected_bounds.united(state.current_projected_bounds).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
+        self.interactive_transform_proxy=None
+        if update:
+            self.last_proxy_dirty_rect=dirty;self.update(dirty if not dirty.isNull() else self.rect())
+
+    def finish_interactive_transform_proxy(self,identifier,transform) -> None:
+        if self.interactive_transform_proxy is not None and self.interactive_transform_proxy.resource_layer_id==identifier:
+            self.clear_interactive_transform_proxy(update=True)
+        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform)
 
     def paintEvent(self, event: object) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -172,17 +309,24 @@ class CanvasWidget(QWidget):
                 color = colors[((x - origin.x()) // checker + (y - origin.y()) // checker) % 2]
                 painter.fillRect(x, y, checker, checker, color)
 
-        pixels: np.ndarray = np.ascontiguousarray(self._compose_display_frame())
-        image = QImage(
-            pixels.data,
-            self.project.width,
-            self.project.height,
-            pixels.strides[0],
-            QImage.Format.Format_RGBA8888,
-        ).copy()
-        pixmap = QPixmap.fromImage(image)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
-        painter.drawPixmap(canvas_rect, pixmap)
+        proxy=self.interactive_transform_proxy
+        if proxy is not None and proxy.active and proxy.frame==self.frame_index:
+            if proxy.underlay_pixmap is not None:painter.drawPixmap(canvas_rect,proxy.underlay_pixmap)
+            self._paint_interactive_transform_proxy(painter,proxy)
+            if proxy.overlay_pixmap is not None:painter.drawPixmap(canvas_rect,proxy.overlay_pixmap)
+            self.proxy_stats["paint_calls"]+=1
+        else:
+            pixels: np.ndarray = np.ascontiguousarray(self._compose_display_frame())
+            image = QImage(
+                pixels.data,
+                self.project.width,
+                self.project.height,
+                pixels.strides[0],
+                QImage.Format.Format_RGBA8888,
+            ).copy()
+            pixmap = QPixmap.fromImage(image)
+            painter.drawPixmap(canvas_rect, pixmap)
         painter.setClipping(False)
         painter.setPen(QColor("#77808c"))
         painter.drawRect(canvas_rect.adjusted(0, 0, -1, -1))
@@ -197,8 +341,19 @@ class CanvasWidget(QWidget):
             self._paint_gizmo(painter)
         if self.resource_transform_id and self.resource_transform is not None:
             self._paint_resource_transform_gizmo(painter)
-        if self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
+        if proxy is not None and proxy.active and len(proxy.projected_quad)==4:
+            painter.setPen(QPen(QColor("#74c0fc"),1,Qt.PenStyle.DashLine));painter.setBrush(Qt.BrushStyle.NoBrush);painter.drawPolygon(proxy.projected_quad)
+        if (proxy is None or not proxy.active) and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
+
+    def _paint_interactive_transform_proxy(self,painter,state):
+        if state.base.pixmap is None or len(state.projected_quad)!=4 or state.applied_transform is None:return
+        mapping=projective_pixmap_transform(state.base.pixmap,state.projected_quad)
+        if mapping is None:return
+        painter.save();painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setOpacity(max(0.0,min(1.0,state.applied_transform.evaluated(self.frame_index).opacity)))
+        painter.setTransform(mapping);painter.drawPixmap(0,0,state.base.pixmap);painter.restore()
 
     def _gizmo_center(self) -> tuple[float, float]:
         s = self.gizmo_settings
@@ -390,7 +545,7 @@ class CanvasWidget(QWidget):
         if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
             handle=self._hit_resource_transform(event.position())
             if handle:
-                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.setFocus();event.accept();return
+                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();return
         if event.button() == Qt.MouseButton.LeftButton and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._gizmo_drag = True; self._gizmo_before = deepcopy(self.gizmo_settings); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton:
@@ -427,9 +582,8 @@ class CanvasWidget(QWidget):
                 setattr(t,handle,angle)
             if handle=="scale":t.scale_x=max(.01,before.scale_x+delta.x()/32);t.scale_y=max(.01,before.scale_y+delta.y()/32)
             if handle=="pivot":t.pivot_x=before.pivot_x+delta.x();t.pivot_y=before.pivot_y+delta.y()
-            for key in list(self._ghost_cache):
-                if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
-            self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);self.update();event.accept();return
+            self.resource_transform_changed_fields={"center":("position_x","position_y"),"x":("position_x",),"y":("position_y",),"z":("position_z",),"rotate_x":("rotation_x",),"rotate_y":("rotation_y",),"rotate_z":("rotation_z",),"scale":("scale_x","scale_y"),"pivot":("pivot_x","pivot_y")}.get(handle,())
+            self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);event.accept();return
         if self._guide_handle:
             point = self.widget_to_canvas(event.position())
             integer_point = (round(point.x()), round(point.y()))
@@ -485,7 +639,7 @@ class CanvasWidget(QWidget):
             self.effect_guide_cancelled.emit(self.effect_guide_id, before)
             self.update(); event.accept(); return
         if event.key()==Qt.Key.Key_Escape and self._resource_transform_drag and self._resource_transform_before is not None:
-            self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));self.update();event.accept();return
+            self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));event.accept();return
         if event.key() == Qt.Key.Key_Escape and self._gizmo_drag and self._gizmo_before is not None:
             self.gizmo_settings = self._gizmo_before; self._gizmo_drag = False
             self.gizmo_changed.emit(self.gizmo_generator_id, deepcopy(self.gizmo_settings)); self.update(); event.accept(); return
@@ -582,4 +736,5 @@ class CanvasWidget(QWidget):
     effect_guide_cancelled = Signal(str, object)
     resource_transform_changed = Signal(str, object, bool)
     resource_transform_cancelled = Signal(str, object)
+    resource_transform_started = Signal(str)
     layer_selected = Signal(int)

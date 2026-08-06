@@ -49,6 +49,14 @@ def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
     return frames
 
 
+def render_effect_resource_layer_base_frame(project, layer: EffectResourceLayer, frame: int):
+    """Return a stable base frame and token without applying the common transform."""
+    frames=render_effect_resource_layer_base(project,layer)
+    if not frames:return None,None
+    index=max(0,min(int(frame),len(frames)-1))
+    return frames[index],(layer.id,_BASE_CACHE[layer.id][0],index)
+
+
 def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame: int):
     base=render_effect_resource_layer_base(project,layer)
     if not base:return None

@@ -12,6 +12,8 @@ from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox
 
 class ResourceLayerTransformPanel(QGroupBox):
     transform_changed = Signal(str, object)
+    interactive_transform_changed = Signal(str, object, str)
+    transform_edit_finished = Signal(str)
     keyframe_requested = Signal(str, str, int, float, str)
     gizmo_mode_changed = Signal(str, str)
 
@@ -36,7 +38,7 @@ class ResourceLayerTransformPanel(QGroupBox):
             if name in TRANSFORM_TRACK_PROPERTIES:
                 footer=QWidget();footer.setMinimumWidth(0);footer.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);line=QHBoxLayout(footer);line.setContentsMargins(0,0,0,0);line.setSpacing(3);easing_label=QLabel("Easing");easing_label.setObjectName(f"resourceLayerEasingLabel_{name}");easing_label.setMinimumWidth(0);easing=QComboBox();[easing.addItem(v,v) for v in ("Linear","Ease In","Ease Out","Ease In/Out")];easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
                 key=QPushButton("◆");key.setObjectName(f"resourceLayerKey_{name}");key.setFixedSize(30,28);key.clicked.connect(lambda checked=False,n=name:self._add_key(n));line.addWidget(easing_label);line.addWidget(easing,1);line.addWidget(key);column.addWidget(footer);self.key_buttons[name]=key;self.easings[name]=easing;self.easing_labels[name]=easing_label
-            form.addRow(labels[name],row);label=form.labelForField(row);label.setWordWrap(True);label.setMinimumWidth(0);label.setMaximumWidth(88);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.field_rows[name]=row;self.fields[name]=spin;spin.valueChanged.connect(self._changed)
+            form.addRow(labels[name],row);label=form.labelForField(row);label.setWordWrap(True);label.setMinimumWidth(0);label.setMaximumWidth(88);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.field_rows[name]=row;self.fields[name]=spin;spin.valueChanged.connect(self._changed);spin.editingFinished.connect(self._editing_finished)
         self.reset=QPushButton("Reset 2.5D Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);root.addWidget(self.reset)
 
     def set_layer(self, layer, frame=0):
@@ -47,6 +49,17 @@ class ResourceLayerTransformPanel(QGroupBox):
             for name,button in self.key_buttons.items():button.setChecked(any(key.frame==self.frame for key in transform.tracks.get(name,()).keyframes) if name in transform.tracks else False)
         self.setEnabled(layer is not None);self._loading=False
 
+    def set_transform_fields(self,layer,frame,names):
+        self.layer=layer;self.frame=int(frame);self._loading=True
+        try:
+            transform=layer.layer_transform
+            for name in names:
+                if name not in self.fields:continue
+                self.fields[name].setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
+                if name in self.key_buttons:
+                    track=transform.tracks.get(name);self.key_buttons[name].setChecked(bool(track and any(key.frame==self.frame for key in track.keyframes)))
+        finally:self._loading=False
+
     def _changed(self,*args):
         if self._loading or self.layer is None:return
         transform=deepcopy(self.layer.layer_transform)
@@ -55,7 +68,13 @@ class ResourceLayerTransformPanel(QGroupBox):
             key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
             if key is not None:key.value=float(spin.value())
             else:setattr(transform,name,float(spin.value()))
-        transform.revision+=1;self.transform_changed.emit(self.layer.id,transform)
+        transform.revision+=1
+        name=next((name for name,field in self.fields.items() if field is self.sender()),"")
+        if name:self.interactive_transform_changed.emit(self.layer.id,transform,name)
+        else:self.transform_changed.emit(self.layer.id,transform)
+
+    def _editing_finished(self):
+        if not self._loading and self.layer is not None:self.transform_edit_finished.emit(self.layer.id)
 
     def _add_key(self,name):
         if self.layer is not None:self.keyframe_requested.emit(self.layer.id,name,self.frame,float(self.fields[name].value()),str(self.easings[name].currentData()))
