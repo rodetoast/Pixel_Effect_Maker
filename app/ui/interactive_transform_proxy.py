@@ -26,8 +26,8 @@ class ProxyBaseImage:
 class ProxyBaseImageCache:
     """Own copied crop memory and its GUI representations once per base revision."""
 
-    def __init__(self, maximum: int = 48):
-        self.maximum = maximum
+    def __init__(self, maximum: int = 48, maximum_bytes: int = 32*1024*1024):
+        self.maximum = maximum;self.maximum_bytes=max(1,int(maximum_bytes));self.current_bytes=0
         self._items: OrderedDict[tuple, ProxyBaseImage] = OrderedDict()
         self.qimage_creations = 0
         self.qpixmap_creations = 0
@@ -53,16 +53,28 @@ class ProxyBaseImageCache:
             pixmap = QPixmap.fromImage(image)
             self.qimage_creations += 1; self.qpixmap_creations += 1
             value = ProxyBaseImage(key, rgba, (left, top, right, bottom), image, pixmap)
-        self._items[key] = value
-        while len(self._items) > self.maximum:
-            self._items.popitem(last=False)
+        return self.put(value)
+
+    def peek(self,key: tuple) -> ProxyBaseImage | None:
+        value=self._items.get(key)
+        if value is not None:self._items.move_to_end(key)
+        return value
+
+    def put(self,value: ProxyBaseImage) -> ProxyBaseImage:
+        previous=self._items.pop(value.key,None)
+        if previous is not None:self.current_bytes-=int(previous.rgba.nbytes)
+        self._items[value.key]=value;self.current_bytes+=int(value.rgba.nbytes)
+        while (len(self._items)>self.maximum or self.current_bytes>self.maximum_bytes) and len(self._items)>1:
+            _,removed=self._items.popitem(last=False);self.current_bytes-=int(removed.rgba.nbytes)
         return value
 
     def clear(self, layer_id: str | None = None) -> None:
         if layer_id is None:
-            self._items.clear(); return
+            self._items.clear();self.current_bytes=0; return
         for key in list(self._items):
-            if key and key[0] == layer_id:self._items.pop(key, None)
+            if key and key[0] == layer_id:
+                removed=self._items.pop(key,None)
+                if removed is not None:self.current_bytes-=int(removed.rgba.nbytes)
 
 
 @dataclass
@@ -85,6 +97,7 @@ class InteractiveTransformProxyState:
     depth_order_signature: tuple = field(default_factory=tuple)
     underlay_pixmap: QPixmap | None = None
     overlay_pixmap: QPixmap | None = None
+    prewarm_token: object | None = None
 
     def queue(self, transform: EffectLayerTransform3D) -> None:
         self.pending_transform = deepcopy(transform)

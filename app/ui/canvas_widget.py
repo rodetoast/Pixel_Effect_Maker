@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 from copy import deepcopy
 import math
+from time import perf_counter
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF, QWheelEvent
 from PySide6.QtWidgets import QWidget
@@ -21,8 +22,12 @@ from app.services.effect_render_service import render_transformed_source
 from app.models.frame import empty_pixels
 from app.models.source_asset import SourceAsset
 from app.ui.interactive_transform_proxy import (
-    InteractiveTransformProxyState, ProxyBaseImageCache,
+    InteractiveTransformProxyState, ProxyBaseImage, ProxyBaseImageCache,
     projective_pixmap_transform, proxy_projected_quad,
+)
+from app.ui.interactive_proxy_prewarm import (
+    InteractiveCompositeCache, ProxyPrewarmComputed, ProxyPrewarmPayload,
+    ProxyPrewarmToken,
 )
 
 
@@ -62,8 +67,11 @@ class CanvasWidget(QWidget):
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.proxy_base_image_cache=ProxyBaseImageCache()
-        self.proxy_stats={"apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0}
+        self.proxy_composite_cache=InteractiveCompositeCache()
+        self.proxy_stats={"apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
         self.last_proxy_dirty_rect=QRect()
+        self.last_prewarm_install_timings={}
+        self.last_prewarm_payload_timings={}
         self.setMinimumSize(320, 320)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -78,6 +86,7 @@ class CanvasWidget(QWidget):
         if context_changed:
             self.clear_interactive_transform_proxy(update=False)
             self.proxy_base_image_cache.clear()
+            self.proxy_composite_cache.clear()
             self.pan_offset = QPointF()
             self._ghost_cache.clear()
             self._fit_initial_zoom()
@@ -198,12 +207,113 @@ class CanvasWidget(QWidget):
         image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy()
         return QPixmap.fromImage(image)
 
+    def _proxy_layer_revision(self,layer) -> tuple:
+        frame=self.project.frames[self.frame_index];source=frame.layer_pixels.get(layer.id)
+        return (layer.id,id(source),round(float(layer.opacity),6),None if source is None else source.shape)
+
+    def proxy_prewarm_token(self,layer,base_key,request_revision=0) -> ProxyPrewarmToken:
+        signature,before,after=self._proxy_depth_signature(layer,layer.layer_transform)
+        visible=tuple((item.id,bool(item.visible)) for item in self.project.layers)
+        revisions=(tuple(self._proxy_layer_revision(item) for item in before),tuple(self._proxy_layer_revision(item) for item in after))
+        resources=tuple((item.id,int(item.revision)) for item in self.project.resource_compositions)
+        return ProxyPrewarmToken(
+            id(self.project),layer.id,self.frame_index,(self.project.width,self.project.height),
+            layer.placement_mode,tuple(base_key),resources,int(layer.layer_transform.revision),
+            revisions,visible,signature,int(request_revision),
+        )
+
+    def proxy_prewarm_payload(self,token,base_frame) -> ProxyPrewarmPayload | None:
+        if self.project is None or self.preview_frames is not None or self._resource_transform_drag:return None
+        self.last_prewarm_payload_timings={};started=perf_counter()
+        layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
+        self.last_prewarm_payload_timings["selected_layer_lookup"]=(perf_counter()-started)*1000.0
+        if layer is None:return None
+        current=self.proxy_prewarm_token(layer,token.particle_base_revision,token.request_revision)
+        if current!=token:return None
+        started=perf_counter();layer_list=list(self.project.layers)
+        self.last_prewarm_payload_timings["layer_list_collection"]=(perf_counter()-started)*1000.0
+        started=perf_counter();visible_layers=tuple(item.id for item in layer_list if item.visible)
+        self.last_prewarm_payload_timings["visibility_filter"]=(perf_counter()-started)*1000.0
+        started=perf_counter();_,before,after=self._proxy_depth_signature(layer,layer.layer_transform)
+        self.last_prewarm_payload_timings["z_evaluation_stable_sort"]=(perf_counter()-started)*1000.0
+        started=perf_counter();selected_partition=(len(before),len(after),visible_layers)
+        self.last_prewarm_payload_timings["selected_index_partition"]=(perf_counter()-started)*1000.0
+        frame=self.project.frames[self.frame_index]
+        def sources(items):
+            return tuple((frame.layer_pixels[item.id],float(item.opacity)) for item in items if item.id in frame.layer_pixels)
+        started=perf_counter();before_sources=sources(before);after_sources=sources(after)
+        self.last_prewarm_payload_timings["exact_rgba_cache_lookup"]=(perf_counter()-started)*1000.0
+        started=perf_counter()
+        cached=self.proxy_composite_cache.get(token.composite_key)
+        cached_base=self.proxy_base_image_cache.peek(token.particle_base_revision)
+        self.last_prewarm_payload_timings["composite_and_base_cache_lookup"]=(perf_counter()-started)*1000.0
+        if cached is None:self.proxy_stats["prewarm_misses"]+=1
+        else:self.proxy_stats["prewarm_hits"]+=1
+        del selected_partition
+        return ProxyPrewarmPayload(
+            token,base_frame,before_sources,after_sources,
+            None if cached is None else cached.underlay,
+            None if cached is None else cached.overlay,
+            None if cached_base is None else cached_base.rgba,
+            None if cached_base is None else cached_base.alpha_bounds,
+        )
+
+    def _proxy_pixmap_from_rgba(self,pixels,prefix="proxy"):
+        started=perf_counter()
+        image=QImage(pixels.data,pixels.shape[1],pixels.shape[0],pixels.strides[0],QImage.Format.Format_RGBA8888).copy()
+        self.last_prewarm_install_timings[f"{prefix}_numpy_to_qimage"]=(perf_counter()-started)*1000.0
+        started=perf_counter();pixmap=QPixmap.fromImage(image)
+        self.last_prewarm_install_timings[f"{prefix}_qimage_to_qpixmap"]=(perf_counter()-started)*1000.0
+        return image,pixmap
+
+    def install_proxy_prewarm(self,result: ProxyPrewarmComputed) -> bool:
+        if self.project is None or self.preview_frames is not None or self._resource_transform_drag:return False
+        self.last_prewarm_install_timings={};install_started=perf_counter()
+        token=result.token;layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
+        if layer is None or self.proxy_prewarm_token(layer,token.particle_base_revision,token.request_revision)!=token:return False
+        base=self.proxy_base_image_cache.peek(token.particle_base_revision)
+        if base is None:
+            image=pixmap=None
+            if result.alpha_bounds is not None:image,pixmap=self._proxy_pixmap_from_rgba(result.cropped_rgba,"base")
+            base=self.proxy_base_image_cache.put(ProxyBaseImage(token.particle_base_revision,result.cropped_rgba,result.alpha_bounds,image,pixmap))
+            if image is not None:self.proxy_base_image_cache.qimage_creations+=1;self.proxy_base_image_cache.qpixmap_creations+=1
+            self.proxy_base_image_cache.alpha_bounds_scans+=1
+        entry=self.proxy_composite_cache.get(token.composite_key)
+        if entry is None:
+            if result.underlay_rgba is None or result.overlay_rgba is None:return False
+            _,underlay=self._proxy_pixmap_from_rgba(result.underlay_rgba,"underlay");_,overlay=self._proxy_pixmap_from_rgba(result.overlay_rgba,"overlay")
+            entry=self.proxy_composite_cache.put(token.composite_key,underlay,overlay,result.underlay_rgba.nbytes+result.overlay_rgba.nbytes)
+        transform=deepcopy(layer.layer_transform);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,transform.evaluated(self.frame_index))
+        state=InteractiveTransformProxyState(layer.id,self.frame_index,token.particle_base_revision,base,active=False,applied_transform=transform)
+        state.prewarm_token=token;state.depth_order_signature=token.depth_signature;state.underlay_pixmap=entry.underlay;state.overlay_pixmap=entry.overlay
+        if valid:
+            state.projected_quad=polygon;state.previous_projected_bounds=self._proxy_polygon_bounds(polygon);state.current_projected_bounds=state.previous_projected_bounds
+        self.interactive_transform_proxy=state;self.proxy_stats["prewarm_installs"]+=1
+        self.last_prewarm_install_timings["proxy_state_install"]=(perf_counter()-install_started)*1000.0
+        return True
+
+    def activate_proxy_prewarm(self,layer,base_key) -> bool:
+        state=self.interactive_transform_proxy
+        if state is None or state.active or state.resource_layer_id!=layer.id or state.frame!=self.frame_index or state.base_key!=tuple(base_key):return False
+        token=state.prewarm_token
+        if token is None or self.proxy_prewarm_token(layer,base_key,token.request_revision)!=token:
+            self.interactive_transform_proxy=None;return False
+        state.active=True;state.applied_transform=deepcopy(layer.layer_transform);state.queue(layer.layer_transform)
+        self.proxy_stats["prewarm_hits"]+=1
+        return True
+
     def _rebuild_proxy_depth_buffers(self,state,layer,transform):
         signature,before,after=self._proxy_depth_signature(layer,transform)
         if signature==state.depth_order_signature and state.underlay_pixmap is not None:return False
+        token=self.proxy_prewarm_token(layer,state.base_key)
+        cached=self.proxy_composite_cache.get(token.composite_key)
+        if cached is not None:
+            state.depth_order_signature=signature;state.underlay_pixmap=cached.underlay;state.overlay_pixmap=cached.overlay
+            return True
         state.depth_order_signature=signature
         state.underlay_pixmap=self._proxy_layers_pixmap(before)
         state.overlay_pixmap=self._proxy_layers_pixmap(after)
+        self.proxy_composite_cache.put(token.composite_key,state.underlay_pixmap,state.overlay_pixmap,self.project.width*self.project.height*8)
         self.proxy_stats["depth_rebuilds"]+=1
         return True
 
@@ -220,6 +330,8 @@ class CanvasWidget(QWidget):
         if self.project is None or self.preview_frames is not None or base_frame is None:return False
         cache_key=tuple(base_key);base=self.proxy_base_image_cache.get(cache_key,base_frame)
         state=self.interactive_transform_proxy
+        if state is not None and not state.active and self.activate_proxy_prewarm(layer,cache_key):
+            state=self.interactive_transform_proxy
         if state is None or state.resource_layer_id!=layer.id or state.frame!=self.frame_index or state.base_key!=cache_key:
             if self._resource_transform_drag and self._resource_transform_before is not None:
                 previous=deepcopy(self._resource_transform_before)

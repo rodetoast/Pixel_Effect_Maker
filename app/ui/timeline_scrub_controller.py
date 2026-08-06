@@ -8,12 +8,13 @@ from PySide6.QtCore import QEvent, QObject, Qt
 
 
 class TimelineScrubController(QObject):
-    def __init__(self, table, select: Callable[[int, int], None], start: Callable[[], None], parent=None, first_column: int = 0):
+    def __init__(self, table, select: Callable[[int, int], None], start: Callable[[], None], parent=None, first_column: int = 0, finish: Callable[[], None] | None = None):
         super().__init__(parent or table)
         self.table = table
         self.viewport = table.viewport()
         self.select = select
         self.start = start
+        self.finish = finish or (lambda: None)
         self.scrubbing = False
         self.last_column = -1
         self.first_column = max(0, int(first_column))
@@ -60,9 +61,11 @@ class TimelineScrubController(QObject):
                 event.accept()
                 return True
             self.scrubbing = False
+            self.finish()
         if event.type() == QEvent.Type.MouseButtonRelease and self.scrubbing:
             self._select(event.position())
             self.scrubbing = False
+            self.finish()
             event.accept()
             return True
         return super().eventFilter(watched, event)

@@ -38,6 +38,7 @@ class TimelineWidget(QWidget):
     fps_changed = Signal(int)
     layer_visibility_requested = Signal(int, bool)
     scrub_started = Signal()
+    scrub_finished = Signal()
     VISIBILITY_COLUMN = 0
     NAME_COLUMN = 1
     FRAME_COLUMN_OFFSET = 2
@@ -104,7 +105,7 @@ class TimelineWidget(QWidget):
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.scrub_controller = TimelineScrubController(
             self.table, self._scrub_to, self.scrub_started.emit, self,
-            first_column=self.FRAME_COLUMN_OFFSET,
+            first_column=self.FRAME_COLUMN_OFFSET,finish=self.scrub_finished.emit,
         )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.verticalHeader().setVisible(False)

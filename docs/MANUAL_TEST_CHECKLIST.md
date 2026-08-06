@@ -461,3 +461,14 @@
 - [ ] Escape는 시작 Transform과 정확 픽셀을 복원하고 Undo를 만들지 않으며, Release는 Undo 하나만 만드는지 확인한다.
 - [ ] 조작 중 상세 Particle Ghost/Guide가 유예되고 Release/Escape 뒤 즉시 복원되는지 확인한다.
 - [ ] Proxy 활성 직후 Playback, Bake, Save와 PNG/Sequence Export를 실행해 Proxy 화면이 출력이나 프로젝트 파일에 섞이지 않는지 확인한다.
+
+## Interactive Proxy Idle Prewarm
+
+- [ ] 600×600, 표시 Resource Layer 5개에서 레이어 선택 후 잠시 기다린 다음 첫 Gizmo Press가 멈춤 없이 즉시 Drag를 시작하는지 확인한다.
+- [ ] 선택 직후 즉시 Drag해도 입력이 Prewarm 완료를 기다리지 않고, 종료 뒤 다음 Drag는 Prewarm Hit가 되는지 확인한다.
+- [ ] Timeline을 빠르게 20 Frame 왕복 Scrub해 중간 Frame에서 작업이 쌓이지 않고 마지막 Frame의 첫 Drag만 준비되는지 확인한다.
+- [ ] Playback 중 Prewarm이 Canvas를 다시 그리거나 끊지 않고, 정지 후 현재 Frame에서만 준비되는지 확인한다.
+- [ ] 선택 레이어의 Position/Rotation/Scale/Perspective를 반복 조작할 때 Underlay/Overlay가 유지되는지 확인한다.
+- [ ] 다른 Resource Layer의 표시, Opacity 또는 정확 출력과 Position Z 앞뒤 순서를 바꾼 뒤 올바른 합성으로 갱신되는지 확인한다.
+- [ ] Undo/Redo를 빠르게 반복한 뒤 마지막 상태의 첫 Drag와 정확 Release 결과가 일치하는지 확인한다.
+- [ ] Prewarm 완료 자체로 Canvas가 깜박이거나 상세 Guide/Ghost가 사라지지 않는지 확인한다.

@@ -23,6 +23,15 @@ def _base_key(project, layer: EffectResourceLayer) -> tuple:
     return (id(project),layer.placement_mode,repr(settings),project.width,project.height,project.fps,_resource_revisions(project))
 
 
+def effect_resource_layer_base_frame_key(project, layer: EffectResourceLayer, frame: int) -> tuple:
+    """Describe a base frame without forcing particle/composition rendering."""
+    index=max(0,int(frame))
+    cached=_BASE_CACHE.get(layer.id)
+    if cached is not None and cached[0]==_base_key(project,layer) and cached[1]:
+        index=min(index,len(cached[1])-1)
+    return (layer.id,_base_key(project,layer),index)
+
+
 def _transform_values(layer: EffectResourceLayer, frame: int) -> tuple:
     value=layer.layer_transform.evaluated(frame)
     return tuple(getattr(value,name) for name in ("position_x","position_y","position_z","rotation_x","rotation_y","rotation_z","scale_x","scale_y","opacity","pivot_x","pivot_y","perspective_strength"))
@@ -54,7 +63,7 @@ def render_effect_resource_layer_base_frame(project, layer: EffectResourceLayer,
     frames=render_effect_resource_layer_base(project,layer)
     if not frames:return None,None
     index=max(0,min(int(frame),len(frames)-1))
-    return frames[index],(layer.id,_BASE_CACHE[layer.id][0],index)
+    return frames[index],effect_resource_layer_base_frame_key(project,layer,index)
 
 
 def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame: int):

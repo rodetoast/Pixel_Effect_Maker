@@ -48,6 +48,10 @@ Effect Editor의 활성 레이어는 Resource Layer로 통일한다. Resource Ed
 
 현재 인터랙티브 경로는 33ms 단일 Shot Scheduler를 사용한다. Gizmo Press에서 Particle Base의 Alpha Crop과 QPixmap, 선택 레이어를 제외한 Underlay/Overlay를 한 번 준비한다. Move와 연속 SpinBox 입력은 모델의 정확한 Float를 유지하면서 최신 Projected Quad만 Canvas Proxy에 전달한다. Inspector는 변경된 필드만 동기화하며 상세 Particle Guide와 Ghost는 세션 동안 유예된다.
 
+Resource Layer 선택, 단일 Frame 이동, Preview 종료, Undo/Redo와 정확 렌더 완료 뒤에는 80ms Idle Prewarm을 예약한다. Timeline Drag Scrubbing의 중간 Frame과 Playback 중에는 예약하지 않고, 마지막 Frame 또는 Playback 정지 위치만 준비한다. 새 선택·Frame·Project·Canvas·Placement·Base/Resource/Transform revision·Visibility·Depth signature가 들어오면 request revision을 올려 이전 Worker 결과를 설치하지 않는다. Gizmo Press는 대기 중 요청을 취소하고 이미 설치된 일치 결과를 즉시 활성화하므로 사용자 입력이 Worker 완료를 기다리지 않는다.
+
+Underlay/Overlay 키는 선택 Resource Layer 자체의 Position/Rotation/Scale/Pivot/Perspective를 제외한다. 선택 레이어 앞뒤의 ID, 정확 RGBA 배열 identity, Opacity, Visibility와 stable Z order가 같으면 Transform 확정 뒤에도 재사용한다. 다른 레이어의 정확 결과나 실제 앞뒤 순서가 바뀐 경우에만 새 prefix/suffix pair를 만든다. Composite Pixmap LRU는 64MB, Base Crop LRU는 32MB 상한이며 Project 교체 시 모두 비운다. Prewarm 완료는 Canvas repaint를 요청하지 않는다.
+
 Gizmo Release·Escape, SpinBox `editingFinished` 또는 마지막 입력 120ms 뒤에는 검증된 NumPy Nearest-Neighbor Renderer를 현재 프레임에 한 번 적용하고 Proxy를 제거한다. Playback·Save·Bake·PNG/Sequence Export는 필요하면 전체 정확 Sequence를 materialize하며 Proxy Pixmap은 Project나 출력 데이터에 접근하지 않는다.
 
 ## Gizmo

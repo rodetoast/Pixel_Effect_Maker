@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from copy import deepcopy
+from time import perf_counter
 
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QUndoStack
@@ -60,7 +61,7 @@ from app.services.aseprite_import_service import import_aseprite
 from app.services.aseprite_locator_service import locate_aseprite, validate_aseprite
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.services.effect_composition_layer_render_service import render_effect_composition_layer, apply_effect_composition_layer
-from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, effect_resource_layer_base_frame_key
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
@@ -81,6 +82,7 @@ from .external_tools_dialog import ExternalToolsDialog
 from .interface_settings_dialog import InterfaceSettingsDialog, timeline_frame_width
 from .undo_commands import EditorOperationCommand, EditorValueCommand
 from .tooltip_helper import apply_tooltip
+from .interactive_proxy_prewarm import InteractiveProxyPrewarmManager
 
 
 class MainWindow(QMainWindow):
@@ -117,8 +119,11 @@ class MainWindow(QMainWindow):
         self._dirty_resource_transform_layers=set()
         self.resource_transform_render_timer=QTimer(self);self.resource_transform_render_timer.setSingleShot(True);self.resource_transform_render_timer.timeout.connect(self._flush_resource_transform_current)
         self.resource_transform_finalize_timer=QTimer(self);self.resource_transform_finalize_timer.setSingleShot(True);self.resource_transform_finalize_timer.timeout.connect(self._flush_resource_transform_final)
+        self._timeline_scrubbing=False
 
         self._build_ui()
+        self.interactive_proxy_prewarm=InteractiveProxyPrewarmManager(self._build_resource_transform_prewarm_payload,self)
+        self.interactive_proxy_prewarm.ready.connect(self._install_resource_transform_prewarm)
         self._build_menus()
         self.resource_editor.set_undo_stack(self.application_undo_stack)
         self.application_undo_stack.indexChanged.connect(self._undo_index_changed)
@@ -440,7 +445,8 @@ class MainWindow(QMainWindow):
         self.timeline.delete_layer_requested.connect(self.delete_layer)
         self.timeline.delete_layer_context_requested.connect(self._delete_layer_at)
         self.timeline.cell_selected.connect(self.select_cell)
-        self.timeline.scrub_started.connect(lambda: self.set_playing(False))
+        self.timeline.scrub_started.connect(self._resource_timeline_scrub_started)
+        self.timeline.scrub_finished.connect(self._resource_timeline_scrub_finished)
         self.timeline.play_requested.connect(self.play_action.trigger)
         self.timeline.fps_changed.connect(self.set_fps)
         self.timeline.layer_visibility_requested.connect(self.set_layer_visibility)
@@ -561,6 +567,7 @@ class MainWindow(QMainWindow):
         self.dirty = self._non_undo_dirty or not self.application_undo_stack.isClean()
         self._update_title()
         self._refresh_undo_action_texts()
+        if hasattr(self,"interactive_proxy_prewarm"):self._schedule_resource_transform_prewarm()
 
     def _refresh_undo_action_texts(self) -> None:
         t=self.localization.text
@@ -575,6 +582,7 @@ class MainWindow(QMainWindow):
                 resource=next((item for item in self.project.effect_resource_layers if item.generated_layer_id==target_id),None)
                 if resource:resource.visible=bool(value)
                 self.canvas.update();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count(),preview=self.active_preview_generator_id is not None)
+                self._schedule_resource_transform_prewarm()
         elif field=="particle_settings":
             emitter=next((item for item in self.project.particle_emitters if item.id==target_id),None)
             if emitter:
@@ -635,6 +643,46 @@ class MainWindow(QMainWindow):
             generated=apply_effect_resource_layer_current_frame(self.project,layer,self.frame_index)
             if generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
             self.canvas.finish_interactive_transform_proxy(identifier,layer.layer_transform)
+        if pending:self._schedule_resource_transform_prewarm()
+
+    def _selected_resource_layer(self):
+        identifier=self.canvas.resource_transform_id
+        return next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+
+    def _schedule_resource_transform_prewarm(self) -> None:
+        if not hasattr(self,"interactive_proxy_prewarm"):return
+        layer=self._selected_resource_layer()
+        if layer is None or self.play_timer.isActive() or self._timeline_scrubbing or self.canvas.preview_frames is not None or self.canvas._resource_transform_drag:
+            self.interactive_proxy_prewarm.cancel();return
+        base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
+        token=self.canvas.proxy_prewarm_token(layer,base_key)
+        self.interactive_proxy_prewarm.schedule(token)
+
+    def _build_resource_transform_prewarm_payload(self,token):
+        if self.play_timer.isActive() or self._timeline_scrubbing or self.canvas._resource_transform_drag:return None
+        layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
+        if layer is None:return None
+        base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
+        if self.canvas.proxy_prewarm_token(layer,base_key,token.request_revision)!=token:return None
+        started=perf_counter();base,rendered_key=render_effect_resource_layer_base_frame(self.project,layer,self.frame_index)
+        self.interactive_proxy_prewarm.collector.record("particle_base_render_cache_lookup",(perf_counter()-started)*1000.0)
+        if base is None or tuple(rendered_key)!=tuple(base_key):return None
+        payload=self.canvas.proxy_prewarm_payload(token,base)
+        for name,value in self.canvas.last_prewarm_payload_timings.items():self.interactive_proxy_prewarm.collector.record(name,value)
+        return payload
+
+    def _install_resource_transform_prewarm(self,result) -> None:
+        token=result.token
+        if token.request_revision!=self.interactive_proxy_prewarm.request_revision:return
+        if not self.canvas.install_proxy_prewarm(result):self.interactive_proxy_prewarm.collector.stale_rejections+=1
+        else:
+            for name,value in self.canvas.last_prewarm_install_timings.items():self.interactive_proxy_prewarm.collector.record(name,value)
+
+    def _resource_timeline_scrub_started(self) -> None:
+        self._timeline_scrubbing=True;self.interactive_proxy_prewarm.cancel();self.set_playing(False)
+
+    def _resource_timeline_scrub_finished(self) -> None:
+        self._timeline_scrubbing=False;self._schedule_resource_transform_prewarm()
 
     def _materialize_resource_transform_sequences(self) -> None:
         self._flush_resource_transform_final()
@@ -645,6 +693,8 @@ class MainWindow(QMainWindow):
         if identifiers:self._sync_resource_layer_adapters()
 
     def apply_undo_operation(self,operation,state,forward) -> None:
+        if operation in {"delete_layer","delete_effect_layer","add_resource_layer"}:
+            self.interactive_proxy_prewarm.cancel();self.canvas.clear_interactive_transform_proxy(update=False)
         if operation in {"add_frame","duplicate_frame"}:
             index=state["index"]+1
             if forward:
@@ -729,6 +779,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.localization.text("status.new_project"), 3000)
 
     def apply_new_project_settings(self, settings) -> None:
+        self.interactive_proxy_prewarm.cancel()
         self.set_playing(False)
         self.preview_manager.reset_context()
         self.particle_preview_manager.reset_context()
@@ -758,6 +809,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        self.interactive_proxy_prewarm.cancel()
         try:
             self.project = load_project(path)
         except ProjectIOError as exc:
@@ -1125,6 +1177,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
         generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
         if generated is not None:self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
+        self._schedule_resource_transform_prewarm()
 
     def set_resource_layer_mode(self, identifier: str, mode: str) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
@@ -1164,8 +1217,12 @@ class MainWindow(QMainWindow):
         if layer:self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
 
     def _prepare_resource_transform_interaction(self,identifier) -> None:
+        self.interactive_proxy_prewarm.cancel()
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer is None:return
+        base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
+        if self.canvas.activate_proxy_prewarm(layer,base_key):
+            self.canvas.apply_interactive_transform_proxy(layer);return
         base,base_key=render_effect_resource_layer_base_frame(self.project,layer,self.frame_index)
         if self.canvas.queue_interactive_transform_proxy(layer,base,base_key):self.canvas.apply_interactive_transform_proxy(layer)
 
@@ -1472,6 +1529,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_frame(self.frame_index)
         self.timeline.refresh(self.project, self.layer_index, self.frame_index)
         self._refresh_playback_status()
+        if hasattr(self,"interactive_proxy_prewarm") and not self._timeline_scrubbing:self._schedule_resource_transform_prewarm()
 
     def delete_source_asset(self, asset_id: str) -> None:
         asset = next(
@@ -1793,6 +1851,7 @@ class MainWindow(QMainWindow):
         )
         self._refresh_selection_status()
         self._refresh_playback_status()
+        if not self._timeline_scrubbing:self._schedule_resource_transform_prewarm()
 
     def select_frame(self, index: int) -> None:
         if 0 <= index < self._display_frame_count():
@@ -1811,6 +1870,7 @@ class MainWindow(QMainWindow):
             )
             self._refresh_selection_status()
             self._refresh_playback_status()
+            if not self._timeline_scrubbing and not self.play_timer.isActive():self._schedule_resource_transform_prewarm()
 
     def set_fps(self, value: int) -> None:
         if self.project.fps != value:
@@ -1825,6 +1885,7 @@ class MainWindow(QMainWindow):
             with QSignalBlocker(self.play_action):
                 self.play_action.setChecked(playing)
         if playing:
+            self.interactive_proxy_prewarm.cancel()
             self._materialize_resource_transform_sequences()
             self.play_timer.start(max(1, round(1000 / self.project.fps)))
         else:
@@ -1832,6 +1893,7 @@ class MainWindow(QMainWindow):
         self.timeline.set_playing(playing)
         self._refresh_tooltips()
         self._refresh_playback_status()
+        if not playing and not self._timeline_scrubbing:self._schedule_resource_transform_prewarm()
 
     def _refresh_playback_status(self) -> None:
         self.timeline.update_playback_status(

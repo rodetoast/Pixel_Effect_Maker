@@ -36,6 +36,31 @@ Using the same 600×600/five-layer diagnostic:
 
 The session created one Base QImage, one Base QPixmap, and one depth-buffer set. The one-time preparation is moved to interaction start; subsequent input avoids Particle Simulation, exact Homography/Sampling, full project composition, and NumPy image conversion.
 
+## Idle prewarm completion
+
+Resource Layer selection and final frame navigation now debounce for 80ms, then submit alpha cropping and prefix/suffix composition to the existing Qt global worker pool. A request revision makes completion latest-only. Project/layer/frame/canvas/placement/base/resource/transform/render/visibility/depth tokens are rechecked before both payload creation and GUI installation. A mouse press cancels pending work and never waits for an active worker.
+
+The composite LRU key excludes the selected layer transform but includes the exact before/after render-array identities, opacity, visibility, and stable depth signature. It is capped at 64MB; the separate cropped-base LRU is capped at 32MB. Prewarm installation creates GUI images only on the GUI thread and does not request a repaint.
+
+Offscreen diagnostic, 600×600 with five visible Resource Layers (one run; timings are observations, not CI limits):
+
+| Stage | Calls | Average | Maximum / result |
+| --- | ---: | ---: | ---: |
+| Idle debounce | 1 | 80ms configured | — |
+| Payload/layer-cache snapshot | 1 | 0.237ms | — |
+| Base alpha crop | 1 | 0.986ms | — |
+| Underlay alpha composite (3 layers) | 1 | 61.069ms | — |
+| Overlay alpha composite (2 layers) | 1 | 40.746ms | — |
+| Underlay/Overlay NumPy → QImage | 2 | 0.206ms | 0.208ms |
+| Underlay/Overlay QImage → QPixmap | 2 | 0.656ms | 1.202ms |
+| Proxy state installation | 1 | 2.269ms | — |
+| Prewarm ready after selection | 1 | 207.107ms including debounce/poll | — |
+| First mouse press, Prewarm Hit | 1 | 0.346ms | 0 composite, 0 QImage, 0 QPixmap |
+| First mouse press, cold Miss | 1 | 100.089ms | 1 depth-buffer pair, 1 Base QImage/Pixmap |
+| First proxy paint | 20 | 3.998ms | 10.298ms |
+
+The cold prefix/suffix alpha composite remains the largest preparation cost, but it is now paid during idle on a worker. The synchronous cache-hit press is below the 10ms diagnostic target and performs no particle simulation, exact NumPy transform, full-layer composite, or image conversion. A miss keeps the previous synchronous fallback so input can start without waiting for stale background work.
+
 ## Exact-output boundary
 
 Mouse Release, Escape, SpinBox `editingFinished`, and 120ms idle run one exact current-frame CPU render. Playback, Save, Bake, PNG Export, and Preview Sequence Export use the exact CPU sequence path. Proxy images never enter Project frames, serialization, or exports.

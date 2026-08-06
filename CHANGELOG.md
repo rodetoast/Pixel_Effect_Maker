@@ -4,6 +4,8 @@
 
 ### Added
 
+- Resource Layer 선택·최종 Frame 이동 뒤 80ms Idle에 Particle Base Crop, QImage/QPixmap, Underlay/Overlay를 미리 준비하는 latest-only Prewarm 추가
+- 선택 레이어를 제외한 Layer/Frame/Visibility/Depth/Render signature 기반 Prefix/Suffix Composite Cache와 64MB LRU 상한 추가
 - Particle Emission/Single 2.5D 연속 조작을 위한 Canvas 전용 QPainter Projective Proxy, Alpha Bounds Crop, Base QImage/QPixmap Cache와 Underlay/Overlay 고정 합성 추가
 - Effect Editor 오른쪽 Resource Layer Inspector를 약 280~320px에서도 가로 Scroll 없이 사용할 수 있도록 반응형으로 변경하고, 2.5D 조작 버튼 2열 배치와 Transform/Path/Particle 입력 폭 및 한국어·영어·큰 글꼴 대응을 추가
 - Resource Layer 공통 2.5D Transform(Position X/Y/Z, Rotation X/Y/Z, Scale X/Y, Opacity, Pivot, Perspective), Keyframe/Easing, Stable Z 정렬, 3축 Canvas 조작을 Single과 Particle Emission 최종 출력에 동일하게 적용
@@ -18,6 +20,8 @@
 
 ### Changed
 
+- Prewarm의 NumPy Alpha Scan과 Underlay/Overlay 합성을 기존 Qt 작업 풀에서 낮은 우선순위로 실행하고, GUI 스레드에는 최신 요청의 이미지 설치만 전달
+- 첫 2.5D Gizmo Press가 유효한 Prewarm을 즉시 활성화하며 선택·Frame·Project·Visibility·Depth·Revision 변경 결과와 Scrub/Playback 중 요청을 폐기
 - 2.5D 인터랙티브 화면 갱신을 최대 약 30FPS(33ms) latest-wins로 제한하고 SpinBox 종료·120ms Idle·Gizmo Release/Escape에서만 정확한 CPU 결과를 확정
 - 작은 Projected Quad 이동은 이전·현재 Bounds와 Gizmo의 합집합 Dirty Rect만 갱신하며, 실제 Z 정렬 경계를 넘을 때만 고정 Depth Buffer를 재구성
 - Particle Emission의 원본 RGBA와 공통 2.5D 후처리 캐시를 분리하고 Transform 변경이 Particle Simulation을 무효화하지 않도록 변경
