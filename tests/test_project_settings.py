@@ -67,7 +67,7 @@ def test_project_settings_dialog_apply_stays_open_and_cancel_discards_pending() 
     assert calls[-1].fps == 24
     assert not calls[-1].loop
     assert dialog.result() == 0
-    assert dialog.current_size_label.text() == "96 × 64"
+    assert dialog.current_size_label.text() == "96 × 600"
 
     pending = ProjectSettingsDialog(project, None, lambda values: calls.append(values) or True)
     count = len(calls)

@@ -7,6 +7,13 @@ from typing import Any
 
 import numpy as np
 
+from app.project_defaults import (
+    DEFAULT_PROJECT_FPS,
+    DEFAULT_PROJECT_FRAME_COUNT,
+    DEFAULT_PROJECT_HEIGHT,
+    DEFAULT_PROJECT_WIDTH,
+)
+
 from .frame import Frame, empty_pixels
 from .layer import Layer
 from .source_asset import SourceAsset
@@ -30,9 +37,9 @@ class Project:
     """UI-independent pixel animation project."""
 
     name: str = "Untitled"
-    width: int = 64
-    height: int = 64
-    fps: int = 12
+    width: int = DEFAULT_PROJECT_WIDTH
+    height: int = DEFAULT_PROJECT_HEIGHT
+    fps: int = DEFAULT_PROJECT_FPS
     loop: bool = True
     layers: list[Layer] = field(default_factory=list)
     frames: list[Frame] = field(default_factory=list)
@@ -52,14 +59,25 @@ class Project:
     def create_default(
         cls,
         name: str = "Untitled",
-        width: int = 64,
-        height: int = 64,
-        fps: int = 12,
+        width: int | None = None,
+        height: int | None = None,
+        fps: int | None = None,
         loop: bool = True,
+        frame_count: int | None = None,
     ) -> "Project":
+        default_geometry = width is None and height is None and fps is None
+        width = DEFAULT_PROJECT_WIDTH if width is None else int(width)
+        height = DEFAULT_PROJECT_HEIGHT if height is None else int(height)
+        fps = DEFAULT_PROJECT_FPS if fps is None else int(fps)
+        if frame_count is None:
+            frame_count = DEFAULT_PROJECT_FRAME_COUNT if default_geometry else 1
+        frame_count = int(frame_count)
+        if frame_count < 1:
+            raise ProjectError("frame count must be positive")
         project = cls(name=name, width=width, height=height, fps=fps, loop=loop)
         project.add_layer("Layer 1")
-        project.add_frame()
+        for _ in range(frame_count):
+            project.add_frame()
         return project
 
     def _validate_dimensions(self) -> None:

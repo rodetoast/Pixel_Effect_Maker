@@ -4,6 +4,10 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 New saves use project format v8. v1-v7 projects load with Linear motion by default. The application remains `Pixel Effect Maker v0.0.04`.
 
+New projects start at 600×600, 12 FPS, and 12 frames (one second). Until Frames is edited directly, changing FPS keeps the default duration at one second. Blank Resource Compositions start at 300×300 and inherit the project FPS with the same one-second/manual-unlink policy.
+
+Effect playback prepares deterministic exact RGBA frames off the UI thread and displays them from a bounded runtime-only QPixmap cache. Playback follows elapsed time and may skip late preview frames, while direct render, Bake, PNG export, and Save keep their exact existing paths. See [Effect Playback Performance](docs/EFFECT_PLAYBACK_PERFORMANCE.md).
+
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
 현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
@@ -125,7 +129,7 @@ GUI를 생성하지 않고 버전 확인:
 
 ## Resource Composition 빠른 흐름
 
-`Resource Editor`가 비어 있으면 시작 패널에서 PNG/GIF/Aseprite를 가져오거나 현재 프로젝트 크기·FPS를 기본값으로 빈 리소스를 만들 수 있습니다. 에셋을 선택하고 `Create Resource from This Asset`을 누르면 원본 이름·크기·재생 시간을 기준으로 설정된 리소스와 첫 Layer가 한 번에 생성됩니다. 이어서 `Full Rotation`을 누르면 전체 구간에 0°→360° 키프레임이 만들어져 바로 재생할 수 있습니다. Asset 검사 중에는 Composition Timeline과 기즈모가 숨겨지고, Resource와 Layer를 편집할 때만 관련 Canvas·Inspector·Timeline이 표시됩니다.
+`Resource Editor`가 비어 있으면 시작 패널에서 PNG/GIF/Aseprite를 가져오거나 300×300, 현재 프로젝트 FPS, 1초 길이를 기본값으로 빈 리소스를 만들 수 있습니다. 에셋 기반 리소스는 원본 크기를 유지하면서 프로젝트 FPS와 1초 길이를 상속합니다. 에셋을 선택하고 `Create Resource from This Asset`을 누르면 리소스와 첫 Layer가 한 번에 생성됩니다. 이어서 `Full Rotation`을 누르면 전체 구간에 0°→360° 키프레임이 만들어져 바로 재생할 수 있습니다. Asset 검사 중에는 Composition Timeline과 기즈모가 숨겨지고, Resource와 Layer를 편집할 때만 관련 Canvas·Inspector·Timeline이 표시됩니다.
 
 완성한 Composition은 `Use This Resource in Effect`으로 Particle Emitter를 생성하고 Effect Editor에서 바로 Preview할 수 있습니다. Particle 시간은 Effect Project FPS를 초 단위로 변환한 뒤 Composition FPS와 Playback Speed를 적용합니다. 자세한 구조는 [Resource Editor](docs/RESOURCE_EDITOR.md)와 [Resource Compositions](docs/RESOURCE_COMPOSITIONS.md)를 참고합니다.
 

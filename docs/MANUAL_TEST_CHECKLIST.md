@@ -1,5 +1,18 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Project Defaults & Effect Playback
+
+- [ ] New Project를 열면 600×600, 12 FPS, 12 Frames이며 FPS를 24/30/60으로 바꾸면 Frames도 직접 편집 전까지 같은 값이 된다.
+- [ ] Frames를 48로 직접 바꾼 뒤 FPS를 30으로 바꿔도 48 Frames가 유지되고, Dialog를 다시 열면 자동 1초 상태로 초기화된다.
+- [ ] 빈 Resource는 300×300, Project FPS, 1초 Frame 수로 시작하고 수동 Frames 편집 뒤에는 FPS와 분리된다.
+- [ ] 이미 생성한 Resource가 이후 Project FPS 변경에 따라 강제로 바뀌지 않는다.
+- [ ] 600×600, 12 Frames에서 Effect Layer 1/3/5개와 Particle 0/50/100개를 재생해 UI가 입력을 장시간 막지 않는지 확인한다.
+- [ ] 재생 시작 직후 아직 준비되지 않은 프레임에서는 최근 준비된 정확 프레임이 유지되고, 준비가 진행되면 자연스럽게 따라오는지 확인한다.
+- [ ] 재생 중 Selection, Pan, Zoom 뒤 cache가 유지되고, Opacity/Visibility/Particle/2.5D 편집 시 재생이 정지하며 오래된 프레임이 남지 않는지 확인한다.
+- [ ] 재생 프레임과 같은 위치의 Scrub, Bake, PNG Export를 눈으로 비교하고 Save/Load 뒤 프로젝트 픽셀이 바뀌지 않았는지 확인한다.
+
+이 항목들은 실제 Windows GUI에서 아직 수행되지 않았으며 자동/오프스크린 검증과 구분한다.
+
 ## Early Preview Build 안내
 
 - [ ] 새 QSettings 상태에서 일반 실행 시 Startup Dialog보다 먼저 안내창이 열린다.

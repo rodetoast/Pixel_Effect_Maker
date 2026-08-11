@@ -6,7 +6,7 @@ from pathlib import Path
 from copy import deepcopy
 from time import perf_counter
 
-from PySide6.QtCore import QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QElapsedTimer, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -65,6 +65,7 @@ from app.services.effect_composition_layer_render_service import render_effect_c
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, render_effect_resource_layer_current_base_frame, effect_resource_layer_base_frame_key
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.services.runtime_diagnostics import build_diagnostic_text, log_exception, runtime_logger, safe_path_label
+from app.services.effect_playback_service import EffectPlaybackManager
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
 
@@ -97,7 +98,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(get_display_name())
         self.resize(1280, 800)
-        self.project = initial_project or Project.create_default()
+        # The invisible pre-startup placeholder stays deliberately small; every
+        # user-facing New Project path uses the central 600x600/12-frame defaults.
+        self.project = initial_project or Project.create_default(width=64,height=64,frame_count=1)
         self.project_path: Path | None = None
         self.frame_index = 0
         self.layer_index = 0
@@ -119,7 +122,8 @@ class MainWindow(QMainWindow):
         except SettingsError:
             self.shortcuts = dict(DEFAULT_SHORTCUTS)
         self.play_timer = QTimer(self)
-        self.play_timer.timeout.connect(self._advance_playback)
+        self.play_timer.timeout.connect(lambda:self._advance_playback(False))
+        self._playback_clock=QElapsedTimer();self._playback_start_frame=0;self._playback_last_step=0
         self._pending_resource_transforms={}
         self._dirty_resource_transform_layers=set()
         self.resource_transform_render_timer=QTimer(self);self.resource_transform_render_timer.setSingleShot(True);self.resource_transform_render_timer.timeout.connect(self._flush_resource_transform_current)
@@ -131,6 +135,9 @@ class MainWindow(QMainWindow):
         self._timeline_scrubbing=False
 
         self._build_ui()
+        self.effect_playback=EffectPlaybackManager(self)
+        self.effect_playback.frame_ready.connect(self._playback_frame_ready)
+        self.effect_playback.preparation_failed.connect(self._playback_preparation_failed)
         self.interactive_proxy_prewarm=InteractiveProxyPrewarmManager(self._build_resource_transform_prewarm_payload,self)
         self.interactive_proxy_prewarm.ready.connect(self._install_resource_transform_prewarm)
         self._build_menus()
@@ -581,12 +588,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{get_display_name()} - {self.project.name}{marker}")
 
     def _mark_dirty(self) -> None:
+        if hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=True)
         self._project_edit_revision+=1
         self._non_undo_dirty=True
         self.dirty = True
         self._update_title()
 
     def _undo_index_changed(self, *args) -> None:
+        if hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=True)
         self._project_edit_revision+=1
         self.dirty = self._non_undo_dirty or not self.application_undo_stack.isClean()
         self._update_title()
@@ -864,6 +873,7 @@ class MainWindow(QMainWindow):
             settings.width,settings.height,settings.frame_count,settings.fps,settings.loop,
         )
         self.interactive_proxy_prewarm.cancel()
+        self._invalidate_playback_cache(stop=True)
         invalidate_composition_cache()
         invalidate_effect_resource_layer_base()
         invalidate_particle_render_caches()
@@ -879,9 +889,8 @@ class MainWindow(QMainWindow):
             settings.height,
             settings.fps,
             settings.loop,
+            settings.frame_count,
         )
-        while len(self.project.frames) < settings.frame_count:
-            self.project.add_frame()
         self.project_path = None
         self.application_undo_stack.clear()
         self.frame_index = self.layer_index = 0
@@ -901,6 +910,7 @@ class MainWindow(QMainWindow):
             return
         runtime_logger().info("open_project start source=%s", safe_path_label(path))
         self.interactive_proxy_prewarm.cancel()
+        self._invalidate_playback_cache(stop=True)
         invalidate_composition_cache()
         invalidate_effect_resource_layer_base()
         invalidate_particle_render_caches()
@@ -1712,6 +1722,7 @@ class MainWindow(QMainWindow):
             )
 
     def _activate_preview(self, generator: TransformEmitter, frames: list) -> None:
+        self._invalidate_playback_cache(stop=True)
         self.active_preview_generator_id = generator.id
         self.frame_index = min(self.frame_index, len(frames) - 1)
         self.canvas.set_preview(frames, generator.generated_layer_id)
@@ -1729,6 +1740,7 @@ class MainWindow(QMainWindow):
         if self.active_preview_generator_id is not None and self.play_timer.isActive():
             self.set_playing(False)
         self.active_preview_generator_id = None
+        if hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=False)
         self.canvas.clear_preview()
         self.frame_index = min(self.frame_index, len(self.project.frames) - 1)
         self.canvas.set_frame(self.frame_index)
@@ -1880,6 +1892,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_unapplied_previews() or not self._confirm_discard():
             return
         self.set_playing(False)
+        self._invalidate_playback_cache(stop=False)
         self.preview_manager.reset_context()
         self.particle_preview_manager.reset_context()
         self._clear_preview()
@@ -2096,9 +2109,47 @@ class MainWindow(QMainWindow):
         if self.project.fps != value:
             self.project.fps = value
             self._mark_dirty()
-        if self.play_timer.isActive():
-            self.play_timer.setInterval(max(1, round(1000 / value)))
+        self.play_timer.setInterval(max(1, round(1000 / value)))
         self._refresh_playback_status()
+
+    def _playback_preview_identity(self) -> tuple:
+        frames=self.canvas.preview_frames
+        return () if frames is None else (self.active_preview_generator_id or "preview",id(frames),len(frames))
+
+    def _playback_key(self,index: int):
+        return self.effect_playback.key(self.project,self._project_edit_revision,index,self._playback_preview_identity())
+
+    def _invalidate_playback_cache(self,stop=True) -> None:
+        if stop and self.play_timer.isActive():self.set_playing(False)
+        self.effect_playback.invalidate();self.canvas.end_playback(False);self.canvas.clear_playback_frame(update=False)
+
+    def _display_cached_playback_frame(self,index: int) -> bool:
+        started=perf_counter()
+        count=self._display_frame_count();value=self.effect_playback.get(self._playback_key(index))
+        if value is None:
+            for delta in range(1,count):
+                fallback=(index-delta)%count if self.project.loop else index-delta
+                if fallback<0:break
+                value=self.effect_playback.get(self._playback_key(fallback))
+                if value is not None:break
+        if value is None:
+            self.effect_playback.collector.record("cache_lookup_display",(perf_counter()-started)*1000.0);return False
+        canvas_started=perf_counter();self.canvas.set_playback_frame(value.pixmap,value.key.frame_index,value.key)
+        self.effect_playback.collector.record("canvas_update",(perf_counter()-canvas_started)*1000.0);self.effect_playback.collector.record("cache_lookup_display",(perf_counter()-started)*1000.0);return True
+
+    def _playback_frame_ready(self,value) -> None:
+        if value.key.project_identity!=id(self.project) or value.key.render_revision!=self._project_edit_revision:return
+        if self.play_timer.isActive() and value.key.frame_index==self.frame_index:self.canvas.set_playback_frame(value.pixmap,value.key.frame_index,value.key)
+
+    def _playback_preparation_failed(self,message: str) -> None:
+        runtime_logger().error("effect_playback preparation_failed message=%s",message)
+        self.statusBar().showMessage("Playback frame preparation failed. The current exact frame is being held.",5000)
+
+    def _select_playback_frame(self,index: int) -> None:
+        started=perf_counter()
+        self.frame_index=index;self.canvas.set_frame(index);self.project._current_effect_frame=index;self._display_cached_playback_frame(index)
+        timeline_started=perf_counter();self.timeline.set_current_cell(self.project,self.layer_index,index,display_frame_count=self._display_frame_count());self._refresh_selection_status();self._refresh_playback_status()
+        self.effect_playback.collector.record("timeline_status_update",(perf_counter()-timeline_started)*1000.0);self.effect_playback.collector.record("playback_frame_selection",(perf_counter()-started)*1000.0)
 
     def set_playing(self, playing: bool) -> None:
         if self.play_action.isChecked() != playing:
@@ -2106,10 +2157,16 @@ class MainWindow(QMainWindow):
                 self.play_action.setChecked(playing)
         if playing:
             self.interactive_proxy_prewarm.cancel()
-            self._materialize_resource_transform_sequences()
+            self._flush_resource_transform_final();self._flush_particle_motion_final()
+            self.canvas.clear_interactive_transform_proxy(update=False)
+            self.canvas.begin_playback();self._playback_start_frame=self.frame_index;self._playback_last_step=0;self._playback_clock.start()
+            preview=self.canvas.preview_frames
+            self.effect_playback.prepare(self.project,self._project_edit_revision,self.frame_index,preview,self.canvas.preview_layer_id,self._playback_preview_identity())
+            self._display_cached_playback_frame(self.frame_index)
             self.play_timer.start(max(1, round(1000 / self.project.fps)))
         else:
             self.play_timer.stop()
+            self.canvas.end_playback(True)
         self.timeline.set_playing(playing)
         self._refresh_tooltips()
         self._refresh_playback_status()
@@ -2124,15 +2181,23 @@ class MainWindow(QMainWindow):
             preview=self.active_preview_generator_id is not None,
         )
 
-    def _advance_playback(self) -> None:
-        next_index = self.frame_index + 1
-        if next_index >= self._display_frame_count():
-            if self.project.loop:
-                next_index = 0
-            else:
-                self.set_playing(False)
-                return
-        self.select_frame(next_index)
+    def _advance_playback(self, force_step: bool = True) -> None:
+        tick_started=perf_counter()
+        count=self._display_frame_count()
+        if count<1:return
+        if force_step:
+            next_index=self.frame_index+1
+            if next_index>=count:
+                if self.project.loop:next_index=0
+                else:self.set_playing(False);return
+        else:
+            step=int(self._playback_clock.elapsed()*self.project.fps/1000.0)
+            if step<=self._playback_last_step:return
+            self._playback_last_step=step;absolute=self._playback_start_frame+step
+            if not self.project.loop and absolute>=count:
+                self._select_playback_frame(count-1);self.set_playing(False);return
+            next_index=absolute%count if self.project.loop else absolute
+        self._select_playback_frame(next_index);self.effect_playback.collector.record("timeline_tick",(perf_counter()-tick_started)*1000.0)
 
     def _resolve_generator_draft(self, generator_id: str) -> bool:
         draft = self.preview_manager.drafts.get(generator_id)
@@ -2198,6 +2263,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self._confirm_unapplied_previews() and self._confirm_discard():
             self.preview_manager.close()
+            self.effect_playback.close()
             self.particle_preview_manager.reset_context()
             self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self._pending_particle_motion.clear()
             event.accept()

@@ -175,12 +175,12 @@ def test_gizmo_updates_only_changed_inspector_field_without_layout(tmp_path,monk
     QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=handle+QPoint(20,0));close(window)
 
 
-def test_playback_materializes_exact_sequence_and_clears_proxy(tmp_path,monkeypatch):
+def test_playback_prepares_exact_cache_without_materializing_sequence_and_clears_proxy(tmp_path,monkeypatch):
     window,layer,_=context(tmp_path,"playback");layer.layer_transform.rotation_x=18;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();assert window.canvas.interactive_transform_proxy is not None
     calls=[];original=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer"]).apply_effect_resource_layer
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer",lambda *args,**kwargs:calls.append(1) or original(*args,**kwargs))
     applies=window.canvas.proxy_stats["apply_calls"];window.set_playing(True);window.set_playing(False)
-    assert calls==[1] and window.canvas.interactive_transform_proxy is None and window.canvas.proxy_stats["apply_calls"]==applies
+    assert calls==[] and window.canvas.interactive_transform_proxy is None and window.canvas.proxy_stats["apply_calls"]==applies
     assert "interactive_transform_proxy" not in window.project.to_dict()
     close(window)
 

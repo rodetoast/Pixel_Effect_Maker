@@ -9,10 +9,10 @@ from app.models.project import Project, ProjectError
 def test_default_project_creation() -> None:
     project = Project.create_default()
     assert project.name == "Untitled"
-    assert (project.width, project.height) == (64, 64)
+    assert (project.width, project.height) == (600, 600)
     assert project.fps == 12
     assert len(project.layers) == 1
-    assert len(project.frames) == 1
+    assert len(project.frames) == 12
 
 
 def test_canvas_size_and_fps_are_serialized() -> None:
@@ -58,7 +58,7 @@ def test_add_duplicate_and_delete_frame() -> None:
 
 
 def test_repeated_frame_duplication_never_accumulates_copy() -> None:
-    project = Project.create_default()
+    project = Project.create_default(width=64,height=64)
     for index in range(4):
         project.duplicate_frame(index)
     assert len(project.frames) == 5
@@ -83,7 +83,7 @@ def test_custom_layer_names_are_not_rewritten() -> None:
 
 
 def test_cannot_delete_only_frame() -> None:
-    project = Project.create_default()
+    project = Project.create_default(width=64,height=64)
     with pytest.raises(ProjectError, match="at least one frame"):
         project.delete_frame(0)
 

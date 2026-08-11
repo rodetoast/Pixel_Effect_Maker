@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Project Defaults & Effect Playback Performance
+
+- Changed New Project defaults to 600×600, 12 FPS, and 12 frames; FPS keeps the initial one-second frame count linked until Frames is manually edited.
+- Changed blank Resource Composition defaults to 300×300 and one second at the current project FPS, while preserving independent editing after creation.
+- Added background exact Effect frame preparation, a 256MB runtime-only RGBA/QPixmap LRU, elapsed-time playback with frame dropping, and non-blocking cache misses.
+- Added exact cache/Bake/PNG parity, render-revision invalidation, elapsed-clock, byte eviction, and default-policy regression coverage without changing app version 0.0.04 or format 8.
+
 ## Unreleased — Project-wide Stabilization & QA Hardening
 
 - Added bounded OS-user-data runtime logging, central exception reporting, worker failure logging, and bilingual Help > Copy Diagnostic Information.

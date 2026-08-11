@@ -66,6 +66,8 @@ class CanvasWidget(QWidget):
         self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
+        self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
+        self.playback_display_stats={"cached_paints":0,"fallback_paints":0,"cached_draw_ms":0.0,"cached_draw_max_ms":0.0}
         self.proxy_base_image_cache=ProxyBaseImageCache()
         self.proxy_composite_cache=InteractiveCompositeCache()
         self.proxy_stats={"apply_calls":0,"motion_apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
@@ -84,6 +86,7 @@ class CanvasWidget(QWidget):
         self.frame_index = 0
         self.layer_index = 0
         if context_changed:
+            self.clear_playback_frame(update=False)
             self.clear_interactive_transform_proxy(update=False)
             self.proxy_base_image_cache.clear()
             self.proxy_composite_cache.clear()
@@ -158,9 +161,20 @@ class CanvasWidget(QWidget):
                       round((self.height() - self.project.height * self.zoom) / 2 + self.pan_offset.y()))
 
     def set_frame(self, index: int) -> None:
+        if not self.playback_mode and self.playback_pixmap_frame!=index:self.clear_playback_frame(update=False)
         if index!=self.frame_index:self.clear_interactive_transform_proxy(update=False)
         self.frame_index = index
         self.update()
+
+    def begin_playback(self) -> None:self.playback_mode=True
+    def end_playback(self,keep_current=True) -> None:
+        self.playback_mode=False
+        if not keep_current:self.clear_playback_frame(update=False)
+    def set_playback_frame(self,pixmap,frame_index,key=None) -> None:
+        self.playback_pixmap=pixmap;self.playback_pixmap_frame=int(frame_index);self.playback_pixmap_key=key;self.update()
+    def clear_playback_frame(self,update=True) -> None:
+        had=self.playback_pixmap is not None;self.playback_pixmap=None;self.playback_pixmap_frame=None;self.playback_pixmap_key=None
+        if update and had:self.update()
 
     def set_layer(self, index: int) -> None:
         self.layer_index = index
@@ -477,7 +491,11 @@ class CanvasWidget(QWidget):
             self._paint_interactive_transform_proxy(painter,proxy)
             if proxy.overlay_pixmap is not None:painter.drawPixmap(canvas_rect,proxy.overlay_pixmap)
             self.proxy_stats["paint_calls"]+=1
+        elif self.playback_pixmap is not None:
+            playback_draw_started=perf_counter();painter.drawPixmap(canvas_rect,self.playback_pixmap)
+            elapsed=(perf_counter()-playback_draw_started)*1000.0;self.playback_display_stats["cached_paints"]+=1;self.playback_display_stats["cached_draw_ms"]+=elapsed;self.playback_display_stats["cached_draw_max_ms"]=max(self.playback_display_stats["cached_draw_max_ms"],elapsed)
         else:
+            self.playback_display_stats["fallback_paints"]+=1
             pixels: np.ndarray = np.ascontiguousarray(self._compose_display_frame())
             image = QImage(
                 pixels.data,
@@ -498,13 +516,13 @@ class CanvasWidget(QWidget):
             painter.drawText(
                 badge, Qt.AlignmentFlag.AlignCenter, self.preview_badge_text
             )
-        if self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
+        if not self.playback_mode and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._paint_gizmo(painter)
-        if self.resource_transform_id and self.resource_transform is not None:
+        if not self.playback_mode and self.resource_transform_id and self.resource_transform is not None:
             self._paint_resource_transform_gizmo(painter)
-        if proxy is not None and proxy.active and len(proxy.projected_quad)==4:
+        if not self.playback_mode and proxy is not None and proxy.active and len(proxy.projected_quad)==4:
             painter.setPen(QPen(QColor("#74c0fc"),1,Qt.PenStyle.DashLine));painter.setBrush(Qt.BrushStyle.NoBrush);painter.drawPolygon(proxy.projected_quad)
-        if (proxy is None or not proxy.active) and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
+        if not self.playback_mode and (proxy is None or not proxy.active) and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
 
     def _paint_interactive_transform_proxy(self,painter,state):

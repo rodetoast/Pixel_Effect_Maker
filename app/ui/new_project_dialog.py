@@ -17,6 +17,12 @@ from PySide6.QtWidgets import (
 )
 from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 from app.ui.tooltip_helper import apply_tooltip
+from app.project_defaults import (
+    DEFAULT_PROJECT_FPS,
+    DEFAULT_PROJECT_FRAME_COUNT,
+    DEFAULT_PROJECT_HEIGHT,
+    DEFAULT_PROJECT_WIDTH,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +53,7 @@ class NewProjectSettings:
 class NewProjectDialog(QDialog):
     """Collect all supported new-project settings in one modal dialog."""
 
-    PRESETS = (16, 32, 48, 64, 96, 128, 256)
+    PRESETS = (16, 32, 48, 64, 96, 128, 256, 300, 600)
     MIN_CANVAS_SIZE = 1
     MAX_CANVAS_SIZE = 1024
     MIN_FPS = 1
@@ -58,6 +64,8 @@ class NewProjectDialog(QDialog):
         self.setWindowTitle("New Project")
         self.setModal(True)
         self._changing_preset = False
+        self._syncing_frame_count = False
+        self.frame_count_auto = True
         self.localization = localization or getattr(parent, "localization", None)
 
         layout = QVBoxLayout(self)
@@ -73,16 +81,16 @@ class NewProjectDialog(QDialog):
 
         for spin in (self.width_spin, self.height_spin):
             spin.setRange(self.MIN_CANVAS_SIZE, self.MAX_CANVAS_SIZE)
-            spin.setValue(64)
+            spin.setValue(DEFAULT_PROJECT_WIDTH)
             spin.setSuffix(" px")
         self.fps_spin.setRange(self.MIN_FPS, self.MAX_FPS)
-        self.fps_spin.setValue(12)
+        self.fps_spin.setValue(DEFAULT_PROJECT_FPS)
         self.fps_spin.setSuffix(" FPS")
-        self.frame_count_spin.setRange(1, 999); self.frame_count_spin.setValue(1)
+        self.frame_count_spin.setRange(1, 999); self.frame_count_spin.setValue(DEFAULT_PROJECT_FRAME_COUNT)
         for size in self.PRESETS:
             self.preset_combo.addItem(f"{size} × {size}", size)
         self.preset_combo.addItem("Custom", None)
-        self.preset_combo.setCurrentText("64 × 64")
+        self.preset_combo.setCurrentText(f"{DEFAULT_PROJECT_WIDTH} × {DEFAULT_PROJECT_HEIGHT}")
 
         self.form_labels = [
             QLabel("Project name"), QLabel("Canvas preset"), QLabel("Canvas width"),
@@ -115,6 +123,8 @@ class NewProjectDialog(QDialog):
         self.preset_combo.currentIndexChanged.connect(self._apply_preset)
         self.width_spin.valueChanged.connect(self._mark_custom_size)
         self.height_spin.valueChanged.connect(self._mark_custom_size)
+        self.fps_spin.valueChanged.connect(self._fps_changed)
+        self.frame_count_spin.valueChanged.connect(self._frame_count_changed)
         self.name_edit.textChanged.connect(self._validate)
         self._validate()
         if self.localization is not None:
@@ -156,6 +166,19 @@ class NewProjectDialog(QDialog):
         size = self.preset_combo.currentData()
         if size != self.width_spin.value() or size != self.height_spin.value():
             self.preset_combo.setCurrentIndex(self.preset_combo.count() - 1)
+
+    def _fps_changed(self, fps: int) -> None:
+        if not self.frame_count_auto:
+            return
+        self._syncing_frame_count = True
+        try:
+            self.frame_count_spin.setValue(int(fps))
+        finally:
+            self._syncing_frame_count = False
+
+    def _frame_count_changed(self, _value: int) -> None:
+        if not self._syncing_frame_count:
+            self.frame_count_auto = False
 
     def _validate(self) -> None:
         valid = bool(self.name_edit.text().strip())

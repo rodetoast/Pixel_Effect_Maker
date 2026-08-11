@@ -30,7 +30,7 @@ def isolated_settings(tmp_path) -> ShortcutSettingsService:
 
 def test_new_project_dialog_defaults_and_settings(application) -> None:
     dialog = NewProjectDialog()
-    assert dialog.settings() == NewProjectSettings("Untitled", 64, 64, 12, True)
+    assert dialog.settings() == NewProjectSettings("Untitled", 600, 600, 12, True, 12)
     assert dialog.create_button.isEnabled()
 
 
@@ -79,7 +79,7 @@ def test_new_project_settings_apply_to_model(application) -> None:
 
 
 def test_timeline_uses_continuous_position_headers(application) -> None:
-    project = Project.create_default()
+    project = Project.create_default(width=64,height=64)
     project.add_frame()
     project.add_frame()
     project.add_layer()
@@ -99,7 +99,7 @@ def test_timeline_uses_continuous_position_headers(application) -> None:
 
 
 def test_timeline_cell_selects_layer_and_frame(application) -> None:
-    project = Project.create_default()
+    project = Project.create_default(width=64,height=64)
     project.add_frame()
     project.add_layer("Glow")
     timeline = TimelineWidget()

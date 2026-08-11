@@ -13,6 +13,7 @@ from app.ui.interface_settings_dialog import timeline_frame_width
 
 from .asset_browser_panel import AssetBrowserPanel
 from .asset_inspector_widget import AssetFrameStrip, AssetInspectorWidget, AssetPreviewCanvas, asset_durations, asset_frames
+from app.project_defaults import DEFAULT_RESOURCE_HEIGHT, DEFAULT_RESOURCE_WIDTH
 from .composition_canvas import CompositionCanvas
 from .composition_inspector import CompositionInspector, LayerInspector, PropertySearchDialog
 from .composition_timeline import CompositionTimeline
@@ -138,13 +139,13 @@ class ResourceEditorWidget(QWidget):
 
     def _create_dialog(self):
         if self.resource is None:return
-        dialog=NewResourceDialog(self.resource,self.localization,self)
+        dialog=NewResourceDialog(self.resource,self.localization,self,defaults=(DEFAULT_RESOURCE_WIDTH,DEFAULT_RESOURCE_HEIGHT,self.project.fps,self.project.loop))
         if dialog.exec()==QDialog.DialogCode.Accepted:
             self.controller.create_resource(*dialog.values());self.browser.refresh(self.project,None,self.composition.id)
 
     def _create_blank_dialog(self):
         if self.project is None:return
-        dialog=NewResourceDialog(None,self.localization,self,defaults=(self.project.width,self.project.height,self.project.fps,self.project.loop))
+        dialog=NewResourceDialog(None,self.localization,self,defaults=(DEFAULT_RESOURCE_WIDTH,DEFAULT_RESOURCE_HEIGHT,self.project.fps,self.project.loop))
         if dialog.exec()==QDialog.DialogCode.Accepted:
             composition=self.controller.create_blank_resource(*dialog.values());self.browser.refresh(self.project,None,composition.id)
 

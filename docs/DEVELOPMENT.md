@@ -114,6 +114,8 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 
 ## 새 프로젝트 검증
 
+프로젝트 생성 기본값은 `app/project_defaults.py`의 600×600, 12 FPS, 12 Frames를 Model과 Dialog가 함께 사용한다. New Project의 Frames를 직접 편집하기 전에는 FPS와 Frames가 같은 값으로 움직여 1초를 유지하고, 직접 편집한 뒤에는 FPS 변경과 분리된다. 빈 Resource Composition은 300×300이며 생성 시점의 Project FPS와 같은 Frame 수를 사용한다. 이미 생성된 Resource는 이후 Project FPS 변경을 따르지 않는다.
+
 `NewProjectDialog`는 이름 앞뒤 공백을 제거하고 빈 이름일 때 생성 버튼을 비활성화합니다. `QSpinBox` 범위로 잘못된 정수 입력을 차단합니다. 캔버스는 모델의 기존 제한인 `1–1024`, FPS는 `1–120`을 사용합니다. 대화상자가 취소되면 `MainWindow.project`를 교체하지 않습니다.
 
 ## 단축키와 사용자 설정
@@ -124,7 +126,7 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 
 컨트롤러는 활성 modal widget이나 popup이 있으면 실행하지 않습니다. 포커스가 QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QKeySequenceEdit, 편집 가능한 QComboBox, QAbstractButton 또는 편집 중인 QAbstractItemView 안에 있을 때도 실행하지 않습니다. 따라서 대화상자 기본 버튼, 입력 확정, 메뉴 탐색, 셀 편집이 Enter를 우선 사용하며, 캔버스나 일반 선택 상태의 타임라인에서는 재생 키가 동작합니다.
 
-재생 상태의 단일 진실 공급원은 `MainWindow.play_timer.isActive()`입니다. `set_playing()`이 타이머, 내부 QAction checked 상태와 타임라인 버튼을 동기화하고, `_refresh_playback_status()`가 타이머 상태·현재 frame index·전체 프레임 수·project FPS를 타임라인에 전달합니다. 프로젝트/프레임/FPS 갱신과 타이머 tick도 같은 refresh 경로를 사용합니다.
+재생 상태의 단일 진실 공급원은 `MainWindow.play_timer.isActive()`입니다. `set_playing()`이 타이머, 내부 QAction checked 상태와 타임라인 버튼을 동기화하고, `_refresh_playback_status()`가 타이머 상태·현재 frame index·전체 프레임 수·project FPS를 타임라인에 전달합니다. Effect 재생 프레임은 `EffectPlaybackManager`가 Project snapshot에서 worker로 Exact RGBA를 준비하고 GUI thread에서 QImage/QPixmap을 한 번 생성해 256MB LRU에 설치한다. Timer는 `QElapsedTimer` 경과 시간으로 목표 frame을 선택하며, cache miss에는 최근 ready exact frame을 유지하고 UI thread exact render를 실행하지 않는다. 선택·Pan·Zoom은 cache를 유지하고 render 변경은 재생을 정지한 뒤 revision/cache를 무효화한다. 자세한 계측과 경계는 `EFFECT_PLAYBACK_PERFORMANCE.md`를 따른다.
 
 `ShortcutSettingsService`는 `SOUTHPAW GAMES / Pixel Effect Maker` QSettings에 값을 저장합니다. 빈 단축키는 해당 명령의 키 입력을 비활성화하며, 중복된 비어 있지 않은 단축키는 거부합니다. 손상되거나 충돌하는 저장값은 기본값으로 복구합니다. 테스트는 임시 INI QSettings를 주입해 실제 사용자 설정을 변경하지 않습니다.
 

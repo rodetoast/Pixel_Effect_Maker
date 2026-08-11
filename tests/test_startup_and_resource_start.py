@@ -29,7 +29,7 @@ def service(tmp_path, language="en"):
 def test_startup_dialog_defaults_and_runtime_localization(tmp_path):
     window = MainWindow(service(tmp_path, "en"))
     dialog = StartupDialog(window, window.localization)
-    assert dialog.settings().frame_count == 1
+    assert dialog.settings().frame_count == 12
     assert dialog.windowTitle() == "Pixel Effect Maker — New Project"
     assert dialog.create_button.text() == "Create Project"
     assert dialog.open_button.text() == "Open Project…"

@@ -137,7 +137,7 @@ def test_new_resource_single_length_control_and_unit_fps_policy(tmp_path):
     dialog = NewResourceDialog(asset, localization)
     assert dialog.form.labelForField(dialog.length_row).text() == "Length"
     assert dialog.frames.isVisible() is False or dialog.length_stack.currentWidget() is dialog.frames
-    dialog.frames.setValue(12); dialog.fps.setValue(24)
+    dialog.frames.setValue(12); dialog.frames.editingFinished.emit(); dialog.fps.setValue(24)
     assert dialog.frames.value() == 12 and dialog.duration.value() == .5
     dialog.length_unit.setCurrentIndex(1); dialog.duration.setValue(1.0); dialog.fps.setValue(12); dialog.fps.setValue(24)
     assert dialog.duration.value() == 1.0 and dialog.frames.value() == 24
