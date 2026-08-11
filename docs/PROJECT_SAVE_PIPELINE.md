@@ -23,3 +23,10 @@ Windows offscreen 진단값이며 CI 시간 제한이 아니다.
 | Large 600² / 12 Frames | 미실행(예상 메모리 과다) | 62.32ms | 19.42ms | 18.20ms | 20.72ms | 46.90ms | 214.8KB | 1.95MB |
 
 Medium Legacy 측정의 Pixel List 생성은 1,817.86ms, pretty JSON은 32,616.94ms, Peak Memory는 약 1.16GB였다. v7 첫 Save에서 가장 큰 단계는 checksum+compression을 포함한 `Project.to_dict`이며, 두 번째와 Metadata-only Save의 실제 Frame Encode 호출은 0회다. 한 Frame 변경은 1회다.
+# Failure and close guarantees
+
+Serialization, temporary creation/write/flush/fsync, and replace failures are
+classified separately. The old destination and project path are preserved and
+the editor remains Dirty. Dirty close offers Save, Discard, and Cancel; Save
+failure and Save As cancel prevent close. Load validates a candidate completely
+before the active project reference is replaced.

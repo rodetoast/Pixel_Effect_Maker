@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Project-wide Stabilization & QA Hardening
+
+- Added bounded OS-user-data runtime logging, central exception reporting, worker failure logging, and bilingual Help > Copy Diagnostic Information.
+- Hardened v8 load validation for non-finite JSON, future formats, missing payloads, duplicate frame/composition/generated-layer identities, and duplicate keyframes.
+- Bounded PNG/GIF imports, normalized Aseprite CLI failures, preserved the current model after failed open, and added Save/Discard/Cancel close handling.
+- Added failure-injection, corruption, runtime diagnostic, Dirty-state, editor-state, and LRU regression tests without changing app version 0.0.04 or format 8.
+
 ## Unreleased — Early Preview Build Notice
 
 - Added a bilingual, scrollable Early Preview risk and project-overview dialog before normal and explicit-project startup.

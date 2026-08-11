@@ -69,3 +69,9 @@ Resource Composition 재생 시간은 Effect 프레임 번호를 Composition FPS
 ## 후속 확장 지점
 
 현재 deformation 값은 `none`만 허용하며 작동하지 않는 컨트롤은 표시하지 않습니다. 수명 기반 Scale curve, Spread 드래그 핸들, 실행 중 worker 강제 취소는 후속 확장입니다. Bend, Twist, Mesh Deform, Custom Path, 별도 Orbit spawn distribution과 힘장은 아직 구현되지 않았습니다. Particle lifetime Orbit/Helix Motion과 전용 Canvas 기즈모는 구현되어 있습니다.
+# Stabilization boundary
+
+Interactive proxy and prewarm results are display-only. Exact playback, Bake,
+PNG, and sequence output continue through the exact renderer. Worker exceptions
+are logged and failed/stale prewarm results are not installed. Linear, Orbit,
+and Helix equations and deterministic output are unchanged by this hardening.

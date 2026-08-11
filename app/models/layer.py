@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from uuid import uuid4
 
 
@@ -16,6 +17,11 @@ class Layer:
     id: str = field(default_factory=lambda: uuid4().hex)
     kind: str = "normal"
     generator_id: str | None = None
+
+    def __post_init__(self) -> None:
+        self.opacity = float(self.opacity)
+        if not isfinite(self.opacity) or not 0.0 <= self.opacity <= 1.0:
+            raise ValueError("layer opacity must be between 0 and 1")
 
     def to_dict(self) -> dict[str, object]:
         return {

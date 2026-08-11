@@ -155,3 +155,9 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 `TimelineScrubController`는 Effect와 Resource Composition 테이블 viewport의 실제 mouse press/move/release를 공통 처리한다. 열이 바뀔 때만 프레임을 선택하며 양쪽 바깥 이동은 첫/마지막 열로 clamp한다. 스크러빙 시작 신호는 재생만 정지하고 모델이나 Undo Stack을 변경하지 않는다.
 
 일반 앱 진입은 MainWindow를 표시하기 전에 Early Preview Notice를 확인한 뒤 `StartupDialog`에서 새 프로젝트 설정 또는 기존 프로젝트 열기를 결정한다. 명시적 프로젝트 경로도 Notice 수락 뒤에만 읽는다. `--version`, `--check` 및 테스트에서 직접 생성하는 MainWindow는 이 모달 시작 흐름을 거치지 않는다. 수락은 버전·형식·Notice Revision별 QSettings에만 저장하며 프로젝트 JSON과 분리한다. Resource Editor의 빈 시작 상태는 자동 Popup이 아니라 반복 노출 문제가 없는 Empty State Panel로 제공한다.
+# Stabilization test environment
+
+Project-wide hardening tests on Windows must use an explicit `--basetemp` under
+`C:\Dev`. A failure caused only by the default Temp ACL is environmental and must
+not be worked around by changing ACL ownership. Runtime operation/exception logs
+use the standard logging service described in `STABILITY_AND_DIAGNOSTICS.md`.

@@ -27,6 +27,11 @@ _RESOURCE_CLIP_CACHE: dict[tuple, AnimationClipAsset] = {}
 PARTICLE_RENDER_STATS = {"spawn_cache_hits": 0, "spawn_cache_misses": 0, "resource_cache_hits":0, "resource_cache_misses":0, "full_sequence_renders": 0, "current_frame_renders": 0}
 
 
+def invalidate_particle_render_caches() -> None:
+    _SPAWN_STATE_CACHE.clear()
+    _RESOURCE_CLIP_CACHE.clear()
+
+
 @dataclass(frozen=True)
 class ParticleMotionPosition:
     x: float

@@ -282,7 +282,7 @@ EN.update({
     "particle.angular_velocity_min":"Angular Velocity Min","particle.angular_velocity_max":"Angular Velocity Max","particle.start_delay_min":"Start Delay Min","particle.start_delay_max":"Start Delay Max","particle.clip_speed_min":"Clip Speed Min","particle.clip_speed_max":"Clip Speed Max",
     "particle.random_start_frame":"Random Start Frame","particle.opacity_start":"Opacity Start","particle.opacity_end":"Opacity End","particle.seed":"Seed","particle.output_frames":"Output Frames","particle.start_frame":"Start Frame","particle.resource_label":"Resource",
     "message.unsaved_title":"Unsaved Changes","message.discard_unsaved":"Discard the unsaved changes?","status.new_project":"New project created","status.opened":"Opened {path}","status.saved":"Saved {path}","status.imported":"Imported source asset: {name}","status.created":"Created {name}","status.generated":"Generated {name}","status.playback_test":"Playback test project created",
-    "error.load_failed_body":"The project could not be opened.\n\nReason: {reason}","error.load_payload":"Embedded source pixels are damaged or unsupported. The project was not opened.\n\nReason: {reason}",
+    "error.load_failed_body":"The project could not be opened. The current project was not changed.\n\nReason: {reason}","error.load_payload":"Embedded source pixels are damaged or unsupported. The project was not opened.\n\nReason: {reason}","error.load_future_format":"This project was saved by a newer Pixel Effect Maker format. It cannot be opened safely in this version.\n\nReason: {reason}",
     "error.open":"Open Failed","error.save":"Save Failed","error.save_failed_body":"The project was not saved. The previous file and path were preserved.\n\nReason: {reason}","error.save_directory":"The project directory could not be created or accessed.\n\nReason: {reason}","error.save_serialize":"Project data could not be encoded. No file was replaced.\n\nReason: {reason}","error.save_temporary":"The temporary project file could not be written or synchronized.\n\nReason: {reason}","error.save_replace":"The completed temporary file could not replace the destination. The previous file was preserved.\n\nReason: {reason}","status.save_in_progress":"A project save is already in progress.","error.export":"Export Failed","error.import":"Import Failed","error.generation":"Generation Failed","error.canvas_resize":"Canvas Resize Failed","error.shortcuts":"Shortcut Settings","error.delete_frame":"Cannot Delete Frame","error.delete_layer":"Cannot Delete Layer",
 })
 
@@ -350,7 +350,7 @@ KO.update({
     "particle.angular_velocity_min":"최소 회전 속도","particle.angular_velocity_max":"최대 회전 속도","particle.start_delay_min":"최소 시작 지연","particle.start_delay_max":"최대 시작 지연","particle.clip_speed_min":"최소 리소스 재생 속도","particle.clip_speed_max":"최대 리소스 재생 속도",
     "particle.random_start_frame":"시작 프레임 무작위","particle.opacity_start":"시작 불투명도","particle.opacity_end":"종료 불투명도","particle.seed":"시드","particle.output_frames":"출력 프레임","particle.start_frame":"시작 프레임","particle.resource_label":"리소스",
     "message.unsaved_title":"저장하지 않은 변경사항","message.discard_unsaved":"저장하지 않은 변경사항을 버릴까요?","status.new_project":"새 프로젝트를 만들었습니다","status.opened":"{path} 프로젝트를 열었습니다","status.saved":"{path} 프로젝트를 저장했습니다","status.imported":"소스 에셋을 가져왔습니다: {name}","status.created":"{name} 생성 완료","status.generated":"{name} 생성 완료","status.playback_test":"재생 테스트 프로젝트를 만들었습니다",
-    "error.load_failed_body":"프로젝트를 열 수 없습니다.\n\n원인: {reason}","error.load_payload":"내장 소스 픽셀이 손상되었거나 지원되지 않습니다. 프로젝트를 열지 않았습니다.\n\n원인: {reason}",
+    "error.load_failed_body":"프로젝트를 열 수 없습니다. 현재 프로젝트는 변경되지 않았습니다.\n\n원인: {reason}","error.load_payload":"내장 소스 픽셀이 손상되었거나 지원되지 않습니다. 프로젝트를 열지 않았습니다.\n\n원인: {reason}","error.load_future_format":"이 프로젝트는 더 새로운 Pixel Effect Maker 형식으로 저장되었습니다. 현재 버전에서는 안전하게 열 수 없습니다.\n\n원인: {reason}",
     "error.open":"열기 실패","error.save":"저장 실패","error.save_failed_body":"프로젝트를 저장하지 못했습니다. 기존 파일과 저장 경로는 유지됩니다.\n\n원인: {reason}","error.save_directory":"프로젝트 폴더를 만들거나 접근할 수 없습니다.\n\n원인: {reason}","error.save_serialize":"프로젝트 데이터를 인코딩할 수 없습니다. 기존 파일은 교체되지 않았습니다.\n\n원인: {reason}","error.save_temporary":"임시 프로젝트 파일을 쓰거나 디스크에 동기화할 수 없습니다.\n\n원인: {reason}","error.save_replace":"완성된 임시 파일로 저장 대상을 교체할 수 없습니다. 기존 파일은 유지됩니다.\n\n원인: {reason}","status.save_in_progress":"프로젝트 저장이 이미 진행 중입니다.","error.export":"내보내기 실패","error.import":"가져오기 실패","error.generation":"생성 실패","error.canvas_resize":"캔버스 크기 변경 실패","error.shortcuts":"단축키 설정","error.delete_frame":"프레임을 삭제할 수 없음","error.delete_layer":"레이어를 삭제할 수 없음",
 })
 
@@ -682,6 +682,11 @@ EN.update({
     "preview.close": "Close",
     "preview.do_not_show": "Do not show this again for this build",
     "tooltip.main.project_overview": "Review the Early Preview risks, current capabilities, and planned development at any time.",
+    "action.copy_diagnostics": "Copy Diagnostic Information",
+    "tooltip.main.copy_diagnostics": "Copy privacy-safe version, runtime, format, and log-location details for a bug report.",
+    "status.diagnostics_copied": "Diagnostic information was copied to the clipboard.",
+    "error.unhandled": "Unexpected Error",
+    "error.unhandled_body": "An unexpected error occurred. Details were written to the diagnostic log.\n\nYour project was not automatically saved or replaced. Save to a different file if the editor remains usable.\n\nReason: {reason}",
 })
 
 KO.update({
@@ -704,6 +709,11 @@ KO.update({
     "preview.close": "닫기",
     "preview.do_not_show": "이 빌드에서는 다시 표시하지 않기",
     "tooltip.main.project_overview": "Early Preview 위험, 현재 기능과 개발 계획을 언제든 다시 확인합니다.",
+    "action.copy_diagnostics": "진단 정보 복사",
+    "tooltip.main.copy_diagnostics": "버그 제보에 필요한 버전, 실행 환경, 형식과 로그 위치 정보를 개인정보 없이 복사합니다.",
+    "status.diagnostics_copied": "진단 정보를 클립보드에 복사했습니다.",
+    "error.unhandled": "예기치 않은 오류",
+    "error.unhandled_body": "예기치 않은 오류가 발생했습니다. 자세한 내용은 진단 로그에 기록되었습니다.\n\n프로젝트를 자동 저장하거나 기존 파일을 교체하지 않았습니다. 편집기를 계속 사용할 수 있다면 다른 파일로 저장해 주세요.\n\n원인: {reason}",
 })
 
 

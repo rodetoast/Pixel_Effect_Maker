@@ -11,6 +11,7 @@ from typing import Callable
 import numpy as np
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QPixmap
+from app.services.runtime_diagnostics import log_exception
 
 
 def alpha_composite_layers(
@@ -94,6 +95,10 @@ class ProxyPrewarmComputed:
     cached_overlay: QPixmap | None
     timings_ms: dict[str, float]
 
+@dataclass(frozen=True)
+class ProxyPrewarmFailure:
+    token: ProxyPrewarmToken
+
 
 @dataclass
 class CompositePixmapEntry:
@@ -120,8 +125,9 @@ class InteractiveCompositeCache:
         previous=self._items.pop(key,None)
         if previous is not None:self.current_bytes-=previous.byte_size
         value=CompositePixmapEntry(key,underlay,overlay,max(0,int(byte_size)))
+        if value.byte_size>self.maximum_bytes:return value
         self._items[key]=value;self.current_bytes+=value.byte_size
-        while self.current_bytes>self.maximum_bytes and len(self._items)>1:
+        while self.current_bytes>self.maximum_bytes:
             _,removed=self._items.popitem(last=False);self.current_bytes-=removed.byte_size;self.evictions+=1
         return value
 
@@ -137,7 +143,7 @@ class InteractiveCompositeCache:
 class PrewarmPerformanceCollector:
     def __init__(self):
         self.calls: dict[str,int]={};self.total_ms: dict[str,float]={};self.maximum_ms: dict[str,float]={}
-        self.cache_hits=0;self.cache_misses=0;self.stale_rejections=0;self.cancellations=0
+        self.cache_hits=0;self.cache_misses=0;self.stale_rejections=0;self.cancellations=0;self.failures=0
 
     def record(self,name: str,elapsed_ms: float) -> None:
         self.calls[name]=self.calls.get(name,0)+1
@@ -153,6 +159,13 @@ class _PrewarmWorker(QRunnable):
         super().__init__();self.payload=payload;self.output=output
 
     def run(self) -> None:
+        try:
+            self._run_guarded()
+        except Exception as exc:
+            log_exception("interactive_proxy_prewarm", exc)
+            self.output.put(ProxyPrewarmFailure(self.payload.token))
+
+    def _run_guarded(self) -> None:
         timings={};started=perf_counter();frame=self.payload.base_frame
         if self.payload.cached_crop is not None:
             crop=self.payload.cached_crop;bounds=self.payload.cached_bounds
@@ -211,6 +224,8 @@ class InteractiveProxyPrewarmManager(QObject):
             try:result=self._queue.get_nowait()
             except Empty:return
             self._active_revisions.discard(result.token.request_revision)
+            if isinstance(result,ProxyPrewarmFailure):
+                self.collector.failures+=1;continue
             if result.token.request_revision!=self._revision:
                 self.collector.stale_rejections+=1;continue
             for name,value in result.timings_ms.items():self.collector.record(name,value)

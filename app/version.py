@@ -9,6 +9,7 @@ VERSION_LABEL = f"v{__version__}"
 PREVIEW_BUILD = True
 PREVIEW_LABEL = "Early Preview Build"
 PREVIEW_NOTICE_REVISION = 1
+BUILD_COMMIT: str | None = None
 
 
 def get_display_name() -> str:

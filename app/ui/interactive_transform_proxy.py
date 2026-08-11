@@ -63,8 +63,9 @@ class ProxyBaseImageCache:
     def put(self,value: ProxyBaseImage) -> ProxyBaseImage:
         previous=self._items.pop(value.key,None)
         if previous is not None:self.current_bytes-=int(previous.rgba.nbytes)
+        if int(value.rgba.nbytes)>self.maximum_bytes:return value
         self._items[value.key]=value;self.current_bytes+=int(value.rgba.nbytes)
-        while (len(self._items)>self.maximum or self.current_bytes>self.maximum_bytes) and len(self._items)>1:
+        while len(self._items)>self.maximum or self.current_bytes>self.maximum_bytes:
             _,removed=self._items.popitem(last=False);self.current_bytes-=int(removed.rgba.nbytes)
         return value
 

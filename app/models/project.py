@@ -18,6 +18,7 @@ from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 
 FORMAT_VERSION = 8
+MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
 class ProjectError(ValueError):
@@ -186,8 +187,29 @@ class Project:
         if not isinstance(data, dict):
             raise ProjectError("project root must be a JSON object")
         version = data.get("format_version")
+        if isinstance(version, int) and not isinstance(version, bool) and version > FORMAT_VERSION:
+            raise ProjectError(
+                f"unsupported format_version {version}: project requires a newer application version"
+            )
         if version not in (1, 2, 3, 4, 5, 6, 7, FORMAT_VERSION):
             raise ProjectError(f"unsupported format_version: {version!r}")
+        if int(version) >= 7:
+            compact_bytes = 0
+            pending = [data]
+            while pending:
+                value = pending.pop()
+                if isinstance(value, dict):
+                    if value.get("encoding") == "rgba8-zlib-base64":
+                        try:
+                            compact_bytes += int(value["byte_length"])
+                        except (KeyError, TypeError, ValueError) as exc:
+                            raise ProjectError("invalid compact pixel payload metadata") from exc
+                        if compact_bytes > MAX_COMPACT_PROJECT_PIXEL_BYTES:
+                            raise ProjectError("project pixel payloads exceed the safe load limit")
+                    else:
+                        pending.extend(value.values())
+                elif isinstance(value, list):
+                    pending.extend(value)
         try:
             canvas = data["canvas"]
             animation = data["animation"]
@@ -231,10 +253,15 @@ class Project:
         layer_ids = {layer.id for layer in project.layers}
         if len(layer_ids) != len(project.layers):
             raise ProjectError("layer IDs must be unique")
+        if len({frame.id for frame in project.frames}) != len(project.frames):
+            raise ProjectError("frame IDs must be unique")
         for frame in project.frames:
             unknown = set(frame.layer_pixels) - layer_ids
             if unknown:
                 raise ProjectError("frame contains unknown layer IDs")
+            missing = layer_ids - set(frame.layer_pixels)
+            if missing and int(version) >= FORMAT_VERSION:
+                raise ProjectError("frame is missing layer pixel payloads")
             for layer in project.layers:
                 frame.layer_pixels.setdefault(
                     layer.id, empty_pixels(project.width, project.height)
@@ -281,7 +308,16 @@ class Project:
                 raise ProjectError("Resource Layer references an unknown Resource Composition")
             if resource_layer.generated_layer_id is not None and resource_layer.generated_layer_id not in layer_ids:
                 raise ProjectError("Resource Layer references an unknown generated layer")
+        generated_ids = [
+            item.generated_layer_id
+            for item in project.effect_resource_layers
+            if item.generated_layer_id is not None
+        ]
+        if len(set(generated_ids)) != len(generated_ids):
+            raise ProjectError("Resource Layers must not share a generated layer")
         for composition in project.resource_compositions:
+            if len({layer.id for layer in composition.layers}) != len(composition.layers):
+                raise ProjectError("composition layer IDs must be unique")
             for layer in composition.layers:
                 valid=asset_ids if layer.source_type=="source_asset" else clip_ids
                 if layer.source_id not in valid:raise ProjectError("composition layer references an unknown asset")

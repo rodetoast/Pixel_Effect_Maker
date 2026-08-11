@@ -137,6 +137,12 @@ GUI를 생성하지 않고 버전 확인:
 .venv\Scripts\python.exe -m pytest -q
 ```
 
+Early Preview 오류 보고에는 `Help > Copy Diagnostic Information`을 사용합니다.
+회전 로그는 OS 사용자 데이터 영역에 저장되며 Project JSON, Pixel Payload,
+Asset 내용은 기록하지 않습니다. 손상 프로젝트와 더 새로운 형식은 현재
+프로젝트를 교체하지 않고 안전하게 거부합니다. 자세한 정책은
+[Stability and Diagnostics](docs/STABILITY_AND_DIAGNOSTICS.md)를 참고합니다.
+
 ## 기본 파일 위치
 
 - 프로젝트: `projects/*.peffect.json`

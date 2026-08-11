@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from app.models.project import FORMAT_VERSION
 from app.services.localization_service import LocalizationService
+from app.services.runtime_diagnostics import log_exception
 from app.version import PREVIEW_BUILD, PREVIEW_LABEL, PREVIEW_NOTICE_REVISION, VERSION_LABEL, __version__, get_display_name
 
 
@@ -37,7 +38,8 @@ def preview_notice_was_accepted(settings: QSettings) -> bool:
     """Fail safely toward showing the notice when settings cannot be read."""
     try:
         value = settings.value(preview_notice_settings_key(), False)
-    except Exception:
+    except Exception as exc:
+        log_exception("preview_notice_settings_read",exc)
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -161,8 +163,8 @@ class PreviewBuildNoticeDialog(QDialog):
             try:
                 self.settings.setValue(preview_notice_settings_key(), True)
                 self.settings.sync()
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception("preview_notice_settings_write",exc)
         self.accept()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802

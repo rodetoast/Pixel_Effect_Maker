@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any
 from uuid import uuid4
 
@@ -44,6 +45,13 @@ class EffectLayerTransform3D:
         for name in TRANSFORM_TRACK_PROPERTIES:
             setattr(self, name, float(getattr(self, name)))
         self.pivot_x = float(self.pivot_x); self.pivot_y = float(self.pivot_y)
+        numeric_values = [
+            *(getattr(self, name) for name in TRANSFORM_TRACK_PROPERTIES),
+            self.pivot_x,
+            self.pivot_y,
+        ]
+        if not all(isfinite(value) for value in numeric_values):
+            raise ValueError("Resource Layer transform values must be finite")
         self.opacity = max(0.0, min(1.0, self.opacity))
         self.perspective_strength = max(0.0, min(1.0, self.perspective_strength))
         self.scale_x = max(0.01, self.scale_x); self.scale_y = max(0.01, self.scale_y)
@@ -136,6 +144,17 @@ class EffectResourceLayer:
     def __post_init__(self) -> None:
         if self.placement_mode not in PLACEMENT_MODES:
             raise ValueError("unsupported Resource Layer placement mode")
+        self.playback_speed = float(self.playback_speed)
+        if (
+            self.start_frame < 0
+            or self.end_frame < self.start_frame
+            or self.resource_start_frame < 0
+        ):
+            raise ValueError("invalid Resource Layer frame range")
+        if self.playback_mode not in {"loop", "hold", "once"}:
+            raise ValueError("unsupported Resource Layer playback mode")
+        if not isfinite(self.playback_speed) or self.playback_speed <= 0.0:
+            raise ValueError("Resource Layer playback speed must be finite and positive")
         if self.single_settings is None:
             self.single_settings = EffectCompositionLayer(
                 self.name, self.resource_composition_id,

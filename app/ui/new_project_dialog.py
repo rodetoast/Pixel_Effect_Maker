@@ -30,6 +30,19 @@ class NewProjectSettings:
     loop: bool
     frame_count: int = 1
 
+    def __post_init__(self) -> None:
+        values = (self.width, self.height, self.fps, self.frame_count)
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in values):
+            raise ValueError("new project numeric settings must be finite integers")
+        if not self.name.strip():
+            raise ValueError("project name must not be empty")
+        if not 1 <= self.width <= 1024 or not 1 <= self.height <= 1024:
+            raise ValueError("canvas dimensions must be between 1 and 1024 pixels")
+        if not 1 <= self.fps <= 120 or not 1 <= self.frame_count <= 999:
+            raise ValueError("invalid project timing")
+        if self.width * self.height * 4 * self.frame_count > 256 * 1024 * 1024:
+            raise ValueError("initial project pixel allocation exceeds the safe limit")
+
 
 class NewProjectDialog(QDialog):
     """Collect all supported new-project settings in one modal dialog."""

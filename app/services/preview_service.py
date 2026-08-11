@@ -15,6 +15,7 @@ from app.models.preview import GeneratorDraft, PreviewSession
 from app.models.project import Project
 from app.models.source_asset import SourceAsset
 from app.services.effect_render_service import render_generator_frames
+from app.services.runtime_diagnostics import log_exception
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ class _PreviewWorker(QRunnable):
                 )
             )
         except Exception as exc:  # worker boundary: report a safe message to the UI
+            log_exception("generator_preview_worker", exc)
             self.results.put(
                 (
                     self.snapshot.context_revision,

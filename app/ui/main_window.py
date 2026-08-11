@@ -9,6 +9,7 @@ from time import perf_counter
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -32,7 +33,7 @@ from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE, PLACEMENT_SINGLE
 from app.services.clip_service import create_clip_from_generator, update_clip_from_generator
-from app.services.particle_render_service import apply_particle_frames, render_particle_frames
+from app.services.particle_render_service import apply_particle_frames, render_particle_frames, invalidate_particle_render_caches
 from app.services.particle_preview_service import ParticlePreviewManager
 from app.services.preview_export_service import export_preview_sequence
 from app.services.export_service import ExportError, export_png_frames
@@ -63,6 +64,7 @@ from app.services.resource_composition_render_service import invalidate_composit
 from app.services.effect_composition_layer_render_service import render_effect_composition_layer, apply_effect_composition_layer
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, render_effect_resource_layer_current_base_frame, effect_resource_layer_base_frame_key
 from app.services.settings_service import SettingsError, ShortcutSettingsService
+from app.services.runtime_diagnostics import build_diagnostic_text, log_exception, runtime_logger, safe_path_label
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
 
@@ -315,7 +317,8 @@ class MainWindow(QMainWindow):
 
         self.help_menu = self.menuBar().addMenu("Help")
         self.project_overview_action = QAction("Project Overview and Development Status…", self)
-        self.help_menu.addAction(self.project_overview_action)
+        self.copy_diagnostics_action = QAction("Copy Diagnostic Information", self)
+        self.help_menu.addActions([self.project_overview_action, self.copy_diagnostics_action])
 
         # Compatibility aliases for the existing action-oriented tests and code.
         self.add_layer_action = self.new_layer_action
@@ -366,6 +369,7 @@ class MainWindow(QMainWindow):
             self.add_resource_layer_action: "resource_layer.add",
             self.editing_guides_action: "effect.editing_guides",
             self.project_overview_action: "action.project_overview",
+            self.copy_diagnostics_action: "action.copy_diagnostics",
         }
         for action, key in mapping.items():
             action.setText(t(key))
@@ -404,6 +408,7 @@ class MainWindow(QMainWindow):
             self.add_resource_layer_action: "tooltip.resource_layer.add",
             self.editing_guides_action: "tooltip.effect.show_guides",
             self.project_overview_action: "tooltip.main.project_overview",
+            self.copy_diagnostics_action: "tooltip.main.copy_diagnostics",
         }
         for action, key in action_keys.items():
             apply_tooltip(action, self.localization, key, action)
@@ -453,6 +458,7 @@ class MainWindow(QMainWindow):
         self.editing_guides_action.toggled.connect(self._set_effect_guides_visible)
         self.add_resource_layer_action.triggered.connect(self.add_default_resource_layer)
         self.project_overview_action.triggered.connect(self.show_project_overview)
+        self.copy_diagnostics_action.triggered.connect(self.copy_diagnostic_information)
         self.timeline.add_requested.connect(self.add_frame)
         self.timeline.duplicate_requested.connect(self.duplicate_frame)
         self.timeline.delete_requested.connect(self.delete_frame)
@@ -833,9 +839,13 @@ class MainWindow(QMainWindow):
             self,
             self.localization.text("message.unsaved_title"),
             self.localization.text("message.discard_unsaved"),
-            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save()
         return answer == QMessageBox.StandardButton.Discard
 
     def new_project(self) -> None:
@@ -849,7 +859,16 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.localization.text("status.new_project"), 3000)
 
     def apply_new_project_settings(self, settings) -> None:
+        runtime_logger().info(
+            "new_project start size=%sx%s frames=%s fps=%s loop=%s",
+            settings.width,settings.height,settings.frame_count,settings.fps,settings.loop,
+        )
         self.interactive_proxy_prewarm.cancel()
+        invalidate_composition_cache()
+        invalidate_effect_resource_layer_base()
+        invalidate_particle_render_caches()
+        self.canvas.proxy_composite_cache.clear()
+        self.canvas.proxy_base_image_cache.clear()
         self.set_playing(False)
         self.preview_manager.reset_context()
         self.particle_preview_manager.reset_context()
@@ -870,6 +889,7 @@ class MainWindow(QMainWindow):
         self._non_undo_dirty=False
         self.set_workspace("effect")
         self._refresh_all()
+        runtime_logger().info("new_project success")
 
     def open_project(self) -> None:
         if not self._confirm_unapplied_previews() or not self._confirm_discard():
@@ -879,13 +899,24 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        runtime_logger().info("open_project start source=%s", safe_path_label(path))
         self.interactive_proxy_prewarm.cancel()
+        invalidate_composition_cache()
+        invalidate_effect_resource_layer_base()
+        invalidate_particle_render_caches()
+        self.canvas.proxy_composite_cache.clear()
+        self.canvas.proxy_base_image_cache.clear()
         try:
-            self.project = load_project(path)
+            loaded_project = load_project(path)
         except ProjectIOError as exc:
-            key="error.load_payload" if exc.code=="load_payload" else "error.load_failed_body"
+            log_exception("open_project", exc)
+            key={
+                "load_payload":"error.load_payload",
+                "load_future_format":"error.load_future_format",
+            }.get(exc.code,"error.load_failed_body")
             QMessageBox.critical(self,self.localization.text("error.open"),self.localization.text(key).format(reason=str(exc)))
             return
+        self.project = loaded_project
         self.set_playing(False)
         self.preview_manager.reset_context()
         self.particle_preview_manager.reset_context()
@@ -900,6 +931,7 @@ class MainWindow(QMainWindow):
         saved_workspace=str(self.settings_service.settings.value("ui/workspace","effect"))
         self.set_workspace("resource" if saved_workspace=="resource" and (self.project.source_assets or self.project.animation_clips) else "effect")
         self.statusBar().showMessage(self.localization.text("status.opened").format(path=path), 4000)
+        runtime_logger().info("open_project success source=%s", safe_path_label(path))
 
     def save(self) -> bool:
         if self.project_path is None:
@@ -909,6 +941,7 @@ class MainWindow(QMainWindow):
     def _save_to_path(self,target: Path) -> bool:
         if self._save_in_progress:
             self.statusBar().showMessage(self.localization.text("status.save_in_progress"),3000);return False
+        runtime_logger().info("save_project start target=%s",safe_path_label(target))
         self._save_in_progress=True;self.save_action.setEnabled(False);self.save_as_action.setEnabled(False)
         try:
             # Project Save persists the editable Resource Layer metadata.  It
@@ -917,6 +950,7 @@ class MainWindow(QMainWindow):
             saved_revision=self._project_edit_revision
             saved_path=save_project(self.project,target)
         except ProjectIOError as exc:
+            log_exception("save_project",exc)
             key={"save_directory":"error.save_directory","save_serialize":"error.save_serialize","save_temporary":"error.save_temporary","save_replace":"error.save_replace"}.get(exc.code,"error.save_failed_body")
             QMessageBox.critical(self,self.localization.text("error.save"),self.localization.text(key).format(reason=str(exc)))
             return False
@@ -931,9 +965,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 self.localization.text("message.saved_without_preview"), 5000
             )
+        runtime_logger().info("save_project success target=%s",safe_path_label(saved_path))
         return True
 
     def save_as(self) -> bool:
+        runtime_logger().info("save_as start")
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Project",
@@ -941,28 +977,34 @@ class MainWindow(QMainWindow):
             "Pixel Effect Project (*.peffect.json)",
         )
         if not path:
+            runtime_logger().info("save_as cancelled")
             return False
-        return self._save_to_path(Path(path))
+        saved=self._save_to_path(Path(path))
+        runtime_logger().info("save_as result=%s", "success" if saved else "failed")
+        return saved
 
     def export_frames(self) -> None:
-        self._materialize_resource_transform_sequences()
-        if self.preview_manager.dirty_generator_ids():
-            self.statusBar().showMessage(
-                self.localization.text("message.export_without_preview"), 5000
-            )
         directory = QFileDialog.getExistingDirectory(
             self, "Export PNG Frames", str(Path("exports").resolve())
         )
         if not directory:
             return
+        runtime_logger().info("export_png start destination_type=directory")
+        self._materialize_resource_transform_sequences()
+        if self.preview_manager.dirty_generator_ids():
+            self.statusBar().showMessage(
+                self.localization.text("message.export_without_preview"), 5000
+            )
         try:
             written = export_png_frames(self.project, directory)
         except ExportError as exc:
+            log_exception("export_png",exc)
             QMessageBox.critical(self, self.localization.text("error.export"), str(exc))
             return
         QMessageBox.information(
             self, "Export Complete", f"Exported {len(written)} PNG frame(s)."
         )
+        runtime_logger().info("export_png success frames=%s",len(written))
 
     def set_layer_visibility(self, index: int, visible: bool) -> None:
         if not 0 <= index < len(self.project.layers): return
@@ -985,6 +1027,7 @@ class MainWindow(QMainWindow):
         imported=[];failures=[]
         for value in paths:
             path=Path(value)
+            runtime_logger().info("import_resource start source=%s",safe_path_label(path))
             try:
                 if path.suffix.lower() in {".ase",".aseprite"}:
                     executable=locate_aseprite(self.settings_service.settings)
@@ -998,7 +1041,9 @@ class MainWindow(QMainWindow):
                 all_names={r.name for r in self.project.source_assets}|{r.name for r in self.project.animation_clips};base=resource.name;number=2
                 while resource.name in all_names:resource.name=f"{Path(base).stem} ({number}){Path(base).suffix}";number+=1
                 (self.project.source_assets if isinstance(resource,SourceAsset) else self.project.animation_clips).append(resource);imported.append(resource)
-            except (ResourceImportError,OSError,ValueError) as exc:failures.append(f"{path.name}: {exc}")
+                runtime_logger().info("import_resource success source=%s kind=%s",safe_path_label(path),type(resource).__name__)
+            except (ResourceImportError,OSError,ValueError) as exc:
+                log_exception("import_resource",exc);failures.append(f"{path.name}: {exc}")
         if imported:
             self._mark_dirty();first=imported[0];kind="source_asset" if isinstance(first,SourceAsset) else "animation_clip";self.resource_editor.refresh(self.project,(kind,first.id));self.set_workspace("resource");self._refresh_effect_panels()
         message=self.localization.text("resource.import_summary").format(success=len(imported),failed=len(failures));self.statusBar().showMessage(message,6000)
@@ -1128,9 +1173,11 @@ class MainWindow(QMainWindow):
 
     def import_source_asset_path(self, path: str | Path) -> SourceAsset | None:
         """Import and register one embedded source; exposed for UI-level tests."""
+        runtime_logger().info("import_png start source=%s",safe_path_label(path))
         try:
             asset = import_source_asset(path)
         except SourceImportError as exc:
+            log_exception("import_png",exc)
             QMessageBox.critical(self, self.localization.text("error.import"), str(exc))
             return None
         self.project.source_assets.append(asset)
@@ -1139,6 +1186,7 @@ class MainWindow(QMainWindow):
         self.effect_library.select_asset(asset.id)
         self.select_source_asset(asset.id)
         self.statusBar().showMessage(self.localization.text("status.imported").format(name=asset.name), 4000)
+        runtime_logger().info("import_png success source=%s",safe_path_label(path))
         return asset
 
     def add_transform_emitter(self) -> TransformEmitter | None:
@@ -1437,19 +1485,70 @@ class MainWindow(QMainWindow):
         if emitter:self.particle_properties.set_settings(self.particle_preview_manager.revert(emitter).settings); self._clear_preview()
 
     def bake_particle_emitter(self, emitter_id: str, settings: ParticleEmitterSettings) -> bool:
+        runtime_logger().info("bake_particle start emitter=%s", emitter_id[:12])
         self.finalize_resource_layer_transform(emitter_id)
-        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
+        unified = next(
+            (item for item in self.project.effect_resource_layers if item.id == emitter_id),
+            None,
+        )
         if unified is not None:
-            after=deepcopy(unified);after.particle_settings=deepcopy(settings)
-            try:layer=apply_effect_resource_layer(self.project,after)
-            except (ValueError,MemoryError) as exc:QMessageBox.critical(self,self.localization.text("effects.bake"),str(exc));return False
-            unified.__dict__.update(after.__dict__);self._dirty_particle_motion_layers.discard(unified.id);self._sync_resource_layer_adapters();self._clear_preview();self.layer_index=self.project.layers.index(layer);self._mark_dirty();self._refresh_all();return True
-        emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
-        if emitter is None:return False
-        draft=self.particle_preview_manager.update(self.project,emitter,settings,immediate=True); session=self.particle_preview_manager.sessions.get(emitter_id)
-        try: outputs=[f.copy() for f in session.frames] if session and session.revision==draft.revision else render_particle_frames(self.project,ParticleEmitter(id=emitter.id,name=emitter.name,settings=deepcopy(settings))); layer=apply_particle_frames(self.project,emitter,outputs)
-        except (ValueError,MemoryError) as exc: QMessageBox.critical(self,self.localization.text("effects.bake"),str(exc)); return False
-        emitter.settings=deepcopy(settings); self.particle_preview_manager.mark_applied(emitter); self._clear_preview(); self.layer_index=self.project.layers.index(layer); self._mark_dirty(); self._refresh_all(); return True
+            after = deepcopy(unified)
+            after.particle_settings = deepcopy(settings)
+            try:
+                layer = apply_effect_resource_layer(self.project, after)
+            except (ValueError, MemoryError) as exc:
+                log_exception("bake_particle", exc)
+                QMessageBox.critical(
+                    self, self.localization.text("effects.bake"), str(exc)
+                )
+                return False
+            unified.__dict__.update(after.__dict__)
+            self._dirty_particle_motion_layers.discard(unified.id)
+            self._sync_resource_layer_adapters()
+            self._clear_preview()
+            self.layer_index = self.project.layers.index(layer)
+            self._mark_dirty()
+            self._refresh_all()
+            runtime_logger().info("bake_particle success emitter=%s", emitter_id[:12])
+            return True
+        emitter = next(
+            (item for item in self.project.particle_emitters if item.id == emitter_id),
+            None,
+        )
+        if emitter is None:
+            return False
+        draft = self.particle_preview_manager.update(
+            self.project, emitter, settings, immediate=True
+        )
+        session = self.particle_preview_manager.sessions.get(emitter_id)
+        try:
+            outputs = (
+                [frame.copy() for frame in session.frames]
+                if session and session.revision == draft.revision
+                else render_particle_frames(
+                    self.project,
+                    ParticleEmitter(
+                        id=emitter.id,
+                        name=emitter.name,
+                        settings=deepcopy(settings),
+                    ),
+                )
+            )
+            layer = apply_particle_frames(self.project, emitter, outputs)
+        except (ValueError, MemoryError) as exc:
+            log_exception("bake_particle", exc)
+            QMessageBox.critical(
+                self, self.localization.text("effects.bake"), str(exc)
+            )
+            return False
+        emitter.settings = deepcopy(settings)
+        self.particle_preview_manager.mark_applied(emitter)
+        self._clear_preview()
+        self.layer_index = self.project.layers.index(layer)
+        self._mark_dirty()
+        self._refresh_all()
+        runtime_logger().info("bake_particle success emitter=%s", emitter_id[:12])
+        return True
 
     def export_particle_preview(self, emitter_id: str) -> None:
         self.finalize_resource_layer_transform(emitter_id)
@@ -1463,8 +1562,19 @@ class MainWindow(QMainWindow):
         if unified:
             from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
             frames=[transform_rgba_frame(frame,unified.layer_transform,index) for index,frame in enumerate(frames)]
-        try: export_preview_sequence(frames,directory,emitter.name)
-        except (ValueError,FileExistsError,OSError) as exc: QMessageBox.critical(self,self.localization.text("effects.export_preview"),str(exc))
+        runtime_logger().info("export_particle_preview start emitter=%s",emitter_id[:12])
+        try:
+            export_preview_sequence(frames, directory, emitter.name)
+        except (ValueError, FileExistsError, OSError) as exc:
+            log_exception("export_particle_preview", exc)
+            QMessageBox.critical(
+                self, self.localization.text("effects.export_preview"), str(exc)
+            )
+            return
+        runtime_logger().info(
+            "export_particle_preview success emitter=%s frames=%s",
+            emitter_id[:12], len(frames),
+        )
     def _refresh_effect_panels(self) -> None:
         selected_generator = self.effect_library.current_generator_id()
         self.effect_library.refresh(self.project)
@@ -1799,6 +1909,11 @@ class MainWindow(QMainWindow):
             self,
             manual_open=True,
         ).exec()
+
+    def copy_diagnostic_information(self) -> None:
+        QApplication.clipboard().setText(build_diagnostic_text())
+        self.statusBar().showMessage(self.localization.text("status.diagnostics_copied"), 4000)
+        runtime_logger().info("diagnostic_information copied_to_clipboard")
 
     def apply_timeline_frame_width(self,width:int) -> None:
         width=max(20,min(96,int(width)));self.settings_service.settings.setValue("ui/timeline_frame_width",width)

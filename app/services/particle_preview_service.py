@@ -9,6 +9,7 @@ from app.models.source_asset import SourceAsset
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from app.models.project import Project
 from app.services.particle_render_service import render_particle_frames
+from app.services.runtime_diagnostics import log_exception
 
 @dataclass
 class ParticleDraft:
@@ -36,7 +37,9 @@ class _Worker(QRunnable):
     def __init__(self,snapshot,queue): super().__init__(); self.snapshot=snapshot; self.queue=queue
     def run(self):
         try: self.queue.put((self.snapshot.context_revision,self.snapshot.emitter_id,self.snapshot.revision,render_particle_snapshot(self.snapshot),""))
-        except Exception as exc: self.queue.put((self.snapshot.context_revision,self.snapshot.emitter_id,self.snapshot.revision,None,str(exc)))
+        except Exception as exc:
+            log_exception("particle_preview_worker",exc)
+            self.queue.put((self.snapshot.context_revision,self.snapshot.emitter_id,self.snapshot.revision,None,str(exc)))
 class ParticlePreviewManager(QObject):
     state_changed=Signal(str,str); preview_ready=Signal(str,int,object); preview_failed=Signal(str,int,str)
     def __init__(self,parent=None):
@@ -51,7 +54,9 @@ class ParticlePreviewManager(QObject):
         emitter_id,revision=self._pending; self._pending=None; draft=self.drafts.get(emitter_id)
         if draft is None or draft.revision!=revision:return
         try: snapshot=ParticlePreviewSnapshot.from_project(self._project,emitter_id,revision,draft.settings,self._context_revision)
-        except Exception as exc: self.preview_failed.emit(emitter_id,revision,str(exc)); return
+        except Exception as exc:
+            log_exception("particle_preview_snapshot",exc)
+            self.preview_failed.emit(emitter_id,revision,str(exc)); return
         self.state_changed.emit(emitter_id,"updating"); self._pool.start(_Worker(snapshot,self._queue))
     def _drain(self):
         while True:

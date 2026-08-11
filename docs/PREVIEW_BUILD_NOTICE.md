@@ -25,3 +25,9 @@ The dedicated QDialog uses a scrollable, word-wrapped layout with selectable tex
 ## Disabling for a production build
 
 Set `PREVIEW_BUILD = False` in `app/version.py`. Do not alter the public version or project format merely to change the distribution channel. The Help overview remains available while the automatic startup notice is disabled.
+# Diagnostics after acceptance
+
+The notice acceptance remains revision-scoped in QSettings. Failure to read or
+write that preference is logged but does not block startup; read failure safely
+shows the notice again. Users can reopen the overview and copy privacy-limited
+diagnostic information from Help.

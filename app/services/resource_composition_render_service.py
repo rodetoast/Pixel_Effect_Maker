@@ -1,5 +1,6 @@
 """Deterministic nearest-neighbor Resource Composition renderer."""
 from __future__ import annotations
+from collections import OrderedDict
 import numpy as np
 from app.models.animation_clip import AnimationClipAsset
 from app.models.frame import empty_pixels
@@ -8,12 +9,16 @@ from app.models.resource_composition import ResourceComposition,CompositionLayer
 from app.models.source_asset import SourceAsset
 from app.services.effect_render_service import render_transformed_source
 
-_CACHE:dict[tuple,list[np.ndarray]]={}
+_CACHE:OrderedDict[tuple,list[np.ndarray]]=OrderedDict()
+_CACHE_BYTES=0
+_MAX_CACHE_BYTES=256*1024*1024
 def invalidate_composition_cache(composition_id=None):
-    if composition_id is None:_CACHE.clear()
+    global _CACHE_BYTES
+    if composition_id is None:_CACHE.clear();_CACHE_BYTES=0
     else:
         for key in list(_CACHE):
-            if key[0]==composition_id:_CACHE.pop(key,None)
+            if key[0]==composition_id:
+                _CACHE_BYTES-=sum(frame.nbytes for frame in _CACHE.pop(key,[]))
 
 def _source(project,layer):
     items=project.source_assets if layer.source_type=="source_asset" else project.animation_clips
@@ -47,9 +52,18 @@ def render_composition_frame(project:Project,composition:ResourceComposition,fra
         render_transformed_source(output,asset,position_x=composition.width/2+float(position[0]),position_y=composition.height/2+float(position[1]),rotation=rotation,scale_x=float(scale[0]),scale_y=float(scale[1]),horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=max(0,min(1,opacity)))
     return output
 def render_composition_frames(project,composition,use_cache=True):
-    key=(composition.id,composition.revision,composition.width,composition.height,composition.fps,composition.frame_count)
-    if use_cache and key in _CACHE:return [frame.copy() for frame in _CACHE[key]]
+    global _CACHE_BYTES
+    key=(composition.id,composition.revision,composition.width,composition.height,composition.fps,composition.frame_count,id(project))
+    if use_cache and key in _CACHE:
+        _CACHE.move_to_end(key);return [frame.copy() for frame in _CACHE[key]]
     frames=[render_composition_frame(project,composition,index) for index in range(composition.frame_count)]
-    _CACHE[key]=[frame.copy() for frame in frames];return frames
+    cached=[frame.copy() for frame in frames];byte_size=sum(frame.nbytes for frame in cached)
+    previous=_CACHE.pop(key,None)
+    if previous is not None:_CACHE_BYTES-=sum(frame.nbytes for frame in previous)
+    if byte_size<=_MAX_CACHE_BYTES:
+        _CACHE[key]=cached;_CACHE_BYTES+=byte_size
+        while _CACHE_BYTES>_MAX_CACHE_BYTES:
+            _,removed=_CACHE.popitem(last=False);_CACHE_BYTES-=sum(frame.nbytes for frame in removed)
+    return frames
 def composition_as_clip(project,composition):
     return AnimationClipAsset(composition.name,render_composition_frames(project,composition),fps=composition.fps,pivot_x=composition.pivot_x,pivot_y=composition.pivot_y,playback_mode="loop" if composition.loop else "hold",loop=composition.loop,source_format="composition",frame_durations_ms=[max(1,round(1000/composition.fps))]*composition.frame_count)

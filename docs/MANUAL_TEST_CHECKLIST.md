@@ -506,3 +506,13 @@
 - [ ] Save As 취소와 쓰기 불가능한 폴더, 잠긴 대상 파일에서 기존 저장 경로·기존 파일·Dirty 표시가 유지되는지 확인한다.
 - [ ] 저장 중 Save/Save As가 비활성화되고 완료 뒤 다시 활성화되며 성공 Status가 실패 시 표시되지 않는지 확인한다.
 - [ ] 한국어와 영어에서 폴더/인코딩/Temporary/Atomic Replace 오류 안내가 내부 Traceback 없이 표시되는지 확인한다.
+# Project-wide stabilization manual pass
+
+These are real Windows GUI checks and are not claimed by offscreen automation.
+
+- Startup: first run, accept/reject notice, do-not-show, Help reopen, Korean and space-containing paths.
+- Project: New/Open, first and repeated Save, Save As, failed-save close, reopen.
+- Import: RGBA/RGB/grayscale PNG, transparent/multi-frame GIF, Aseprite success/failure, move original then reopen embedded project.
+- Editing: Composition, Single, Particle Linear/Orbit/Helix, 2.5D, keyframes, Undo/Redo.
+- Timeline/output: fast scrub, playback/loop/end frame, Preview/Bake/PNG/sequence pixel comparison.
+- UI: Korean/English, 100/125/150% DPI, inspector 280/300/320 px, zoom 25/100/400%, focus-sensitive wheel/Delete/Space/Ctrl+Z/Ctrl+Y/Ctrl+S.

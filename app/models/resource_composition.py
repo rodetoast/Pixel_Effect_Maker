@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass,field
 from typing import Any
+from math import isfinite
 from uuid import uuid4
 
 EASINGS={"Linear","Ease In","Ease Out","Ease In/Out"}
@@ -57,7 +58,11 @@ class AnimationTrack:
         return mix(left.value,right.value)
     def to_dict(self):return {"property_id":self.property_id,"default_value":self.default_value,"keyframes":[k.to_dict() for k in self.keyframes]}
     @classmethod
-    def from_dict(cls,data):return cls(str(data["property_id"]),data.get("default_value",PROPERTY_DEFAULTS[str(data["property_id"])]),[Keyframe.from_dict(k) for k in data.get("keyframes",[])])
+    def from_dict(cls,data):
+        keyframes=[Keyframe.from_dict(k) for k in data.get("keyframes",[])]
+        if len({key.frame for key in keyframes}) != len(keyframes):
+            raise ValueError("keyframe frames must be unique")
+        return cls(str(data["property_id"]),data.get("default_value",PROPERTY_DEFAULTS[str(data["property_id"])]),keyframes)
 
 @dataclass
 class CompositionLayer:
@@ -65,6 +70,8 @@ class CompositionLayer:
     def __post_init__(self):
         if self.source_type not in {"source_asset","animation_clip"}:raise ValueError("unsupported composition layer source")
         if self.start_frame<0 or self.end_frame<self.start_frame:raise ValueError("invalid composition layer range")
+        if self.source_start_frame < 0 or not isfinite(float(self.pivot_x)) or not isfinite(float(self.pivot_y)):
+            raise ValueError("invalid composition layer coordinates")
     def add_property(self,property_id):
         if property_id not in PROPERTY_DEFAULTS:raise ValueError("unsupported composition property")
         return self.tracks.setdefault(property_id,AnimationTrack(property_id,PROPERTY_DEFAULTS[property_id]))
@@ -83,6 +90,8 @@ class ResourceComposition:
         if self.background_mode!="transparent":raise ValueError("only transparent compositions are supported")
         if self.pivot_x is None:self.pivot_x=self.width/2
         if self.pivot_y is None:self.pivot_y=self.height/2
+        if not isfinite(float(self.pivot_x)) or not isfinite(float(self.pivot_y)):
+            raise ValueError("composition pivot must be finite")
     def touch(self):self.revision+=1
     def to_dict(self):return {"id":self.id,"name":self.name,"width":self.width,"height":self.height,"fps":self.fps,"frame_count":self.frame_count,"loop":self.loop,"background_mode":self.background_mode,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"revision":self.revision,"layers":[l.to_dict() for l in self.layers]}
     @classmethod
