@@ -528,6 +528,11 @@
 - [ ] 조작 중 Project 저장값·다른 레이어·Timeline이 바뀌지 않으며 Inspector 값만 제한된 주기로 따라오는지 확인한다.
 - [ ] Release는 Undo 하나와 정확 현재 프레임 하나를 만들고, Escape는 Undo·정확 렌더 없이 시작 상태로 돌아가는지 확인한다.
 - [ ] Release 뒤 Undo/Redo 결과를 Direct Render, Bake, PNG와 픽셀 비교한다.
+- [ ] Rotate X/Y/Z 버튼을 각각 선택해 원형 Handle을 실제로 Drag하고 Canvas와 해당 Inspector 숫자가 즉시 함께 변하는지 확인한다.
+- [ ] Rotate X/Y를 edge-on ±90°를 지나 계속 Drag해 앱 예외·입력 중단 없이 반대쪽 각도까지 이어지는지 확인한다.
+- [ ] Rotate Z를 ±180° 경계 근처에서 조작하고 Shift 15° snap, Release, Undo/Redo와 Escape를 확인한다.
+- [ ] Rotation keyframe이 현재 Frame에 있는 경우 해당 Key 값이 바뀌고 다른 Frame의 Key는 유지되는지 확인한다.
+- [ ] Zoom 25/100/400%, Pan 적용, Windows DPI 100/125/150%에서 Handle hit area와 조작 방향을 확인한다.
 
 ## Effect Playback Prebuffer
 
@@ -536,6 +541,22 @@
 - [ ] 준비 중 Stop, 편집, Gizmo 조작, New/Open을 실행해 늦은 프레임이 설치되거나 재생이 저절로 시작하지 않는지 확인한다.
 - [ ] Stop 후 편집 없이 다시 Play하면 준비 표시 없이 즉시 시작하고, Pan/Zoom/Selection 뒤에도 같은지 확인한다.
 - [ ] 31프레임 이상 Sequence는 전체 완료를 기다리지 않고 Ready Buffer 뒤 시작하며 underrun에서 UI가 Exact Render로 멈추지 않는지 확인한다.
+
+## Effect Renderer Throughput
+
+- [ ] 600×600·5 Layer·Particle 100 프로젝트에서 Cold Play 준비가 이전 약 1초보다 짧아졌고 첫 Loop가 완전한지 확인한다.
+- [ ] 완전 투명, 작은 불투명/반투명, 화면 밖 Resource Layer가 섞인 프로젝트에서 Direct/Playback/Bake/PNG 결과를 비교한다.
+- [ ] Single static Resource가 포함된 12프레임 재생을 Stop/Play하고 편집·Undo/Redo 뒤 stale 결과가 보이지 않는지 확인한다.
+- [ ] Linear/Orbit/Helix Particle이 겹치는 장면에서 생성 순서와 Z 정렬, 반투명 경계가 이전 저장 결과와 동일한지 확인한다.
+- [ ] Rotation X/Y, Perspective, Opacity, Canvas 경계 Crop에서 최근접 픽셀과 Alpha가 변하지 않는지 확인한다.
+
+## Particle Current-frame consistency
+
+- [ ] Orbit/Helix Motion을 변경하고 일반 Save 후 앱을 재시작해 프로젝트를 연 다음, 정지 Timeline의 1~24 Frame을 순서대로 클릭해 Particle이 Spawn 지점으로 되돌아가지 않는지 확인한다.
+- [ ] `1 → 12 → 3 → 20 → 7`, 역순, 같은 Frame 반복 스크럽 뒤 최종 Frame이 Playback에서 같은 Frame을 정지한 모습과 같은지 확인한다.
+- [ ] Play를 Frame N에서 Stop한 직후와 다른 Frame을 클릭했다가 N으로 돌아온 모습이 동일한지 확인한다.
+- [ ] Motion/2.5D Gizmo를 움직이다 즉시 다른 Timeline Frame을 클릭해 이전 Frame의 늦은 Preview가 새 Frame에 나타나지 않는지 확인한다.
+- [ ] Linear/Orbit/Helix 각각 Bake와 PNG Sequence를 만들고 Timeline의 대표 Frame과 육안 비교한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.

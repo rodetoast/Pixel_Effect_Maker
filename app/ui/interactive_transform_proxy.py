@@ -131,4 +131,4 @@ def projective_pixmap_transform(pixmap: QPixmap, destination: QPolygonF) -> QTra
         QPointF(pixmap.width(), pixmap.height()), QPointF(0, pixmap.height()),
     ))
     transform = QTransform.quadToQuad(source, destination)
-    return transform if transform.isInvertible() else None
+    return transform if transform is not None and transform.isInvertible() else None

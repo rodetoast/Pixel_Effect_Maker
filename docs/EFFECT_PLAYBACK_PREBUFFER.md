@@ -12,7 +12,7 @@ Longer or over-budget sequences require `clamp(ceil(FPS × 0.5), 4, 15)` frames 
 
 ## Scheduling and installation
 
-Two low-priority Qt pool workers share one read-only Project snapshot. The 600×600/five-layer/Particle-100 diagnostic measured 12-frame wall time at about 950ms with this policy. A separate warm diagnostic measured 1/2/4 worker totals of 1458/916/692ms; two workers were selected to capture most of the gain while leaving more capacity for `+1` interactive work. Playback and Prewarm remain priority `-1`.
+Two low-priority Qt pool workers share one read-only Project snapshot. Before Renderer ROI optimization, the 600×600/five-layer/Particle-100 diagnostic measured about 950ms; the same fixture now measures about 348ms. Worker 1/2 totals improved from 1458/916ms to about 414/354ms. A preparation-lifetime 64MB static Single-layer cache is shared by both workers. Playback and Prewarm remain priority `-1`.
 
 The GUI poll installs at most four completed frames per pass. Timeline status reports `Preparing playback… n / total` or `재생 준비 중… n / total`. Cache-ready checks use direct key membership rather than scanning the LRU.
 

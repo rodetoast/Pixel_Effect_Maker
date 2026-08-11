@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — 2.5D Rotation Gizmo Interaction
+
+- Fixed Rotate X/Y/Z handles writing `rotate_*` dynamic attributes instead of the canonical `rotation_*` transform fields, which made Canvas and Inspector appear completely unresponsive.
+- Preserved transient Proxy interaction, current-frame key editing, one-command release, and zero-render Escape behavior.
+- Made edge-on X/Y proxy projection safe when Qt cannot construct an invertible quad transform, and added real QTest drag coverage across all axes, zoom, pan, release, Undo/Redo, Escape, and 100-move performance boundaries.
+
+## Unreleased — Particle Current-frame Consistency
+
+- Fixed paused Timeline access displaying stale persisted Particle layer buffers after metadata-only Motion saves; every requested paused frame now installs one direct deterministic Particle frame.
+- Kept current-frame access independent of frame order and Playback cache state, with no full-sequence fallback or format/version change.
+- Reject Gizmo worker results whose requested frame no longer matches the current Timeline frame, and added immutable per-particle diagnostics plus Linear/Orbit/Helix, scrub-order, round-trip, Canvas, and stale-result regressions.
+
+## Unreleased — Effect Renderer Throughput
+
+- Replaced full-canvas Effect layer composition with bit-exact non-zero-alpha ROI composition and transparent/empty-output skips.
+- Added exact uint8 Particle sprite ROI and opaque fast paths while preserving stable ordering, motion, nearest sampling, and per-particle rounding.
+- Added a conservative, preparation-lifetime 64MB cache that renders truly static Single Resource Layers once across a sequence.
+- Reduced the representative 600×600/five-layer/Particle-100 12-frame Prebuffer from about 949.52ms to 348.18ms without changing exact output, app version 0.0.04, or format 8.
+
 ## Unreleased — Effect Playback Prebuffer
 
 - Added explicit Stopped, Preparing, and Playing states; the playback clock now starts only after the required exact cache is ready.

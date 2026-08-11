@@ -28,9 +28,12 @@ def window(tmp_path,frames=6):
 
 def wait_ready(value,minimum=1,timeout_ms=3000):
     started=perf_counter()
-    while len(value.effect_playback.cache)<minimum and (perf_counter()-started)*1000<timeout_ms:
+    def pending():
+        plan=value._playback_plan
+        return len(value.effect_playback.cache)<minimum or (plan is not None and plan.full_prebuffer and value._playback_state!="playing")
+    while pending() and (perf_counter()-started)*1000<timeout_ms:
         APP.processEvents()
-    assert len(value.effect_playback.cache)>=minimum
+    assert not pending()
 
 
 def finish(value):

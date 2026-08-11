@@ -24,6 +24,13 @@ class EffectRenderError(ValueError):
     """Raised when a generator cannot be rendered without partial mutation."""
 
 
+EFFECT_RASTER_STATS={"source_over_calls":0,"transparent_skips":0,"opaque_fast_paths":0,"roi_pixels":0,"offscreen_skips":0}
+
+
+def reset_effect_raster_stats() -> None:
+    for key in EFFECT_RASTER_STATS:EFFECT_RASTER_STATS[key]=0
+
+
 def _homography_from_unit_square(destination: np.ndarray) -> np.ndarray:
     source = np.array(((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)))
     matrix: list[list[float]] = []
@@ -84,6 +91,14 @@ def _destination_corners(
 
 def _source_over(destination: np.ndarray, source: np.ndarray) -> None:
     """Composite straight-alpha uint8 source over destination in place."""
+    EFFECT_RASTER_STATS["source_over_calls"]+=1
+    ys,xs=np.nonzero(source[...,3])
+    if not len(xs):EFFECT_RASTER_STATS["transparent_skips"]+=1;return
+    left,right=int(xs.min()),int(xs.max());top,bottom=int(ys.min()),int(ys.max())
+    source=source[top:bottom+1,left:right+1];destination=destination[top:bottom+1,left:right+1]
+    EFFECT_RASTER_STATS["roi_pixels"]+=int(source.shape[0]*source.shape[1])
+    if bool(np.all(source[...,3]==255)):
+        destination[:]=source;EFFECT_RASTER_STATS["opaque_fast_paths"]+=1;return
     source_f = source.astype(np.float64) / 255.0
     destination_f = destination.astype(np.float64) / 255.0
     source_alpha = source_f[..., 3:4]
@@ -136,6 +151,7 @@ def render_transformed_source(
     top = max(0, int(math.floor(float(destination[:, 1].min()))))
     bottom = min(height - 1, int(math.ceil(float(destination[:, 1].max()))))
     if right < left or bottom < top:
+        EFFECT_RASTER_STATS["offscreen_skips"]+=1
         return
     grid_x, grid_y = np.meshgrid(
         np.arange(left, right + 1, dtype=np.float64),

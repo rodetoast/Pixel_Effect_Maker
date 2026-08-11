@@ -14,23 +14,14 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from app.services.runtime_diagnostics import log_exception
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer_current_base_frame
+from app.services.alpha_composite_service import composite_layers_rgba8
 
 
 def alpha_composite_layers(
     size: tuple[int, int], layers: tuple[tuple[np.ndarray, float], ...]
 ) -> np.ndarray:
     """Composite an immutable layer snapshot into an RGBA8 canvas."""
-    width,height=size
-    output=np.zeros((height,width,4),dtype=np.float32)
-    for pixels,opacity in layers:
-        source=pixels.astype(np.float32)/255.0
-        source_alpha=source[...,3:4]*float(opacity)
-        destination_alpha=output[...,3:4]
-        combined=source_alpha+destination_alpha*(1.0-source_alpha)
-        numerator=source[...,:3]*source_alpha+output[...,:3]*destination_alpha*(1.0-source_alpha)
-        output[...,:3]=np.divide(numerator,combined,out=np.zeros_like(numerator),where=combined>0)
-        output[...,3:4]=combined
-    return np.ascontiguousarray(np.clip(output*255.0,0,255).astype(np.uint8))
+    return composite_layers_rgba8(size,layers)
 
 
 def prefix_suffix_composite(

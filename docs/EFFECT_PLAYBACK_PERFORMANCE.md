@@ -46,6 +46,8 @@ Offscreen Windows diagnostic, Python 3.13/PySide6, 600×600, 12 FPS, 12 Frames. 
 | Particle count 100 | 63.20ms |
 | Resource Editor one-layer composition | 14.47ms |
 
+After the bit-exact ROI renderer pass, the corresponding diagnostic averages were 5.17/8.10/11.10ms for 1/3/5 sparse visible layers and 5.87/16.31/26.46ms for Particle 0/50/100. The representative five-layer Particle-100 prebuffer reported 52.85ms exact generation under two-worker load, split into 37.61ms Particle rendering and 15.24ms final layer composition.
+
 Particle 100 split was approximately 20.68ms particle exact render and 42.19ms layer alpha composite. Five static layers spent approximately 105.38ms in layer alpha composite. Full NumPy→QImage→QPixmap conversion averaged 0.48ms. A direct warm QPixmap draw averaged 0.14–0.21ms, while the complete 700×700 `CanvasWidget.paintEvent` (background, checkerboard, border, and cached 600×600 frame) averaged 3.39ms.
 
 | Playback rate | Budget | Result |
@@ -57,7 +59,9 @@ Particle 100 split was approximately 20.68ms particle exact render and 42.19ms l
 
 Cache-hit tests assert zero additional effect/particle render calls and zero additional QImage/QPixmap creation. Exact RGBA tests compare cached frames with direct current-frame render, full Bake, and PNG export. Interactive 2.5D proxy tests continue to assert no full-sequence materialization during Play or drag.
 
-Prebuffer diagnostic using 600×600, 12 FPS, 12 frames, five visible project layers, and Particle count 100: two preparation workers reached `PLAYING` with all 12 frames ready in 949.52ms; per-task exact generation averaged 152.50ms under parallel load, QImage→QPixmap installation averaged 0.333ms, and the first two simulated loops recorded zero underruns and zero frame drops. A worker-count diagnostic measured 1458.01ms / 916.05ms / 691.62ms for 1 / 2 / 4 workers. Two was selected to limit competition with interactive work.
+Paused Timeline rendering does not read or require the Playback LRU. It independently evaluates the requested Particle frame, while Playback continues to use prepared exact snapshot frames. Stop may retain the exact current Playback pixmap; moving away and back performs paused direct evaluation and must produce identical RGBA.
+
+Prebuffer diagnostic using 600×600, 12 FPS, 12 frames, five visible project layers, and Particle count 100: before ROI optimization two workers reached `PLAYING` in 949.52ms; afterward the same regression fixture reached it in 348.18ms while retaining zero first-loop misses and drops. Worker 1/2 totals improved from 1458.01/916.05ms to 413.61/353.69ms. Cached display remains unchanged.
 
 ## Native/GPU decision
 

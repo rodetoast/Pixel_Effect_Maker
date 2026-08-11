@@ -13,6 +13,7 @@ from app.models.effect_resource_layer import PLACEMENT_PARTICLE
 from app.models.resource_composition import CompositionLayer,ResourceComposition
 from app.models.source_asset import SourceAsset
 from app.services.effect_resource_layer_render_service import invalidate_effect_resource_layer_base
+from app.services.alpha_composite_service import ALPHA_COMPOSITE_STATS,reset_alpha_composite_stats
 from app.services.effect_playback_service import (
     PLAYBACK_FULL_PREBUFFER_MAX_FRAMES,
     PLAYBACK_PLAYING,
@@ -152,12 +153,13 @@ def test_600_canvas_particle_five_layer_cold_prebuffer_has_zero_first_loop_misse
     particle=value.create_resource_layer_from_resource(composition.id,PLACEMENT_PARTICLE)
     particle.particle_settings.particle_count_min=particle.particle_settings.particle_count_max=100
     particle.particle_settings.output_frame_count=12;project.frames=project.frames[:12]
-    invalidate_effect_resource_layer_base(particle.id);value._mark_dirty()
+    invalidate_effect_resource_layer_base(particle.id);value._mark_dirty();reset_alpha_composite_stats()
     started=perf_counter();value.set_playing(True);wait_for(lambda:value._playback_state==PLAYBACK_PLAYING,15000)
     wall_ms=(perf_counter()-started)*1000.0;plan=value._playback_plan
     assert plan.full_prebuffer and value.effect_playback.ready_count(plan.keys)==12
     for _ in range(24):value._advance_playback(True)
     assert value.effect_playback.collector.underruns==0 and value.effect_playback.collector.frame_drops==0
     average=value.effect_playback.collector.average("exact_frame_generation")
-    print(f"PLAYBACK_PREBUFFER_600 wall_ms={wall_ms:.3f} exact_avg_ms={average:.3f} cache_install_ms={value.effect_playback.collector.average('qimage_to_qpixmap'):.3f}")
+    assert ALPHA_COMPOSITE_STATS["roi_pixels"]<ALPHA_COMPOSITE_STATS["source_pixels"]
+    print(f"PLAYBACK_PREBUFFER_600 wall_ms={wall_ms:.3f} exact_avg_ms={average:.3f} particle_ms={value.effect_playback.collector.average('particle_exact_render'):.3f} layer_composite_ms={value.effect_playback.collector.average('layer_alpha_composite'):.3f} cache_install_ms={value.effect_playback.collector.average('qimage_to_qpixmap'):.3f} roi_pixels={ALPHA_COMPOSITE_STATS['roi_pixels']} source_pixels={ALPHA_COMPOSITE_STATS['source_pixels']}")
     finish(value)

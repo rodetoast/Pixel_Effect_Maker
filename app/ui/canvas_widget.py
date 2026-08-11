@@ -15,6 +15,13 @@ from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.models.particle_emitter import ParticleEmitterSettings
 from app.services.particle_render_service import particle_motion_guide, project_particle_billboard, representative_particle_guide
+
+
+RESOURCE_TRANSFORM_HANDLE_PROPERTIES={
+    "center":("position_x","position_y"),"x":("position_x",),"y":("position_y",),"z":("position_z",),
+    "rotate_x":("rotation_x",),"rotate_y":("rotation_y",),"rotate_z":("rotation_z",),
+    "scale":("scale_x","scale_y"),"pivot":("pivot_x","pivot_y"),
+}
 from app.services.resource_composition_render_service import render_composition_frames
 from app.services.effect_layer_transform_3d_render_service import project_points_3d,unproject_point_2d
 from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
@@ -809,10 +816,14 @@ class CanvasWidget(QWidget):
             if handle.startswith("rotate_"):
                 center=self.resource_transform_handle_positions()["center"];angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()))
                 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier:angle=round(angle/15)*15
-                setattr(t,handle,angle)
+                property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];track=t.tracks.get(property_name)
+                key=next((item for item in track.keyframes if item.frame==self.frame_index),None) if track else None
+                if key is not None:key.value=angle
+                else:setattr(t,property_name,angle)
+                counter=f"{property_name}_updates";calls=self.interaction_stats["calls"];calls[counter]=calls.get(counter,0)+1
             if handle=="scale":t.scale_x=max(.01,before.scale_x+delta.x()/32);t.scale_y=max(.01,before.scale_y+delta.y()/32)
             if handle=="pivot":t.pivot_x=before.pivot_x+delta.x();t.pivot_y=before.pivot_y+delta.y()
-            self.resource_transform_changed_fields={"center":("position_x","position_y"),"x":("position_x",),"y":("position_y",),"z":("position_z",),"rotate_x":("rotation_x",),"rotate_y":("rotation_y",),"rotate_z":("rotation_z",),"scale":("scale_x","scale_y"),"pivot":("pivot_x","pivot_y")}.get(handle,())
+            self.resource_transform_changed_fields=RESOURCE_TRANSFORM_HANDLE_PROPERTIES.get(handle,())
             self._record_interaction("transform_value_calculation",value_started);signal_started=perf_counter();self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);self._record_interaction("transform_signal",signal_started)
             if self.interactive_transform_proxy is None:
                 dirty=old_gizmo.united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect());self.last_proxy_dirty_rect=dirty;self.update(dirty)

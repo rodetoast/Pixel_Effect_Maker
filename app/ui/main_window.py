@@ -720,7 +720,7 @@ class MainWindow(QMainWindow):
 
     def _interactive_gizmo_frame_ready(self,result) -> None:
         request=result.request
-        if request.project_identity!=id(self.project):return
+        if request.project_identity!=id(self.project) or request.frame!=self.frame_index:return
         layer=request.layer;actual=next((item for item in self.project.effect_resource_layers if item.id==layer.id),None)
         if actual is None:return
         if request.final:
@@ -731,10 +731,15 @@ class MainWindow(QMainWindow):
         self.canvas.apply_interactive_motion_proxy(layer,result.base_rgba,result.base_key,layer.particle_settings.motion.revision)
 
     def _render_dirty_particle_motion_frame(self,frame: int) -> None:
+        """Install exact particle pixels for paused arbitrary frame access.
+
+        Persisted generated buffers are only a bake/cache artifact.  Metadata-only
+        saves intentionally do not materialize a sequence, so session-local dirty
+        flags cannot decide whether a paused Timeline frame is authoritative.
+        """
         if self.active_preview_generator_id is not None:return
-        for identifier in tuple(self._dirty_particle_motion_layers):
-            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-            if layer is not None and layer.placement_mode==PLACEMENT_PARTICLE:apply_effect_resource_layer_current_frame(self.project,layer,frame)
+        for layer in self.project.effect_resource_layers:
+            if layer.placement_mode==PLACEMENT_PARTICLE:apply_effect_resource_layer_current_frame(self.project,layer,frame)
 
     def _flush_resource_transform_current(self) -> None:
         pending=dict(self._pending_resource_transforms)
@@ -2119,6 +2124,7 @@ class MainWindow(QMainWindow):
             return
         self.layer_index = layer_index
         self.frame_index = frame_index
+        self.interactive_gizmo_renderer.cancel()
         self._render_dirty_particle_motion_frame(frame_index)
         self.canvas.set_layer(layer_index)
         self.canvas.set_frame(frame_index)
@@ -2142,6 +2148,7 @@ class MainWindow(QMainWindow):
     def select_frame(self, index: int) -> None:
         if 0 <= index < self._display_frame_count():
             self.frame_index = index
+            self.interactive_gizmo_renderer.cancel()
             self._render_dirty_particle_motion_frame(index)
             self.canvas.set_frame(index)
             self.project._current_effect_frame=index

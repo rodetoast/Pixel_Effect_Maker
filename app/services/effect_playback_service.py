@@ -8,6 +8,7 @@ from dataclasses import dataclass,field
 from math import ceil
 from queue import Empty,SimpleQueue
 from threading import Event
+from threading import Lock
 from time import perf_counter
 
 import numpy as np
@@ -16,6 +17,7 @@ from PySide6.QtGui import QImage,QPixmap
 
 from app.models.effect_resource_layer import PLACEMENT_PARTICLE
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer_current_frame
+from app.services.alpha_composite_service import composite_rgba8_over_float32
 from app.services.runtime_diagnostics import log_exception
 
 
@@ -27,6 +29,7 @@ PLAYBACK_READY_BUFFER_MAX_FRAMES=15
 PLAYBACK_READY_BUFFER_SECONDS=.5
 PLAYBACK_INSTALL_BATCH_SIZE=4
 PLAYBACK_PREPARATION_WORKERS=2
+PLAYBACK_STATIC_LAYER_CACHE_MAX_BYTES=64*1024*1024
 
 PLAYBACK_STOPPED="stopped"
 PLAYBACK_PREPARING="preparing"
@@ -67,7 +70,7 @@ class PlaybackPerformanceCollector:
         self.render_calls=0;self.cache_hits=0;self.cache_misses=0
         self.qimage_creations=0;self.pixmap_creations=0;self.stale_results=0;self.cancelled_workers=0;self.cancelled_frames=0
         self.preparation_requests=0;self.warm_starts=0;self.clock_starts=0;self.underruns=0;self.frame_holds=0;self.frame_drops=0
-        self.loop_ready_counts=[]
+        self.loop_ready_counts=[];self.static_layer_cache_hits=0;self.static_layer_cache_misses=0
     def record(self,name,value):
         value=float(value);self.calls[name]=self.calls.get(name,0)+1
         self.total_ms[name]=self.total_ms.get(name,0.0)+value
@@ -106,19 +109,47 @@ def playback_relevant_revision(project) -> tuple:
     )
 
 
+def _static_resource_layer_key(project,layer):
+    if layer.placement_mode==PLACEMENT_PARTICLE:return None
+    settings=layer.single_settings;transform=layer.layer_transform
+    if settings.start_x!=settings.end_x or settings.start_y!=settings.end_y:return None
+    if settings.start_frame>0 or settings.end_frame<len(project.frames)-1:return None
+    if any(track.keyframes for track in transform.tracks.values()):return None
+    composition=next((item for item in project.resource_compositions if item.id==layer.resource_composition_id),None)
+    if composition is None or composition.frame_count!=1:return None
+    return (layer.id,repr(settings.to_dict()),repr(transform.to_dict()),composition.id,composition.revision,project.width,project.height,project.fps)
+
+
+class PlaybackStaticLayerCache:
+    """Preparation-lifetime exact RGBA reuse for conservatively static layers."""
+    def __init__(self,maximum_bytes=PLAYBACK_STATIC_LAYER_CACHE_MAX_BYTES):
+        self.maximum_bytes=int(maximum_bytes);self.current_bytes=0;self._items={};self._lock=Lock()
+    def get_or_render(self,key,renderer):
+        if key is None:return renderer(),False
+        with self._lock:
+            value=self._items.get(key)
+            if value is not None:return value,True
+            value=renderer()
+            if self.current_bytes+value.nbytes<=self.maximum_bytes:self._items[key]=value;self.current_bytes+=value.nbytes
+            return value,False
+
+
 def _composite(output,source,opacity):
     if source is None or source.shape[:2]!=output.shape[:2]:return
-    src=source.astype(np.float32)/255.0;src_alpha=src[...,3:4]*max(0.0,min(1.0,float(opacity)));dst_alpha=output[...,3:4]
-    combined=src_alpha+dst_alpha*(1.0-src_alpha);safe=np.where(combined==0,1.0,combined)
-    output[...,:3]=(src[...,:3]*src_alpha+output[...,:3]*dst_alpha*(1.0-src_alpha))/safe;output[...,3:4]=combined
+    composite_rgba8_over_float32(output,source,opacity)
 
 
-def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_layer_id=None):
+def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_layer_id=None,static_layer_cache=None,collector=None):
     """Render one deterministic exact display frame without mutating Project pixels."""
     started=perf_counter();frame_index=max(0,int(frame_index));project_frame=project.frames[frame_index] if frame_index<len(project.frames) else None
     dynamic={};particle_ms=single_ms=0.0
     for layer in project.effect_resource_layers:
-        phase=perf_counter();pixels=render_effect_resource_layer_current_frame(project,layer,frame_index)
+        phase=perf_counter();static_key=_static_resource_layer_key(project,layer)
+        if static_layer_cache is None:pixels=render_effect_resource_layer_current_frame(project,layer,frame_index);hit=False
+        else:pixels,hit=static_layer_cache.get_or_render(static_key,lambda:render_effect_resource_layer_current_frame(project,layer,frame_index))
+        if collector is not None and static_key is not None:
+            if hit:collector.static_layer_cache_hits+=1
+            else:collector.static_layer_cache_misses+=1
         if layer.placement_mode==PLACEMENT_PARTICLE:particle_ms+=(perf_counter()-phase)*1000.0
         else:single_ms+=(perf_counter()-phase)*1000.0
         if layer.generated_layer_id is not None:dynamic[layer.generated_layer_id]=pixels
@@ -140,14 +171,14 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
 
 
 class _PlaybackWorker(QRunnable):
-    def __init__(self,generation,project,keys,preview_frames,preview_layer_id,queue,cancelled):
-        super().__init__();self.generation=generation;self.project=project;self.keys=keys;self.preview_frames=preview_frames;self.preview_layer_id=preview_layer_id;self.queue=queue;self.cancelled=cancelled
+    def __init__(self,generation,project,keys,preview_frames,preview_layer_id,queue,cancelled,static_cache,collector):
+        super().__init__();self.generation=generation;self.project=project;self.keys=keys;self.preview_frames=preview_frames;self.preview_layer_id=preview_layer_id;self.queue=queue;self.cancelled=cancelled;self.static_cache=static_cache;self.collector=collector
     def run(self):
         try:
             for offset,key in enumerate(self.keys):
                 if self.cancelled.is_set():
                     self.queue.put((self.generation,None,None,{"cancelled_frames":len(self.keys)-offset},"cancelled"));return
-                rgba,timings=render_exact_playback_frame(self.project,key.frame_index,self.preview_frames,self.preview_layer_id)
+                rgba,timings=render_exact_playback_frame(self.project,key.frame_index,self.preview_frames,self.preview_layer_id,self.static_cache,self.collector)
                 if self.cancelled.is_set():
                     self.queue.put((self.generation,None,None,{"cancelled_frames":len(self.keys)-offset-1},"cancelled"));return
                 self.queue.put((self.generation,key,rgba,timings,None))
@@ -193,9 +224,10 @@ class EffectPlaybackManager(QObject):
             snapshot_started=perf_counter();snapshot=deepcopy(project);preview_snapshot=None if preview_frames is None else [np.ascontiguousarray(frame).copy() for frame in preview_frames]
             self.collector.record("snapshot_copy",(perf_counter()-snapshot_started)*1000.0)
             worker_count=min(PLAYBACK_PREPARATION_WORKERS,len(missing))
+            static_cache=PlaybackStaticLayerCache()
             for worker_index in range(worker_count):
                 assigned=missing[worker_index::worker_count]
-                self._pool.start(_PlaybackWorker(generation,snapshot,assigned,preview_snapshot,preview_layer_id,self._queue,self._cancelled),-1)
+                self._pool.start(_PlaybackWorker(generation,snapshot,assigned,preview_snapshot,preview_layer_id,self._queue,self._cancelled,static_cache,self.collector),-1)
         return PlaybackPreparationPlan(keys,tuple(required),full,count,estimated)
     def _drain(self):
         for _ in range(PLAYBACK_INSTALL_BATCH_SIZE):

@@ -128,6 +128,8 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 
 재생 상태의 단일 진실 공급원은 `MainWindow._playback_state`의 `stopped/preparing/playing`입니다. `set_playing()`이 타이머, 내부 QAction checked 상태와 타임라인 버튼을 동기화하며, 준비 중 타이머는 취소 입력과 상태 갱신만 담당하고 Playback Clock은 Ready 조건을 충족한 뒤 새로 시작합니다. 30프레임 이하이면서 256MB에 들어오는 Sequence는 전체 Exact Cache를 준비하고, 긴 Sequence는 현재 프레임부터 0.5초 분량(4~15)을 준비합니다. 두 개의 저우선순위 worker가 Project snapshot을 읽고 GUI thread는 한 poll당 최대 네 QImage/QPixmap만 설치합니다. 선택·Pan·Zoom은 Cache를 유지하고 Render 변경은 준비/재생을 취소한 뒤 revision/cache를 무효화합니다. 자세한 경계는 `EFFECT_PLAYBACK_PREBUFFER.md`를 따릅니다.
 
+정지 Timeline은 저장된 Generated Particle 픽셀을 authoritative state로 보지 않습니다. Save가 Motion metadata만 기록할 수 있으므로, `select_frame`/Timeline cell 경로는 요청 Frame의 Particle Resource Layer만 직접 exact render해 해당 Frame buffer를 갱신합니다. Full Sequence를 만들지 않으며 Frame 표시는 내부 0-based, UI label은 1-based입니다. 프레임 이동은 pending Gizmo request를 cancel하고 완료 결과도 project identity와 requested frame이 모두 현재 상태와 같을 때만 설치합니다. 진단 호출자는 `render_particle_frame(..., diagnostic_collector=list)`로 immutable Particle state snapshot을 받을 수 있습니다.
+
 `ShortcutSettingsService`는 `SOUTHPAW GAMES / Pixel Effect Maker` QSettings에 값을 저장합니다. 빈 단축키는 해당 명령의 키 입력을 비활성화하며, 중복된 비어 있지 않은 단축키는 거부합니다. 손상되거나 충돌하는 저장값은 기본값으로 복구합니다. 테스트는 임시 INI QSettings를 주입해 실제 사용자 설정을 변경하지 않습니다.
 
 ## 캔버스 크기 변경
@@ -157,6 +159,12 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 `TimelineScrubController`는 Effect와 Resource Composition 테이블 viewport의 실제 mouse press/move/release를 공통 처리한다. 열이 바뀔 때만 프레임을 선택하며 양쪽 바깥 이동은 첫/마지막 열로 clamp한다. 스크러빙 시작 신호는 재생만 정지하고 모델이나 Undo Stack을 변경하지 않는다.
 
 일반 앱 진입은 MainWindow를 표시하기 전에 Early Preview Notice를 확인한 뒤 `StartupDialog`에서 새 프로젝트 설정 또는 기존 프로젝트 열기를 결정한다. 명시적 프로젝트 경로도 Notice 수락 뒤에만 읽는다. `--version`, `--check` 및 테스트에서 직접 생성하는 MainWindow는 이 모달 시작 흐름을 거치지 않는다. 수락은 버전·형식·Notice Revision별 QSettings에만 저장하며 프로젝트 JSON과 분리한다. Resource Editor의 빈 시작 상태는 자동 Popup이 아니라 반복 노출 문제가 없는 Empty State Panel로 제공한다.
+## Exact Renderer throughput rules
+
+Effect Playback keeps its intermediate canvas as float32 straight-alpha, but converts and composites only the inclusive non-zero-alpha bounds of each RGBA8 layer. The arithmetic order inside that ROI is the historical reference order. Do not replace the float32 Effect-layer opaque case with assignment: randomized checks found possible intermediate ULP differences. Particle `_source_over` rounds to RGBA8 after every sprite, so its separately verified opaque ROI assignment is exact.
+
+Particle sprite mapping and common 2.5D projection already allocate only their clipped bounding rectangles. Playback preparation owns a 64MB, worker-shared static-layer cache whose lifetime is one preparation generation. It accepts only Single placement covering the sequence, one-frame Resource Compositions, constant start/end position, and transforms without keyframes. Particle or animated resources never enter it. See `EFFECT_RENDERER_THROUGHPUT.md` for measurements and call graph.
+
 # Stabilization test environment
 
 Project-wide hardening tests on Windows must use an explicit `--basetemp` under

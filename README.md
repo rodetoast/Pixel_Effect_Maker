@@ -4,11 +4,15 @@ Effect Editor direct manipulation uses transient, latest-wins current-frame prev
 
 Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. Orbit provides radius, ellipse, angle, turns, direction, phase spread, and plane rotation; Helix adds X/Y/Z axis travel and particle-local perspective. The exact current-frame evaluator is shared by Canvas guides and output rendering before the common Resource Layer 2.5D transform; ordinary project Save writes metadata without rendering pixels.
 
+Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
+
 New saves use project format v8. v1-v7 projects load with Linear motion by default. The application remains `Pixel Effect Maker v0.0.04`.
 
 New projects start at 600×600, 12 FPS, and 12 frames (one second). Until Frames is edited directly, changing FPS keeps the default duration at one second. Blank Resource Compositions start at 300×300 and inherit the project FPS with the same one-second/manual-unlink policy.
 
 Effect playback prepares deterministic exact RGBA frames off the UI thread and displays them from a bounded runtime-only QPixmap cache. Sequences up to 30 frames are fully prebuffered when they fit the 256MB budget, so their first loop starts only after every frame is ready; longer sequences begin after a bounded half-second buffer and retain elapsed-time frame dropping. Direct render, Bake, PNG export, and Save keep their exact existing paths. See [Effect Playback Prebuffer](docs/EFFECT_PLAYBACK_PREBUFFER.md).
+
+The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips transparent results, reuses conservatively static Single layers during one preparation, and keeps Particle/2.5D work bounded to sprite or projected-quad rectangles. These paths remain RGBA bit-exact with the reference renderer. See [Effect Renderer Throughput](docs/EFFECT_RENDERER_THROUGHPUT.md).
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 

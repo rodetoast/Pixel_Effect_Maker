@@ -23,6 +23,14 @@ The automated interaction fixture exercises 100 consecutive 2.5D mouse moves and
 
 The earlier 600×600/five-layer diagnostic identified the old cold press at 100.089ms, almost entirely synchronous depth composition, while a warm press was 0.346ms. The optimized cold path no longer performs that work on press; cold and warm presses now differ only in whether an already prepared proxy can be painted immediately. Timing values remain diagnostics rather than CI thresholds because offscreen Qt scheduling varies by host.
 
+## Rotation identifier regression
+
+The visible and hit-test handle identifiers are `rotate_x`, `rotate_y`, and `rotate_z`, while the model fields are `rotation_x`, `rotation_y`, and `rotation_z`. The original 2.5D interaction assigned the handle identifier directly with `setattr`, creating unused dynamic attributes; Mouse Move and signals ran, but the Inspector, evaluated transform, and Proxy continued reading zero. One shared handle-to-property mapping now owns the translation and changed-field list. If a current-frame key already exists, Rotation edits that key, matching the Inspector policy; otherwise it edits the base property.
+
+This bug existed before `6b79b37 Optimize effect editor gizmo interaction`; the transient optimization preserved rather than introduced it. X/Y can also become exactly edge-on, where Qt legitimately cannot build an invertible projective mapping. That one intermediate proxy pose is skipped safely instead of raising from `None.isInvertible()`; subsequent pointer positions continue normally.
+
+Offscreen QTest presses the painted handle and sends the full Canvas input path for all three axes. Each 100-move run records 100 canonical rotation updates with zero Particle current/full renders, zero new Base QImage/QPixmap, zero Inspector rebuild, and zero Timeline rebuild. Release commits once, adds one Undo command, and installs one exact current frame; Escape commits and renders nothing.
+
 ## Exact boundaries
 
 Interactive RGBA is runtime-only. Save and project JSON never include it. Playback, Bake, PNG export, and sequence export continue to use exact CPU renderers. App version remains `0.0.04` and project format remains `8`.

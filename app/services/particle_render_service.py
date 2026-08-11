@@ -39,6 +39,25 @@ class ParticleMotionPosition:
     z: float = 0.0
 
 
+@dataclass(frozen=True)
+class ParticleFrameDiagnostic:
+    """Immutable test/diagnostic snapshot of one visible particle evaluation."""
+    particle_id: int
+    generation_order: int
+    spawn_frame: int
+    lifetime: int
+    age: int
+    normalized_age: float
+    source_frame: int | None
+    x: float
+    y: float
+    z: float
+    rotation: float
+    scale: float
+    opacity: float
+    depth_key: tuple[float, int]
+
+
 def _motion_ease(value: float, easing: str) -> float:
     value=max(0.0,min(1.0,float(value)))
     if easing=="Ease In": return value*value
@@ -164,14 +183,14 @@ def _spawn_position(settings: ParticleEmitterSettings, rng: random.Random) -> tu
     return settings.origin_x, settings.origin_y
 
 
-def particle_clip_frame(clip: AnimationClipAsset, instance: ParticleInstance, age: int, effect_fps: int | None = None) -> np.ndarray | None:
+def particle_clip_frame_index(clip: AnimationClipAsset, instance: ParticleInstance, age: int, effect_fps: int | None = None) -> int | None:
     if clip.source_format == "composition":
         index = math.floor(age / max(1, effect_fps or clip.fps) * clip.fps * instance.clip_playback_speed) + instance.clip_start_frame
         if clip.playback_mode == "loop": index %= len(clip.frames)
         elif index >= len(clip.frames):
             if clip.playback_mode == "once": return None
             index = len(clip.frames)-1
-        return clip.frames[max(0,index)]
+        return max(0,index)
     durations = clip.frame_durations_ms or [max(1, round(1000 / clip.fps))] * len(clip.frames)
     elapsed = age * (1000.0 / max(1, effect_fps or clip.fps)) * instance.clip_playback_speed + sum(durations[:instance.clip_start_frame])
     total = sum(durations)
@@ -183,7 +202,12 @@ def particle_clip_frame(clip: AnimationClipAsset, instance: ParticleInstance, ag
     for index, duration in enumerate(durations):
         cumulative += duration
         if elapsed < cumulative: break
-    return clip.frames[index]
+    return index
+
+
+def particle_clip_frame(clip: AnimationClipAsset, instance: ParticleInstance, age: int, effect_fps: int | None = None) -> np.ndarray | None:
+    index=particle_clip_frame_index(clip,instance,age,effect_fps)
+    return None if index is None else clip.frames[index]
 
 
 def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) -> AnimationClipAsset:
@@ -220,7 +244,7 @@ def particle_spawn_states(settings: ParticleEmitterSettings, clip_length: int) -
     return cached
 
 
-def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None) -> np.ndarray:
+def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None, diagnostic_collector: list[ParticleFrameDiagnostic] | None = None) -> np.ndarray:
     """Render one exact frame while reusing deterministic spawn/resource state."""
     settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
@@ -228,13 +252,22 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     for order,instance in enumerate(instances):
             age = frame_index - instance.birth_frame
             if age < 0 or age >= instance.lifetime: continue
-            pixels = particle_clip_frame(clip, instance, age, project.fps)
+            pixels=particle_clip_frame(clip,instance,age,project.fps)
             if pixels is None: continue
             amount = 1.0 if instance.lifetime <= 1 else ease(age / (instance.lifetime - 1), settings.easing)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
             position=evaluate_particle_motion(settings,instance,normalized,frame_index)
             x,y,perspective_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
             if not visible:continue
+            if diagnostic_collector is not None:
+                source_frame=particle_clip_frame_index(clip,instance,age,project.fps)
+                diagnostic_collector.append(ParticleFrameDiagnostic(
+                    instance.particle_id,order,instance.birth_frame,instance.lifetime,age,normalized,source_frame,
+                    x,y,position.z,instance.rotation+instance.angular_velocity*age,
+                    instance.scale*perspective_scale,
+                    settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
+                    (position.z,order),
+                ))
             alive.append((position.z,order,instance,pixels,amount,x,y,perspective_scale,age))
     if settings.motion.mode!="linear":alive.sort(key=lambda item:(item[0],item[1]))
     for _,_,instance,pixels,amount,x,y,perspective_scale,age in alive:
