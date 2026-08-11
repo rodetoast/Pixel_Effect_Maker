@@ -22,6 +22,7 @@ from app.services.preview_service import PreviewManager
 from app.services.project_io import load_project, save_project
 from app.services.settings_service import ShortcutSettingsService
 from app.ui.main_window import MainWindow
+from app.services.effect_playback_service import PLAYBACK_PLAYING
 
 
 APPLICATION = QApplication.instance() or QApplication([])
@@ -88,6 +89,10 @@ def test_property_change_only_mutates_draft_and_preview(tmp_path) -> None:
     QTest.keyClick(window.canvas, Qt.Key.Key_Return)
     APPLICATION.processEvents()
     assert window.play_timer.isActive()
+    elapsed = 0
+    while elapsed < 3000 and window._playback_state != PLAYBACK_PLAYING:
+        QTest.qWait(10); elapsed += 10
+    assert window._playback_state == PLAYBACK_PLAYING
     assert "Preview Playing" in window.timeline.playback_status_label.text()
     before_index = window.frame_index
     QTest.keyClick(window.canvas, Qt.Key.Key_Right)

@@ -206,12 +206,19 @@ class TimelineWidget(QWidget):
         frame_count: int,
         fps: int,
         preview: bool = False,
+        preparing: bool = False,
+        ready: int = 0,
+        required: int = 0,
     ) -> None:
         """Show playback state even when every project pixel is transparent."""
         self._playing = playing
         self._preview = preview
         self._display_frame_count = frame_count
         localization = getattr(self, "_localization", None)
+        if preparing:
+            state = ("Preparing playback…" if localization is None else localization.text("play.preparing")).format(ready=ready,total=required)
+            self.playback_status_label.setText(f"{state} {ready} / {required}")
+            return
         if localization is None:
             state = "Playing" if playing else "Stopped"
             if preview:

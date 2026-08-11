@@ -12,9 +12,17 @@ from PySide6.QtWidgets import QApplication, QLabel
 
 from app.services.settings_service import ShortcutSettingsService
 from app.ui.main_window import MainWindow
+from app.services.effect_playback_service import PLAYBACK_PLAYING
 
 
 APPLICATION = QApplication.instance() or QApplication([])
+
+
+def wait_playing(window,timeout=3000):
+    elapsed=0
+    while elapsed<timeout and window._playback_state!=PLAYBACK_PLAYING:
+        APPLICATION.processEvents();elapsed+=1
+    assert window._playback_state==PLAYBACK_PLAYING
 
 
 def service_for(tmp_path) -> ShortcutSettingsService:
@@ -70,6 +78,7 @@ def test_loop_wraps_and_non_loop_stops_at_last_frame(tmp_path) -> None:
     window.frame_index = 1
     window.project.loop = False
     window.set_playing(True)
+    wait_playing(window)
     window._advance_playback()
     assert window.frame_index == 1
     assert not window.play_timer.isActive()

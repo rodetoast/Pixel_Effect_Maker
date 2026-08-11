@@ -528,6 +528,14 @@
 - [ ] 조작 중 Project 저장값·다른 레이어·Timeline이 바뀌지 않으며 Inspector 값만 제한된 주기로 따라오는지 확인한다.
 - [ ] Release는 Undo 하나와 정확 현재 프레임 하나를 만들고, Escape는 Undo·정확 렌더 없이 시작 상태로 돌아가는지 확인한다.
 - [ ] Release 뒤 Undo/Redo 결과를 Direct Render, Bake, PNG와 픽셀 비교한다.
+
+## Effect Playback Prebuffer
+
+- [ ] 600×600·12FPS·12프레임·5레이어·Particle 100에서 Play 후 `재생 준비 중… n / 12`가 갱신되고 창 이동과 Stop이 반응하는지 확인한다.
+- [ ] 준비 완료 순간 Frame 1부터 재생하며 첫 번째 Loop가 두 번째·세 번째 Loop와 같은 속도로 보이는지 확인한다.
+- [ ] 준비 중 Stop, 편집, Gizmo 조작, New/Open을 실행해 늦은 프레임이 설치되거나 재생이 저절로 시작하지 않는지 확인한다.
+- [ ] Stop 후 편집 없이 다시 Play하면 준비 표시 없이 즉시 시작하고, Pan/Zoom/Selection 뒤에도 같은지 확인한다.
+- [ ] 31프레임 이상 Sequence는 전체 완료를 기다리지 않고 Ready Buffer 뒤 시작하며 underrun에서 UI가 Exact Render로 멈추지 않는지 확인한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.

@@ -126,7 +126,7 @@ QSettings 단축키 값은 명령당 최대 두 PortableText 문자열 목록입
 
 컨트롤러는 활성 modal widget이나 popup이 있으면 실행하지 않습니다. 포커스가 QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QKeySequenceEdit, 편집 가능한 QComboBox, QAbstractButton 또는 편집 중인 QAbstractItemView 안에 있을 때도 실행하지 않습니다. 따라서 대화상자 기본 버튼, 입력 확정, 메뉴 탐색, 셀 편집이 Enter를 우선 사용하며, 캔버스나 일반 선택 상태의 타임라인에서는 재생 키가 동작합니다.
 
-재생 상태의 단일 진실 공급원은 `MainWindow.play_timer.isActive()`입니다. `set_playing()`이 타이머, 내부 QAction checked 상태와 타임라인 버튼을 동기화하고, `_refresh_playback_status()`가 타이머 상태·현재 frame index·전체 프레임 수·project FPS를 타임라인에 전달합니다. Effect 재생 프레임은 `EffectPlaybackManager`가 Project snapshot에서 worker로 Exact RGBA를 준비하고 GUI thread에서 QImage/QPixmap을 한 번 생성해 256MB LRU에 설치한다. Timer는 `QElapsedTimer` 경과 시간으로 목표 frame을 선택하며, cache miss에는 최근 ready exact frame을 유지하고 UI thread exact render를 실행하지 않는다. 선택·Pan·Zoom은 cache를 유지하고 render 변경은 재생을 정지한 뒤 revision/cache를 무효화한다. 자세한 계측과 경계는 `EFFECT_PLAYBACK_PERFORMANCE.md`를 따른다.
+재생 상태의 단일 진실 공급원은 `MainWindow._playback_state`의 `stopped/preparing/playing`입니다. `set_playing()`이 타이머, 내부 QAction checked 상태와 타임라인 버튼을 동기화하며, 준비 중 타이머는 취소 입력과 상태 갱신만 담당하고 Playback Clock은 Ready 조건을 충족한 뒤 새로 시작합니다. 30프레임 이하이면서 256MB에 들어오는 Sequence는 전체 Exact Cache를 준비하고, 긴 Sequence는 현재 프레임부터 0.5초 분량(4~15)을 준비합니다. 두 개의 저우선순위 worker가 Project snapshot을 읽고 GUI thread는 한 poll당 최대 네 QImage/QPixmap만 설치합니다. 선택·Pan·Zoom은 Cache를 유지하고 Render 변경은 준비/재생을 취소한 뒤 revision/cache를 무효화합니다. 자세한 경계는 `EFFECT_PLAYBACK_PREBUFFER.md`를 따릅니다.
 
 `ShortcutSettingsService`는 `SOUTHPAW GAMES / Pixel Effect Maker` QSettings에 값을 저장합니다. 빈 단축키는 해당 명령의 키 입력을 비활성화하며, 중복된 비어 있지 않은 단축키는 거부합니다. 손상되거나 충돌하는 저장값은 기본값으로 복구합니다. 테스트는 임시 INI QSettings를 주입해 실제 사용자 설정을 변경하지 않습니다.
 

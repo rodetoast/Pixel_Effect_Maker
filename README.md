@@ -8,7 +8,7 @@ New saves use project format v8. v1-v7 projects load with Linear motion by defau
 
 New projects start at 600×600, 12 FPS, and 12 frames (one second). Until Frames is edited directly, changing FPS keeps the default duration at one second. Blank Resource Compositions start at 300×300 and inherit the project FPS with the same one-second/manual-unlink policy.
 
-Effect playback prepares deterministic exact RGBA frames off the UI thread and displays them from a bounded runtime-only QPixmap cache. Playback follows elapsed time and may skip late preview frames, while direct render, Bake, PNG export, and Save keep their exact existing paths. See [Effect Playback Performance](docs/EFFECT_PLAYBACK_PERFORMANCE.md).
+Effect playback prepares deterministic exact RGBA frames off the UI thread and displays them from a bounded runtime-only QPixmap cache. Sequences up to 30 frames are fully prebuffered when they fit the 256MB budget, so their first loop starts only after every frame is ready; longer sequences begin after a bounded half-second buffer and retain elapsed-time frame dropping. Direct render, Bake, PNG export, and Save keep their exact existing paths. See [Effect Playback Prebuffer](docs/EFFECT_PLAYBACK_PREBUFFER.md).
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 

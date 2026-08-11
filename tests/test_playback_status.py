@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.services.settings_service import ShortcutSettingsService
 from app.ui.main_window import MainWindow
+from app.services.effect_playback_service import PLAYBACK_PLAYING
 
 
 APPLICATION = QApplication.instance() or QApplication([])
@@ -26,10 +27,18 @@ def status(window: MainWindow) -> str:
     return window.timeline.playback_status_label.text()
 
 
+def wait_playing(window,timeout=3000):
+    elapsed=0
+    while elapsed<timeout and window._playback_state!=PLAYBACK_PLAYING:
+        APPLICATION.processEvents();elapsed+=1
+    assert window._playback_state==PLAYBACK_PLAYING
+
+
 def test_status_starts_stopped_and_tracks_playback(tmp_path) -> None:
     window = MainWindow(service_for(tmp_path))
     assert status(window) == "Stopped · Frame 1 / 1 · 12 FPS"
     window.set_playing(True)
+    wait_playing(window)
     assert status(window) == "Playing · Frame 1 / 1 · 12 FPS"
     assert window.timeline.play_button.text() == "■"
     window.set_playing(False)
@@ -59,6 +68,7 @@ def test_playback_advance_moves_status_and_column_highlight(tmp_path) -> None:
     window.project.add_frame()
     window._refresh_all()
     window.set_playing(True)
+    wait_playing(window)
     window._advance_playback()
     assert status(window) == "Playing · Frame 2 / 2 · 12 FPS"
     offset = window.timeline.FRAME_COLUMN_OFFSET
@@ -77,6 +87,7 @@ def test_non_loop_end_stops_status(tmp_path) -> None:
     window.frame_index = 1
     window._refresh_all()
     window.set_playing(True)
+    wait_playing(window)
     window._advance_playback()
     assert status(window) == "Stopped · Frame 2 / 2 · 12 FPS"
     assert not window.play_action.isChecked()

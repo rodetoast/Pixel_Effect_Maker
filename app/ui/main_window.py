@@ -65,7 +65,7 @@ from app.services.effect_composition_layer_render_service import render_effect_c
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer, apply_effect_resource_layer, apply_effect_resource_layer_current_frame, invalidate_effect_resource_layer_base, render_effect_resource_layer_base_frame, render_effect_resource_layer_current_base_frame, effect_resource_layer_base_frame_key
 from app.services.settings_service import SettingsError, ShortcutSettingsService
 from app.services.runtime_diagnostics import build_diagnostic_text, log_exception, runtime_logger, safe_path_label
-from app.services.effect_playback_service import EffectPlaybackManager
+from app.services.effect_playback_service import EffectPlaybackManager,PLAYBACK_STOPPED,PLAYBACK_PREPARING,PLAYBACK_PLAYING
 from app.services.interactive_gizmo_service import InteractiveGizmoRenderManager
 from app.shortcuts import DEFAULT_SHORTCUTS
 from app.version import get_display_name
@@ -125,6 +125,7 @@ class MainWindow(QMainWindow):
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(lambda:self._advance_playback(False))
         self._playback_clock=QElapsedTimer();self._playback_start_frame=0;self._playback_last_step=0
+        self._playback_state=PLAYBACK_STOPPED;self._playback_plan=None
         self._pending_resource_transforms={}
         self._dirty_resource_transform_layers=set()
         self.resource_transform_render_timer=QTimer(self);self.resource_transform_render_timer.setSingleShot(True);self.resource_transform_render_timer.timeout.connect(self._flush_resource_transform_current)
@@ -2173,13 +2174,15 @@ class MainWindow(QMainWindow):
         return self.effect_playback.key(self.project,self._project_edit_revision,index,self._playback_preview_identity())
 
     def _invalidate_playback_cache(self,stop=True) -> None:
-        if stop and self.play_timer.isActive():self.set_playing(False)
+        if stop and self._playback_state!=PLAYBACK_STOPPED:self.set_playing(False)
         self.effect_playback.invalidate();self.canvas.end_playback(False);self.canvas.clear_playback_frame(update=False)
 
     def _display_cached_playback_frame(self,index: int) -> bool:
         started=perf_counter()
         count=self._display_frame_count();value=self.effect_playback.get(self._playback_key(index))
         if value is None:
+            if self._playback_state==PLAYBACK_PLAYING:
+                self.effect_playback.collector.underruns+=1;self.effect_playback.collector.frame_holds+=1
             for delta in range(1,count):
                 fallback=(index-delta)%count if self.project.loop else index-delta
                 if fallback<0:break
@@ -2192,11 +2195,21 @@ class MainWindow(QMainWindow):
 
     def _playback_frame_ready(self,value) -> None:
         if value.key.project_identity!=id(self.project) or value.key.render_revision!=self._project_edit_revision:return
-        if self.play_timer.isActive() and value.key.frame_index==self.frame_index:self.canvas.set_playback_frame(value.pixmap,value.key.frame_index,value.key)
+        if self._playback_state==PLAYBACK_PREPARING:
+            self._refresh_playback_status();self._start_prepared_playback_if_ready();return
+        if self._playback_state==PLAYBACK_PLAYING and value.key.frame_index==self.frame_index:self.canvas.set_playback_frame(value.pixmap,value.key.frame_index,value.key)
 
     def _playback_preparation_failed(self,message: str) -> None:
         runtime_logger().error("effect_playback preparation_failed message=%s",message)
+        if self._playback_state==PLAYBACK_PREPARING:self.set_playing(False)
         self.statusBar().showMessage("Playback frame preparation failed. The current exact frame is being held.",5000)
+
+    def _start_prepared_playback_if_ready(self) -> bool:
+        plan=self._playback_plan
+        if self._playback_state!=PLAYBACK_PREPARING or plan is None or not self.effect_playback.all_ready(plan.required_keys):return False
+        self._playback_state=PLAYBACK_PLAYING;self._playback_start_frame=self.frame_index;self._playback_last_step=0
+        self._display_cached_playback_frame(self.frame_index);self._playback_clock.start();self.play_timer.start(max(1,round(1000/self.project.fps)));self.effect_playback.collector.clock_starts+=1
+        self._refresh_playback_status();return True
 
     def _select_playback_frame(self,index: int) -> None:
         started=perf_counter()
@@ -2209,15 +2222,19 @@ class MainWindow(QMainWindow):
             with QSignalBlocker(self.play_action):
                 self.play_action.setChecked(playing)
         if playing:
+            if self._playback_state in {PLAYBACK_PREPARING,PLAYBACK_PLAYING}:return
             self.interactive_proxy_prewarm.cancel()
             self._flush_resource_transform_final();self._flush_particle_motion_final()
             self.canvas.clear_interactive_transform_proxy(update=False)
-            self.canvas.begin_playback();self._playback_start_frame=self.frame_index;self._playback_last_step=0;self._playback_clock.start()
+            self.canvas.begin_playback();self._playback_start_frame=self.frame_index;self._playback_last_step=0
             preview=self.canvas.preview_frames
-            self.effect_playback.prepare(self.project,self._project_edit_revision,self.frame_index,preview,self.canvas.preview_layer_id,self._playback_preview_identity())
-            self._display_cached_playback_frame(self.frame_index)
+            self._playback_state=PLAYBACK_PREPARING
+            self._playback_plan=self.effect_playback.prepare(self.project,self._project_edit_revision,self.frame_index,preview,self.canvas.preview_layer_id,self._playback_preview_identity())
             self.play_timer.start(max(1, round(1000 / self.project.fps)))
+            self._start_prepared_playback_if_ready()
         else:
+            if self._playback_state!=PLAYBACK_STOPPED:self.effect_playback.cancel_preparation()
+            self._playback_state=PLAYBACK_STOPPED;self._playback_plan=None
             self.play_timer.stop()
             self.canvas.end_playback(True)
         self.timeline.set_playing(playing)
@@ -2226,18 +2243,30 @@ class MainWindow(QMainWindow):
         if not playing and not self._timeline_scrubbing:self._schedule_resource_transform_prewarm()
 
     def _refresh_playback_status(self) -> None:
+        preparing=self._playback_state==PLAYBACK_PREPARING;plan=self._playback_plan
+        ready=0 if plan is None else self.effect_playback.ready_count(plan.required_keys)
+        required=0 if plan is None else len(plan.required_keys)
         self.timeline.update_playback_status(
-            self.play_timer.isActive(),
+            self._playback_state==PLAYBACK_PLAYING,
             self.frame_index,
             self._display_frame_count(),
             self.project.fps,
             preview=self.active_preview_generator_id is not None,
+            preparing=preparing,ready=ready,required=required,
         )
 
     def _advance_playback(self, force_step: bool = True) -> None:
         tick_started=perf_counter()
+        if self._playback_state==PLAYBACK_PREPARING or (not force_step and self._playback_state!=PLAYBACK_PLAYING):return
         count=self._display_frame_count()
         if count<1:return
+        if not force_step and self._playback_plan is not None and self._playback_plan.full_prebuffer:
+            next_index=self.frame_index+1
+            if next_index>=count:
+                if self.project.loop:
+                    next_index=0;self.effect_playback.collector.loop_ready_counts.append(self.effect_playback.ready_count(self._playback_plan.keys))
+                else:self.set_playing(False);return
+            self._playback_last_step+=1;self._select_playback_frame(next_index);self.effect_playback.collector.record("timeline_tick",(perf_counter()-tick_started)*1000.0);return
         if force_step:
             next_index=self.frame_index+1
             if next_index>=count:
@@ -2246,9 +2275,13 @@ class MainWindow(QMainWindow):
         else:
             step=int(self._playback_clock.elapsed()*self.project.fps/1000.0)
             if step<=self._playback_last_step:return
+            previous_step=self._playback_last_step
+            if step>previous_step+1:self.effect_playback.collector.frame_drops+=step-previous_step-1
             self._playback_last_step=step;absolute=self._playback_start_frame+step
             if not self.project.loop and absolute>=count:
                 self._select_playback_frame(count-1);self.set_playing(False);return
+            if self.project.loop and absolute//count>(self._playback_start_frame+previous_step)//count and self._playback_plan is not None:
+                self.effect_playback.collector.loop_ready_counts.append(self.effect_playback.ready_count(self._playback_plan.keys))
             next_index=absolute%count if self.project.loop else absolute
         self._select_playback_frame(next_index);self.effect_playback.collector.record("timeline_tick",(perf_counter()-tick_started)*1000.0)
 

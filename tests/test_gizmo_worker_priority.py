@@ -56,6 +56,6 @@ def test_playback_invalidation_cooperatively_stops_remaining_frames(monkeypatch)
         QTest.qWait(10)
         elapsed += 10
     assert len(calls) < len(project.frames)
-    assert manager.collector.cancelled_workers == 1
+    assert manager.collector.cancelled_workers >= 1
     assert manager.collector.cancelled_frames > 0
     manager.close()

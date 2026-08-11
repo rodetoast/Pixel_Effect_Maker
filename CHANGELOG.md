@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Effect Playback Prebuffer
+
+- Added explicit Stopped, Preparing, and Playing states; the playback clock now starts only after the required exact cache is ready.
+- Fully prebuffered sequences up to 30 frames within the 256MB budget, and added a bounded half-second ready buffer for longer sequences.
+- Added bilingual non-modal preparation progress, warm replay without rerendering, batched cache installation, and cooperative cancellation on Stop, edits, project transitions, close, and gizmo input.
+- Selected two low-priority preparation workers after 600×600/five-layer 1/2/4-worker diagnostics, while preserving high-priority interactive gizmo work and exact Bake/Export/Save behavior.
+
 ## Unreleased — Effect Editor Gizmo Responsiveness
 
 - Moved cold 2.5D Base rendering and depth-buffer preparation off the GUI thread and made transform/model mutation transient until release.

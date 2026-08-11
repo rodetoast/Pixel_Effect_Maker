@@ -24,11 +24,11 @@ The principal previous Effect cost was full float alpha composition on each Canv
 
 The key contains Project object identity, render revision, frame index, canvas size, relevant composition/resource-transform/motion/layer visibility/opacity state, and preview identity. The cache has a 256MB hard accounting limit and evicts least-recently-used frames. A 600×600 RGBA frame is about 1.44MB; RGBA plus display-copy accounting is about 2.88MB per cached entry.
 
-Preparation orders the current frame followed by later frames, giving a four-frame conceptual ready-ahead target without waiting for the whole sequence. Playback begins immediately. On a miss, Canvas retains the most recent ready exact frame; it never blocks the UI thread with an exact render.
+Preparation orders the current frame followed by later frames and loop-wrapped Frame 0. Sequences up to 30 frames start only after every exact frame is installed when the estimated RGBA/display-copy accounting fits 256MB. Longer or over-budget sequences start after `clamp(ceil(FPS × 0.5), 4, 15)` ready frames and continue rendering ahead. On a miss, Canvas retains the most recent ready exact frame; it never blocks the UI thread with an exact render.
 
 Starting any Effect gizmo stops Playback, invalidates its cache generation, and sets a cooperative cancellation event. The Playback worker checks it around every exact frame, so obsolete ready-ahead work stops before consuming the rest of the sequence. Direct-manipulation current-frame workers run at Qt pool priority `+1`; Playback and idle Prewarm run at `-1`.
 
-`QElapsedTimer` maps actual elapsed milliseconds to `floor(elapsed × FPS)`. Late callbacks skip obsolete preview frames so playback duration does not stretch. Non-loop playback stops at the final frame. Frame dropping exists only in preview display, never in render/export/save paths.
+`QElapsedTimer` begins when the required buffer is ready, never at the Play click. Long-sequence playback maps elapsed milliseconds to `floor(elapsed × FPS)` and skips obsolete preview frames so duration does not stretch. Fully prebuffered short sequences display every cached frame sequentially to guarantee a complete first loop. Non-loop playback stops at the final frame. Frame dropping exists only in long preview display, never in render/export/save paths.
 
 Render-affecting edits stop playback and invalidate revision/cache: pixels, composition/layers, particle/motion/2.5D, opacity, visibility, keyframes, canvas size, and timeline render properties. Selection, focus, Pan, Zoom, guide visibility, Help, and metadata-only Save do not invalidate it. Project transitions always clear it.
 
@@ -56,6 +56,8 @@ Particle 100 split was approximately 20.68ms particle exact render and 42.19ms l
 | 60 FPS | 16.67ms | Measured exact scenarios exceed budget; cached display remains far below budget |
 
 Cache-hit tests assert zero additional effect/particle render calls and zero additional QImage/QPixmap creation. Exact RGBA tests compare cached frames with direct current-frame render, full Bake, and PNG export. Interactive 2.5D proxy tests continue to assert no full-sequence materialization during Play or drag.
+
+Prebuffer diagnostic using 600×600, 12 FPS, 12 frames, five visible project layers, and Particle count 100: two preparation workers reached `PLAYING` with all 12 frames ready in 949.52ms; per-task exact generation averaged 152.50ms under parallel load, QImage→QPixmap installation averaged 0.333ms, and the first two simulated loops recorded zero underruns and zero frame drops. A worker-count diagnostic measured 1458.01ms / 916.05ms / 691.62ms for 1 / 2 / 4 workers. Two was selected to limit competition with interactive work.
 
 ## Native/GPU decision
 

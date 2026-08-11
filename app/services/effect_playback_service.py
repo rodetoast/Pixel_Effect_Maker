@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass,field
+from math import ceil
 from queue import Empty,SimpleQueue
 from threading import Event
 from time import perf_counter
@@ -20,6 +21,16 @@ from app.services.runtime_diagnostics import log_exception
 
 PLAYBACK_CACHE_MAX_BYTES=256*1024*1024
 PLAYBACK_READY_AHEAD=4
+PLAYBACK_FULL_PREBUFFER_MAX_FRAMES=30
+PLAYBACK_READY_BUFFER_MIN_FRAMES=4
+PLAYBACK_READY_BUFFER_MAX_FRAMES=15
+PLAYBACK_READY_BUFFER_SECONDS=.5
+PLAYBACK_INSTALL_BATCH_SIZE=4
+PLAYBACK_PREPARATION_WORKERS=2
+
+PLAYBACK_STOPPED="stopped"
+PLAYBACK_PREPARING="preparing"
+PLAYBACK_PLAYING="playing"
 
 
 @dataclass(frozen=True)
@@ -41,11 +52,22 @@ class PlaybackFrame:
     render_timings_ms:dict[str,float]=field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class PlaybackPreparationPlan:
+    keys:tuple[PlaybackFrameKey,...]
+    required_keys:tuple[PlaybackFrameKey,...]
+    full_prebuffer:bool
+    frame_count:int
+    estimated_bytes:int
+
+
 class PlaybackPerformanceCollector:
     def __init__(self):
         self.calls={};self.total_ms={};self.maximum_ms={}
         self.render_calls=0;self.cache_hits=0;self.cache_misses=0
         self.qimage_creations=0;self.pixmap_creations=0;self.stale_results=0;self.cancelled_workers=0;self.cancelled_frames=0
+        self.preparation_requests=0;self.warm_starts=0;self.clock_starts=0;self.underruns=0;self.frame_holds=0;self.frame_drops=0
+        self.loop_ready_counts=[]
     def record(self,name,value):
         value=float(value);self.calls[name]=self.calls.get(name,0)+1
         self.total_ms[name]=self.total_ms.get(name,0.0)+value
@@ -71,6 +93,7 @@ class PlaybackFrameCache:
             _,removed=self._items.popitem(last=False);self.current_bytes-=removed.byte_size;self.evictions+=1
         return value
     def clear(self):self._items.clear();self.current_bytes=0
+    def contains(self,key):return key in self._items
     def __len__(self):return len(self._items)
 
 
@@ -141,6 +164,7 @@ class EffectPlaybackManager(QObject):
     @property
     def generation(self):return self._generation
     def invalidate(self):self._cancelled.set();self._generation+=1;self.cache.clear()
+    def cancel_preparation(self):self._cancelled.set();self._generation+=1
     def close(self):self._cancelled.set();self._generation+=1;self._poll.stop();self.cache.clear()
     def key(self,project,render_revision,frame_index,preview_identity=()):
         return PlaybackFrameKey(id(project),int(render_revision),int(frame_index),(project.width,project.height),playback_relevant_revision(project),tuple(preview_identity))
@@ -149,23 +173,32 @@ class EffectPlaybackManager(QObject):
         if value is None:self.collector.cache_misses+=1
         else:self.collector.cache_hits+=1
         return value
+    def ready_count(self,keys):return sum(1 for key in keys if self.cache.contains(key))
+    def all_ready(self,keys):return all(self.cache.contains(key) for key in keys)
     def prepare(self,project,render_revision,start_frame=0,preview_frames=None,preview_layer_id=None,preview_identity=()):
         self._cancelled.set();self._cancelled=Event();self._generation+=1;generation=self._generation
         count=len(preview_frames) if preview_frames is not None else len(project.frames)
-        order=list(range(max(0,min(start_frame,count-1)),count))+list(range(0,max(0,min(start_frame,count-1))))
-        # Keep the current frame and the configured ready-ahead window at the
-        # front of the single deterministic render queue.  Playback does not
-        # block waiting for the rest of a long sequence.
-        near=order[:PLAYBACK_READY_AHEAD+1];later=order[PLAYBACK_READY_AHEAD+1:]
-        keys=[self.key(project,render_revision,index,preview_identity) for index in near+later]
+        if count<1:return PlaybackPreparationPlan((),(),True,0,0)
+        start=max(0,min(start_frame,count-1));order=list(range(start,count))
+        if project.loop:order+=list(range(0,start))
+        estimated=int(project.width)*int(project.height)*4*2*len(order)
+        full=count<=PLAYBACK_FULL_PREBUFFER_MAX_FRAMES and estimated<=self.cache.maximum_bytes
+        required_count=count if full else min(count,max(PLAYBACK_READY_BUFFER_MIN_FRAMES,min(PLAYBACK_READY_BUFFER_MAX_FRAMES,ceil(project.fps*PLAYBACK_READY_BUFFER_SECONDS))))
+        keys=tuple(self.key(project,render_revision,index,preview_identity) for index in order)
+        required=keys if full else keys[:required_count]
         missing=[key for key in keys if self.cache.get(key) is None]
+        self.collector.preparation_requests+=1
+        if not missing:self.collector.warm_starts+=1
         if missing:
             snapshot_started=perf_counter();snapshot=deepcopy(project);preview_snapshot=None if preview_frames is None else [np.ascontiguousarray(frame).copy() for frame in preview_frames]
             self.collector.record("snapshot_copy",(perf_counter()-snapshot_started)*1000.0)
-            self._pool.start(_PlaybackWorker(generation,snapshot,missing,preview_snapshot,preview_layer_id,self._queue,self._cancelled),-1)
-        return keys
+            worker_count=min(PLAYBACK_PREPARATION_WORKERS,len(missing))
+            for worker_index in range(worker_count):
+                assigned=missing[worker_index::worker_count]
+                self._pool.start(_PlaybackWorker(generation,snapshot,assigned,preview_snapshot,preview_layer_id,self._queue,self._cancelled),-1)
+        return PlaybackPreparationPlan(keys,tuple(required),full,count,estimated)
     def _drain(self):
-        while True:
+        for _ in range(PLAYBACK_INSTALL_BATCH_SIZE):
             try:generation,key,rgba,timings,error=self._queue.get_nowait()
             except Empty:return
             if error=="cancelled":
