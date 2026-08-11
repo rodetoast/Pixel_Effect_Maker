@@ -1,5 +1,7 @@
 # Pixel Effect Maker
 
+Effect Editor direct manipulation uses transient, latest-wins current-frame previews so 2.5D and Particle Motion gizmos remain responsive without changing saved Project pixels until release. See [Effect Gizmo Performance](docs/EFFECT_GIZMO_PERFORMANCE.md) for scheduling and exact-output boundaries.
+
 Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. Orbit provides radius, ellipse, angle, turns, direction, phase spread, and plane rotation; Helix adds X/Y/Z axis travel and particle-local perspective. The exact current-frame evaluator is shared by Canvas guides and output rendering before the common Resource Layer 2.5D transform; ordinary project Save writes metadata without rendering pixels.
 
 New saves use project format v8. v1-v7 projects load with Linear motion by default. The application remains `Pixel Effect Maker v0.0.04`.

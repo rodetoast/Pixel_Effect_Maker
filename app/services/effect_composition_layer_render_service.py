@@ -10,7 +10,7 @@ from app.models.layer import Layer
 from app.models.project import Project
 from app.models.source_asset import SourceAsset
 from app.services.effect_render_service import EffectRenderError, render_transformed_source
-from app.services.resource_composition_render_service import render_composition_frames
+from app.services.resource_composition_render_service import render_composition_frame, render_composition_frames
 
 
 def composition_layer_position(layer: EffectCompositionLayer, frame: int) -> tuple[float, float]:
@@ -54,6 +54,22 @@ def render_effect_composition_layer(project: Project, layer: EffectCompositionLa
             horizontal_tilt=0.0, vertical_tilt=0.0, perspective=0.0, opacity=1.0,
         )
     return outputs
+
+
+def render_effect_composition_layer_current_frame(project: Project, layer: EffectCompositionLayer, effect_frame: int):
+    """Render one exact placement frame without allocating the full sequence."""
+    layer.validate();effect_frame=int(effect_frame);output=empty_pixels(project.width,project.height)
+    if effect_frame<layer.start_frame or effect_frame>layer.end_frame:return output
+    composition=next((item for item in project.resource_compositions if item.id==layer.resource_composition_id),None)
+    if composition is None:raise EffectRenderError("the Resource Composition does not exist")
+    elapsed=effect_frame-layer.start_frame;resource_index=int(elapsed*composition.fps/max(1,project.fps))
+    if composition.loop:resource_index%=composition.frame_count
+    else:resource_index=min(resource_index,composition.frame_count-1)
+    pixels=render_composition_frame(project,composition,resource_index);x,y=composition_layer_position(layer,effect_frame)
+    asset=SourceAsset(composition.name,pixels,pivot_x=float(composition.pivot_x),pivot_y=float(composition.pivot_y))
+    render_transformed_source(output,asset,position_x=x,position_y=y,rotation=0.0,scale_x=1.0,scale_y=1.0,
+        horizontal_tilt=0.0,vertical_tilt=0.0,perspective=0.0,opacity=1.0)
+    return output
 
 
 def apply_effect_composition_layer(project: Project, effect_layer: EffectCompositionLayer, outputs: list) -> Layer:

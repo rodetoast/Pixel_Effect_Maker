@@ -519,6 +519,15 @@
 - [ ] Save As 취소와 쓰기 불가능한 폴더, 잠긴 대상 파일에서 기존 저장 경로·기존 파일·Dirty 표시가 유지되는지 확인한다.
 - [ ] 저장 중 Save/Save As가 비활성화되고 완료 뒤 다시 활성화되며 성공 Status가 실패 시 표시되지 않는지 확인한다.
 - [ ] 한국어와 영어에서 폴더/인코딩/Temporary/Atomic Replace 오류 안내가 내부 Traceback 없이 표시되는지 확인한다.
+
+## Effect Gizmo responsiveness
+
+- [ ] 600×600, Resource Layer 5개, Particle 100개에서 2.5D Position/Rotation/Pivot/Perspective를 Cold와 Warm 상태로 각각 100회 움직여 포인터가 먼저 반응하는지 확인한다.
+- [ ] Linear Emission과 Orbit/Helix Motion 핸들을 빠르게 움직여 중간 상태가 누적되지 않고 약 33ms latest-wins로 현재 프레임만 갱신되는지 확인한다.
+- [ ] 조작 시작 시 Playback이 즉시 정지하고 준비 중이던 다음 프레임 작업이 계속 쌓이지 않는지 확인한다.
+- [ ] 조작 중 Project 저장값·다른 레이어·Timeline이 바뀌지 않으며 Inspector 값만 제한된 주기로 따라오는지 확인한다.
+- [ ] Release는 Undo 하나와 정확 현재 프레임 하나를 만들고, Escape는 Undo·정확 렌더 없이 시작 상태로 돌아가는지 확인한다.
+- [ ] Release 뒤 Undo/Redo 결과를 Direct Render, Bake, PNG와 픽셀 비교한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.

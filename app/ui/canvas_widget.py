@@ -68,6 +68,7 @@ class CanvasWidget(QWidget):
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
         self.playback_display_stats={"cached_paints":0,"fallback_paints":0,"cached_draw_ms":0.0,"cached_draw_max_ms":0.0}
+        self.interaction_stats={"calls":{},"total_ms":{},"maximum_ms":{},"full_updates_without_rect":0,"partial_paints":0,"full_paints":0}
         self.proxy_base_image_cache=ProxyBaseImageCache()
         self.proxy_composite_cache=InteractiveCompositeCache()
         self.proxy_stats={"apply_calls":0,"motion_apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
@@ -77,6 +78,11 @@ class CanvasWidget(QWidget):
         self.setMinimumSize(320, 320)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
+
+    def _record_interaction(self,name,started):
+        elapsed=(perf_counter()-started)*1000.0;stats=self.interaction_stats
+        stats["calls"][name]=stats["calls"].get(name,0)+1;stats["total_ms"][name]=stats["total_ms"].get(name,0.0)+elapsed
+        stats["maximum_ms"][name]=max(stats["maximum_ms"].get(name,0.0),elapsed);return elapsed
 
     def set_project(self, project: Project) -> None:
         size = (project.width, project.height)
@@ -237,7 +243,7 @@ class CanvasWidget(QWidget):
         )
 
     def proxy_prewarm_payload(self,token,base_frame) -> ProxyPrewarmPayload | None:
-        if self.project is None or self.preview_frames is not None or self._resource_transform_drag or self._guide_handle:return None
+        if self.project is None or self.preview_frames is not None:return None
         self.last_prewarm_payload_timings={};started=perf_counter()
         layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
         self.last_prewarm_payload_timings["selected_layer_lookup"]=(perf_counter()-started)*1000.0
@@ -270,6 +276,7 @@ class CanvasWidget(QWidget):
             None if cached is None else cached.overlay,
             None if cached_base is None else cached_base.rgba,
             None if cached_base is None else cached_base.alpha_bounds,
+            self.project,deepcopy(layer),self.frame_index,
         )
 
     def _proxy_pixmap_from_rgba(self,pixels,prefix="proxy"):
@@ -281,7 +288,7 @@ class CanvasWidget(QWidget):
         return image,pixmap
 
     def install_proxy_prewarm(self,result: ProxyPrewarmComputed) -> bool:
-        if self.project is None or self.preview_frames is not None or self._resource_transform_drag:return False
+        if self.project is None or self.preview_frames is not None:return False
         self.last_prewarm_install_timings={};install_started=perf_counter()
         token=result.token;layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
         if layer is None or self.proxy_prewarm_token(layer,token.particle_base_revision,token.request_revision)!=token:return False
@@ -297,11 +304,13 @@ class CanvasWidget(QWidget):
             if result.underlay_rgba is None or result.overlay_rgba is None:return False
             _,underlay=self._proxy_pixmap_from_rgba(result.underlay_rgba,"underlay");_,overlay=self._proxy_pixmap_from_rgba(result.overlay_rgba,"overlay")
             entry=self.proxy_composite_cache.put(token.composite_key,underlay,overlay,result.underlay_rgba.nbytes+result.overlay_rgba.nbytes)
-        transform=deepcopy(layer.layer_transform);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,transform.evaluated(self.frame_index))
-        state=InteractiveTransformProxyState(layer.id,self.frame_index,token.particle_base_revision,base,active=False,applied_transform=transform)
+        dragging=self._resource_transform_drag is not None and self.resource_transform_id==layer.id
+        transform=deepcopy(self.resource_transform if dragging and self.resource_transform is not None else layer.layer_transform);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,transform.evaluated(self.frame_index))
+        state=InteractiveTransformProxyState(layer.id,self.frame_index,token.particle_base_revision,base,active=dragging,applied_transform=transform)
         state.prewarm_token=token;state.depth_order_signature=token.depth_signature;state.underlay_pixmap=entry.underlay;state.overlay_pixmap=entry.overlay
         if valid:
             state.projected_quad=polygon;state.previous_projected_bounds=self._proxy_polygon_bounds(polygon);state.current_projected_bounds=state.previous_projected_bounds
+        if dragging:state.queue(transform)
         self.interactive_transform_proxy=state;self.proxy_stats["prewarm_installs"]+=1
         self.last_prewarm_install_timings["proxy_state_install"]=(perf_counter()-install_started)*1000.0
         return True
@@ -376,8 +385,16 @@ class CanvasWidget(QWidget):
         top=min(point.y() for point in points);bottom=max(point.y() for point in points)
         return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
 
+    def _effect_guide_bounds(self):
+        points=list(self._guide_points().values())
+        if isinstance(self.effect_guide_settings,ParticleEmitterSettings) and self.effect_guide_settings.motion.mode in {"orbit","helix"}:points+=list(getattr(self,"_motion_guide_path",()))
+        if not points:return QRect()
+        left=min(point.x() for point in points);right=max(point.x() for point in points);top=min(point.y() for point in points);bottom=max(point.y() for point in points)
+        return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
+
     def apply_interactive_motion_proxy(self,layer,base_frame,base_key,motion_revision) -> bool:
         """Replace only the selected particle image and reuse cached composites."""
+        interaction_started=perf_counter()
         if self.project is None or self.preview_frames is not None or base_frame is None:return False
         cache_key=tuple(base_key);token=self.proxy_prewarm_token(layer,cache_key)
         previous=self.interactive_transform_proxy
@@ -401,7 +418,11 @@ class CanvasWidget(QWidget):
                 if entry is not None:
                     state.underlay_pixmap=entry.underlay;state.overlay_pixmap=entry.overlay
                 else:
-                    self._rebuild_proxy_depth_buffers(state,layer,transform)
+                    # Cold guide drags prewarm these depth buffers on the worker
+                    # pool.  Keep the handle responsive until that result lands;
+                    # never rebuild every visible project layer on the GUI thread.
+                    self.proxy_stats["motion_composite_waits"]+=1
+                    return False
             evaluated=transform.evaluated(self.frame_index);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,evaluated)
             current=self._proxy_polygon_bounds(polygon) if valid and evaluated.opacity>0 else QRect()
             state.projected_quad=polygon if valid else QPolygonF();state.previous_projected_bounds=old_bounds;state.current_projected_bounds=current
@@ -409,7 +430,7 @@ class CanvasWidget(QWidget):
             self.interactive_transform_proxy=state;self.proxy_stats["motion_apply_calls"]+=1;self.proxy_stats["partial_updates"]+=1
             dirty=old_bounds.united(current).united(self._motion_guide_bounds()).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
             self.last_proxy_dirty_rect=dirty;self.update(dirty if not dirty.isNull() else current)
-            return True
+            self._record_interaction("motion_proxy_apply",interaction_started);return True
         finally:
             state.render_in_progress=False
 
@@ -418,12 +439,13 @@ class CanvasWidget(QWidget):
         if state is not None and state.resource_layer_id==identifier:self.clear_interactive_transform_proxy(update=True)
 
     def apply_interactive_transform_proxy(self,layer) -> bool:
+        interaction_started=perf_counter()
         state=self.interactive_transform_proxy
         if state is None or not state.active or state.resource_layer_id!=layer.id or state.frame!=self.frame_index:return False
         if state.render_in_progress:
             self.proxy_stats["overlap_rejections"]+=1;return False
         pending=state.pending_transform
-        if pending is None or pending.revision!=layer.layer_transform.revision:return False
+        if pending is None:return False
         state.render_in_progress=True
         try:
             evaluated=pending.evaluated(self.frame_index)
@@ -446,7 +468,7 @@ class CanvasWidget(QWidget):
                 self.proxy_stats["partial_updates"]+=1
             self.last_proxy_dirty_rect=dirty
             self.update(dirty)
-            return True
+            self._record_interaction("proxy_geometry_update",interaction_started);return True
         finally:
             state.render_in_progress=False
 
@@ -464,6 +486,7 @@ class CanvasWidget(QWidget):
         self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform)
 
     def paintEvent(self, event: object) -> None:  # noqa: N802
+        paint_started=perf_counter()
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#20242b"))
         if not self.project or not self.project.frames:
@@ -524,6 +547,9 @@ class CanvasWidget(QWidget):
             painter.setPen(QPen(QColor("#74c0fc"),1,Qt.PenStyle.DashLine));painter.setBrush(Qt.BrushStyle.NoBrush);painter.drawPolygon(proxy.projected_quad)
         if not self.playback_mode and (proxy is None or not proxy.active) and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
+        if hasattr(event,"rect") and event.rect()!=self.rect():self.interaction_stats["partial_paints"]+=1
+        else:self.interaction_stats["full_paints"]+=1
+        self._record_interaction("paint_event",paint_started)
 
     def _paint_interactive_transform_proxy(self,painter,state):
         if state.base.pixmap is None or len(state.projected_quad)!=4 or state.applied_transform is None:return
@@ -731,23 +757,25 @@ class CanvasWidget(QWidget):
         return next((name for name, point in candidates.items() if math.hypot(point.x()-position.x(), point.y()-position.y()) <= 10), None)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
+        event_started=perf_counter()
         if event.button() == Qt.MouseButton.MiddleButton:
             self._panning = True; self._pan_last = event.position(); self.setCursor(Qt.CursorShape.ClosedHandCursor); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton and self.show_effect_guides and self.effect_guide_id:
-            handle = self._hit_guide_handle(event.position())
+            hit_started=perf_counter();handle = self._hit_guide_handle(event.position());self._record_interaction("guide_hit_test",hit_started)
             if handle:
                 self._guide_handle = handle
                 self._guide_before = deepcopy(self.effect_guide_settings)
                 self._guide_last_canvas_point = None
-                self.setFocus()
+                self.effect_guide_started.emit(self.effect_guide_id);self.setFocus()
                 event.accept()
+                self._record_interaction("mouse_press_total",event_started)
                 return
         active_transform_layer = next((item for item in self.project.effect_resource_layers if item.id==self.resource_transform_id),None) if self.project is not None else None
         transform_is_selected = active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id
         if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
-            handle=self._hit_resource_transform(event.position())
+            hit_started=perf_counter();handle=self._hit_resource_transform(event.position());self._record_interaction("transform_hit_test",hit_started)
             if handle:
-                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();return
+                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started);return
         if event.button() == Qt.MouseButton.LeftButton and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._gizmo_drag = True; self._gizmo_before = deepcopy(self.gizmo_settings); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton:
@@ -774,7 +802,7 @@ class CanvasWidget(QWidget):
         if self._panning:
             delta=event.position()-self._pan_last;self._pan_last=event.position();self.pan_offset+=delta;self.update();event.accept();return
         if self._resource_transform_drag:
-            t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag
+            event_started=perf_counter();old_gizmo=self._resource_transform_gizmo_bounds();value_started=perf_counter();t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag
             if handle in {"x","center"}:t.position_x=before.position_x+delta.x()
             if handle in {"y","center"}:t.position_y=before.position_y+delta.y()
             if handle=="z":t.position_z=before.position_z-delta.y()+delta.x()
@@ -785,16 +813,24 @@ class CanvasWidget(QWidget):
             if handle=="scale":t.scale_x=max(.01,before.scale_x+delta.x()/32);t.scale_y=max(.01,before.scale_y+delta.y()/32)
             if handle=="pivot":t.pivot_x=before.pivot_x+delta.x();t.pivot_y=before.pivot_y+delta.y()
             self.resource_transform_changed_fields={"center":("position_x","position_y"),"x":("position_x",),"y":("position_y",),"z":("position_z",),"rotate_x":("rotation_x",),"rotate_y":("rotation_y",),"rotate_z":("rotation_z",),"scale":("scale_x","scale_y"),"pivot":("pivot_x","pivot_y")}.get(handle,())
-            self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);event.accept();return
+            self._record_interaction("transform_value_calculation",value_started);signal_started=perf_counter();self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);self._record_interaction("transform_signal",signal_started)
+            if self.interactive_transform_proxy is None:
+                dirty=old_gizmo.united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect());self.last_proxy_dirty_rect=dirty;self.update(dirty)
+            event.accept();self._record_interaction("mouse_move_total",event_started);return
         if self._guide_handle:
+            event_started=perf_counter();old_guide=self._effect_guide_bounds();coordinate_started=perf_counter()
             point = self.widget_to_canvas(event.position())
+            self._record_interaction("screen_to_canvas",coordinate_started)
             integer_point = (round(point.x()), round(point.y()))
             if integer_point == self._guide_last_canvas_point:
                 event.accept(); return
             self._guide_last_canvas_point = integer_point
-            self._move_effect_guide(point, event.modifiers())
-            self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), False)
-            self.update(); event.accept(); return
+            guide_started=perf_counter();self._move_effect_guide(point, event.modifiers());self._record_interaction("guide_value_calculation",guide_started)
+            signal_started=perf_counter();self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), False);self._record_interaction("guide_signal",signal_started)
+            dirty=old_guide.united(self._effect_guide_bounds()).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
+            if dirty.isNull():self.interaction_stats["full_updates_without_rect"]+=1
+            else:self.update(dirty)
+            event.accept();self._record_interaction("mouse_move_total",event_started);return
         if self.effect_guide_id:
             hover = self._hit_guide_handle(event.position())
             if hover != self._guide_hover:
@@ -823,12 +859,13 @@ class CanvasWidget(QWidget):
         if self._panning and event.button()==Qt.MouseButton.MiddleButton:
             self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
         if self._resource_transform_drag:
-            self._resource_transform_drag=None;self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True);event.accept();return
+            started=perf_counter();self._resource_transform_drag=None;self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True);event.accept();self._record_interaction("mouse_release_total",started);return
         if self._guide_handle:
+            started=perf_counter()
             self._guide_handle = None
             self._guide_last_canvas_point = None
             self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), True)
-            event.accept(); return
+            event.accept();self._record_interaction("mouse_release_total",started); return
         if self._gizmo_drag: self._gizmo_drag = False; event.accept(); return
         super().mouseReleaseEvent(event)
 
@@ -950,6 +987,7 @@ class CanvasWidget(QWidget):
         output[..., 3:4] = combined_alpha
     gizmo_changed = Signal(str, object)
     effect_guide_changed = Signal(str, object, bool)
+    effect_guide_started = Signal(str)
     effect_guide_cancelled = Signal(str, object)
     resource_transform_changed = Signal(str, object, bool)
     resource_transform_cancelled = Signal(str, object)

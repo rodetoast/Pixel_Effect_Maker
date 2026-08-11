@@ -7,6 +7,7 @@ from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PART
 from app.services.effect_composition_layer_render_service import (
     apply_effect_composition_layer,
     render_effect_composition_layer,
+    render_effect_composition_layer_current_frame,
 )
 from app.services.particle_render_service import apply_particle_frames, render_particle_frame, render_particle_frames
 from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
@@ -115,9 +116,7 @@ def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame:
 
 def render_effect_resource_layer_current_frame(project, layer: EffectResourceLayer, frame: int):
     """Render one exact particle frame without materializing its output sequence."""
-    if layer.placement_mode != PLACEMENT_PARTICLE:
-        return render_effect_resource_layer_frame(project,layer,frame)
-    base=render_particle_frame(project,layer.as_particle_emitter(),int(frame))
+    base=render_effect_resource_layer_current_base_frame(project,layer,int(frame))
     return transform_rgba_frame(base,layer.layer_transform,int(frame))
 
 
@@ -125,8 +124,7 @@ def render_effect_resource_layer_current_base_frame(project, layer: EffectResour
     """Render one exact untransformed frame for the shared Canvas proxy."""
     if layer.placement_mode == PLACEMENT_PARTICLE:
         return render_particle_frame(project, layer.as_particle_emitter(), int(frame))
-    base, _ = render_effect_resource_layer_base_frame(project, layer, int(frame))
-    return base
+    return render_effect_composition_layer_current_frame(project,layer.as_composition_layer(),int(frame))
 
 
 def render_effect_resource_layer(project, layer: EffectResourceLayer):

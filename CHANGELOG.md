@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Effect Editor Gizmo Responsiveness
+
+- Moved cold 2.5D Base rendering and depth-buffer preparation off the GUI thread and made transform/model mutation transient until release.
+- Added a 33ms latest-wins, high-priority current-frame worker for Single and Particle Motion guides; drag never materializes a full sequence.
+- Added cooperative cancellation for Playback and idle Prewarm work when direct manipulation begins, plus throttled inspector synchronization and partial dirty rectangles.
+- Preserved one-command Undo, Escape cancellation, and one exact current-frame install on release without changing app version 0.0.04 or format 8.
+
 ## Unreleased — Project Defaults & Effect Playback Performance
 
 - Changed New Project defaults to 600×600, 12 FPS, and 12 frames; FPS keeps the initial one-second frame count linked until Frames is manually edited.

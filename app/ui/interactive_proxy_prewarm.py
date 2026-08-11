@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from queue import Empty, SimpleQueue
+from threading import Event
 from time import perf_counter
 from typing import Callable
 
@@ -12,6 +13,7 @@ import numpy as np
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from app.services.runtime_diagnostics import log_exception
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer_current_base_frame
 
 
 def alpha_composite_layers(
@@ -82,6 +84,9 @@ class ProxyPrewarmPayload:
     cached_overlay: QPixmap | None = None
     cached_crop: np.ndarray | None = None
     cached_bounds: tuple[int, int, int, int] | None = None
+    project: object | None = None
+    layer: object | None = None
+    frame_index: int = 0
 
 
 @dataclass
@@ -97,6 +102,10 @@ class ProxyPrewarmComputed:
 
 @dataclass(frozen=True)
 class ProxyPrewarmFailure:
+    token: ProxyPrewarmToken
+
+@dataclass(frozen=True)
+class ProxyPrewarmCancelled:
     token: ProxyPrewarmToken
 
 
@@ -155,8 +164,8 @@ class PrewarmPerformanceCollector:
 
 
 class _PrewarmWorker(QRunnable):
-    def __init__(self,payload: ProxyPrewarmPayload,output: SimpleQueue):
-        super().__init__();self.payload=payload;self.output=output
+    def __init__(self,payload: ProxyPrewarmPayload,output: SimpleQueue,cancelled: Event | None=None):
+        super().__init__();self.payload=payload;self.output=output;self.cancelled=cancelled or Event()
 
     def run(self) -> None:
         try:
@@ -167,6 +176,11 @@ class _PrewarmWorker(QRunnable):
 
     def _run_guarded(self) -> None:
         timings={};started=perf_counter();frame=self.payload.base_frame
+        if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
+        if frame is None and self.payload.cached_crop is None:
+            frame=render_effect_resource_layer_current_base_frame(self.payload.project,self.payload.layer,self.payload.frame_index)
+            timings["current_base_render"]=(perf_counter()-started)*1000.0;started=perf_counter()
+        if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
         if self.payload.cached_crop is not None:
             crop=self.payload.cached_crop;bounds=self.payload.cached_bounds
         else:
@@ -178,8 +192,10 @@ class _PrewarmWorker(QRunnable):
             timings["proxy_base_alpha_crop"]=(perf_counter()-started)*1000.0
         underlay=overlay=None
         if self.payload.cached_underlay is None or self.payload.cached_overlay is None:
+            if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
             started=perf_counter();underlay=alpha_composite_layers(self.payload.token.canvas_size,self.payload.before)
             timings["underlay_alpha_composite"]=(perf_counter()-started)*1000.0
+            if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
             started=perf_counter();overlay=alpha_composite_layers(self.payload.token.canvas_size,self.payload.after)
             timings["overlay_alpha_composite"]=(perf_counter()-started)*1000.0
         self.output.put(ProxyPrewarmComputed(
@@ -196,20 +212,20 @@ class InteractiveProxyPrewarmManager(QObject):
     def __init__(self,payload_factory: Callable[[ProxyPrewarmToken],ProxyPrewarmPayload|None],parent=None,delay_ms: int=80):
         super().__init__(parent);self.payload_factory=payload_factory;self.delay_ms=int(delay_ms)
         self.collector=PrewarmPerformanceCollector();self._revision=0;self._pending: ProxyPrewarmToken|None=None
-        self._queue=SimpleQueue();self._pool=QThreadPool.globalInstance();self._active_revisions:set[int]=set()
+        self._queue=SimpleQueue();self._pool=QThreadPool.globalInstance();self._active_revisions:set[int]=set();self._cancelled=Event()
         self._timer=QTimer(self);self._timer.setSingleShot(True);self._timer.timeout.connect(self._start)
         self._poll=QTimer(self);self._poll.timeout.connect(self._drain);self._poll.start(10)
 
     @property
     def request_revision(self) -> int:return self._revision
 
-    def schedule(self,token: ProxyPrewarmToken) -> ProxyPrewarmToken:
-        self._revision+=1;token=token.with_request_revision(self._revision);self._pending=token
-        self._timer.start(self.delay_ms);return token
+    def schedule(self,token: ProxyPrewarmToken,delay_ms: int | None = None) -> ProxyPrewarmToken:
+        self._cancelled.set();self._cancelled=Event();self._revision+=1;token=token.with_request_revision(self._revision);self._pending=token
+        self._timer.start(self.delay_ms if delay_ms is None else max(0,int(delay_ms)));return token
 
     def cancel(self) -> None:
         if self._pending is not None or self._active_revisions:self.collector.cancellations+=1
-        self._revision+=1;self._pending=None;self._timer.stop()
+        self._cancelled.set();self._revision+=1;self._pending=None;self._timer.stop()
 
     def _start(self) -> None:
         token=self._pending;self._pending=None
@@ -217,13 +233,15 @@ class InteractiveProxyPrewarmManager(QObject):
         started=perf_counter();payload=self.payload_factory(token)
         self.collector.record("payload_prepare",(perf_counter()-started)*1000.0)
         if payload is None:return
-        self._active_revisions.add(token.request_revision);self._pool.start(_PrewarmWorker(payload,self._queue),-1)
+        self._active_revisions.add(token.request_revision);self._pool.start(_PrewarmWorker(payload,self._queue,self._cancelled),-1)
 
     def _drain(self) -> None:
         while True:
             try:result=self._queue.get_nowait()
             except Empty:return
             self._active_revisions.discard(result.token.request_revision)
+            if isinstance(result,ProxyPrewarmCancelled):
+                self.collector.cancellations+=1;continue
             if isinstance(result,ProxyPrewarmFailure):
                 self.collector.failures+=1;continue
             if result.token.request_revision!=self._revision:

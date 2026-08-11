@@ -26,6 +26,8 @@ The key contains Project object identity, render revision, frame index, canvas s
 
 Preparation orders the current frame followed by later frames, giving a four-frame conceptual ready-ahead target without waiting for the whole sequence. Playback begins immediately. On a miss, Canvas retains the most recent ready exact frame; it never blocks the UI thread with an exact render.
 
+Starting any Effect gizmo stops Playback, invalidates its cache generation, and sets a cooperative cancellation event. The Playback worker checks it around every exact frame, so obsolete ready-ahead work stops before consuming the rest of the sequence. Direct-manipulation current-frame workers run at Qt pool priority `+1`; Playback and idle Prewarm run at `-1`.
+
 `QElapsedTimer` maps actual elapsed milliseconds to `floor(elapsed × FPS)`. Late callbacks skip obsolete preview frames so playback duration does not stretch. Non-loop playback stops at the final frame. Frame dropping exists only in preview display, never in render/export/save paths.
 
 Render-affecting edits stop playback and invalidate revision/cache: pixels, composition/layers, particle/motion/2.5D, opacity, visibility, keyframes, canvas size, and timeline render properties. Selection, focus, Pan, Zoom, guide visibility, Help, and metadata-only Save do not invalidate it. Project transitions always clear it.

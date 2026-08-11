@@ -72,7 +72,10 @@ def test_transform_timer_is_latest_wins_and_rejects_stale_revision(tmp_path, mon
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer", lambda project,item: final_calls.append(item.layer_transform.revision) or generated)
     for value in range(20):
         layer.layer_transform.rotation_y = value; layer.layer_transform.revision += 1; window._queue_resource_transform_render(layer)
-    QTest.qWait(70)
+    window.resource_transform_finalize_timer.stop()
+    elapsed = 0
+    while elapsed < 2000 and window.canvas.interactive_transform_proxy is None:
+        QTest.qWait(10); elapsed += 10
     assert current_calls == [] and final_calls == []
     assert window.canvas.interactive_transform_proxy.last_applied_revision==20
     window._pending_resource_transforms[layer.id] = 19; window._flush_resource_transform_current()

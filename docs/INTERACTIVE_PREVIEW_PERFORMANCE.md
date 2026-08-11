@@ -59,10 +59,10 @@ Offscreen diagnostic, 600×600 with five visible Resource Layers (one run; timin
 | First mouse press, cold Miss | 1 | 100.089ms | 1 depth-buffer pair, 1 Base QImage/Pixmap |
 | First proxy paint | 20 | 3.998ms | 10.298ms |
 
-The cold prefix/suffix alpha composite remains the largest preparation cost, but it is now paid during idle on a worker. The synchronous cache-hit press is below the 10ms diagnostic target and performs no particle simulation, exact NumPy transform, full-layer composite, or image conversion. A miss keeps the previous synchronous fallback so input can start without waiting for stale background work.
+The cold prefix/suffix alpha composite remains the largest preparation cost, but it is now paid during idle on a worker. The synchronous cache-hit press is below the 10ms diagnostic target and performs no particle simulation, exact NumPy transform, full-layer composite, or image conversion. A cold miss schedules the same work immediately at low priority and begins handle tracking without doing Base rendering or depth composition on the GUI thread.
 
 ## Exact-output boundary
 
-Mouse Release, Escape, SpinBox `editingFinished`, and 120ms idle run one exact current-frame CPU render. Playback, Bake, PNG Export, and Preview Sequence Export use the exact CPU frame/sequence path. Ordinary Save/Save As serializes Motion metadata and existing pixels without invoking particle current/full rendering. Proxy images never enter Project frames, serialization, or exports.
+Mouse Release, SpinBox `editingFinished`, and 120ms idle run one exact current-frame CPU render. Escape discards transient state without rendering because the Project model and exact pixels were never changed during the drag. Playback, Bake, PNG Export, and Preview Sequence Export use the exact CPU frame/sequence path. Ordinary Save/Save As serializes Motion metadata and existing pixels without invoking particle current/full rendering. Proxy images never enter Project frames, serialization, or exports.
 
 Effect playback now has a separate runtime exact-frame preparation/cache path; it never stores proxy pixels in the model. Interactive press/move/release behavior and its zero-full-sequence drag guarantees remain unchanged. See `EFFECT_PLAYBACK_PERFORMANCE.md` for playback-specific measurements and invalidation rules.

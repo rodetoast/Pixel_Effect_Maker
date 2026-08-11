@@ -97,7 +97,7 @@ def test_motion_escape_restores_with_one_exact_render_and_no_undo(tmp_path,monke
     QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=start);QTest.mouseMove(canvas,start+QPoint(24,0));QTest.keyClick(canvas,Qt.Key.Key_Escape);APP.processEvents()
     assert layer.particle_settings.motion.to_dict()==snapshot
     assert window.application_undo_stack.count()==before_count
-    assert calls==[(layer.id,window.frame_index)]
+    assert calls==[]
     window.dirty=False;window.close()
 
 

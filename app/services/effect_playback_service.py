@@ -6,6 +6,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass,field
 from queue import Empty,SimpleQueue
+from threading import Event
 from time import perf_counter
 
 import numpy as np
@@ -44,7 +45,7 @@ class PlaybackPerformanceCollector:
     def __init__(self):
         self.calls={};self.total_ms={};self.maximum_ms={}
         self.render_calls=0;self.cache_hits=0;self.cache_misses=0
-        self.qimage_creations=0;self.pixmap_creations=0;self.stale_results=0
+        self.qimage_creations=0;self.pixmap_creations=0;self.stale_results=0;self.cancelled_workers=0;self.cancelled_frames=0
     def record(self,name,value):
         value=float(value);self.calls[name]=self.calls.get(name,0)+1
         self.total_ms[name]=self.total_ms.get(name,0.0)+value
@@ -116,12 +117,16 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
 
 
 class _PlaybackWorker(QRunnable):
-    def __init__(self,generation,project,keys,preview_frames,preview_layer_id,queue):
-        super().__init__();self.generation=generation;self.project=project;self.keys=keys;self.preview_frames=preview_frames;self.preview_layer_id=preview_layer_id;self.queue=queue
+    def __init__(self,generation,project,keys,preview_frames,preview_layer_id,queue,cancelled):
+        super().__init__();self.generation=generation;self.project=project;self.keys=keys;self.preview_frames=preview_frames;self.preview_layer_id=preview_layer_id;self.queue=queue;self.cancelled=cancelled
     def run(self):
         try:
-            for key in self.keys:
+            for offset,key in enumerate(self.keys):
+                if self.cancelled.is_set():
+                    self.queue.put((self.generation,None,None,{"cancelled_frames":len(self.keys)-offset},"cancelled"));return
                 rgba,timings=render_exact_playback_frame(self.project,key.frame_index,self.preview_frames,self.preview_layer_id)
+                if self.cancelled.is_set():
+                    self.queue.put((self.generation,None,None,{"cancelled_frames":len(self.keys)-offset-1},"cancelled"));return
                 self.queue.put((self.generation,key,rgba,timings,None))
         except Exception as exc:
             log_exception("effect_playback_prepare",exc);self.queue.put((self.generation,None,None,{},exc))
@@ -131,12 +136,12 @@ class EffectPlaybackManager(QObject):
     frame_ready=Signal(object)
     preparation_failed=Signal(str)
     def __init__(self,parent=None,maximum_bytes=PLAYBACK_CACHE_MAX_BYTES):
-        super().__init__(parent);self.cache=PlaybackFrameCache(maximum_bytes);self.collector=PlaybackPerformanceCollector();self._generation=0;self._queue=SimpleQueue();self._pool=QThreadPool.globalInstance()
+        super().__init__(parent);self.cache=PlaybackFrameCache(maximum_bytes);self.collector=PlaybackPerformanceCollector();self._generation=0;self._queue=SimpleQueue();self._pool=QThreadPool.globalInstance();self._cancelled=Event()
         self._poll=QTimer(self);self._poll.timeout.connect(self._drain);self._poll.start(5)
     @property
     def generation(self):return self._generation
-    def invalidate(self):self._generation+=1;self.cache.clear()
-    def close(self):self._generation+=1;self._poll.stop();self.cache.clear()
+    def invalidate(self):self._cancelled.set();self._generation+=1;self.cache.clear()
+    def close(self):self._cancelled.set();self._generation+=1;self._poll.stop();self.cache.clear()
     def key(self,project,render_revision,frame_index,preview_identity=()):
         return PlaybackFrameKey(id(project),int(render_revision),int(frame_index),(project.width,project.height),playback_relevant_revision(project),tuple(preview_identity))
     def get(self,key):
@@ -145,7 +150,7 @@ class EffectPlaybackManager(QObject):
         else:self.collector.cache_hits+=1
         return value
     def prepare(self,project,render_revision,start_frame=0,preview_frames=None,preview_layer_id=None,preview_identity=()):
-        self._generation+=1;generation=self._generation
+        self._cancelled.set();self._cancelled=Event();self._generation+=1;generation=self._generation
         count=len(preview_frames) if preview_frames is not None else len(project.frames)
         order=list(range(max(0,min(start_frame,count-1)),count))+list(range(0,max(0,min(start_frame,count-1))))
         # Keep the current frame and the configured ready-ahead window at the
@@ -157,12 +162,14 @@ class EffectPlaybackManager(QObject):
         if missing:
             snapshot_started=perf_counter();snapshot=deepcopy(project);preview_snapshot=None if preview_frames is None else [np.ascontiguousarray(frame).copy() for frame in preview_frames]
             self.collector.record("snapshot_copy",(perf_counter()-snapshot_started)*1000.0)
-            self._pool.start(_PlaybackWorker(generation,snapshot,missing,preview_snapshot,preview_layer_id,self._queue),-1)
+            self._pool.start(_PlaybackWorker(generation,snapshot,missing,preview_snapshot,preview_layer_id,self._queue,self._cancelled),-1)
         return keys
     def _drain(self):
         while True:
             try:generation,key,rgba,timings,error=self._queue.get_nowait()
             except Empty:return
+            if error=="cancelled":
+                self.collector.cancelled_workers+=1;self.collector.cancelled_frames+=int(timings.get("cancelled_frames",0));continue
             if generation!=self._generation:self.collector.stale_results+=1;continue
             if error is not None:self.preparation_failed.emit(str(error));continue
             self.collector.render_calls+=1
