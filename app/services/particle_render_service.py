@@ -21,7 +21,7 @@ from app.services.effect_render_service import EffectRenderError, render_transfo
 from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
-from app.services.layer_space_transform_service import project_local_point
+from app.services.layer_space_transform_service import project_local_points
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -78,9 +78,9 @@ def _stable_motion_phase(seed: int, particle_id: int, spread: float) -> float:
     return fraction*float(spread)
 
 
-def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: ParticleInstance, normalized_age: float, effect_frame: int = 0) -> ParticleMotionPosition:
+def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: ParticleInstance, normalized_age: float, effect_frame: int = 0, *, evaluated_motion: ParticleMotionSettings | None = None) -> ParticleMotionPosition:
     """Evaluate Linear, Orbit, or Helix in particle-local XYZ coordinates."""
-    motion=settings.motion.evaluated(effect_frame)
+    motion=evaluated_motion or settings.motion.evaluated(effect_frame)
     t=max(0.0,min(1.0,float(normalized_age)))
     if motion.mode=="linear":
         age=t*instance.lifetime
@@ -253,9 +253,11 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     """Render one exact frame while reusing deterministic spawn/resource state."""
     settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
-    output=empty_pixels(project.width,project.height);alive=[]
+    output=empty_pixels(project.width,project.height);alive=[];candidates=[];local_points=[]
     layer_space_transform = layer_space_transform or EffectLayerTransform3D()
     layer_value = layer_space_transform.evaluated(frame_index)
+    motion_value=settings.motion.evaluated(frame_index)
+    motion_perspective=motion_value.perspective_strength
     for order,instance in enumerate(instances):
             age = frame_index - instance.birth_frame
             if age < 0 or age >= instance.lifetime: continue
@@ -263,24 +265,30 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             if pixels is None: continue
             amount = 1.0 if instance.lifetime <= 1 else ease(age / (instance.lifetime - 1), settings.easing)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
-            position=evaluate_particle_motion(settings,instance,normalized,frame_index)
-            local_x,local_y,motion_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
+            position=evaluate_particle_motion(settings,instance,normalized,frame_index,evaluated_motion=motion_value)
+            local_x,local_y,motion_scale,visible=project_particle_billboard(position,motion_perspective,project.width,project.height)
             if not visible:continue
-            projected=project_local_point(local_x,local_y,position.z,layer_space_transform,project.width,project.height,frame_index)
-            if not projected.valid:continue
-            x,y=projected.x,projected.y
-            scale_x=instance.scale*motion_scale*projected.perspective_scale*abs(layer_value.scale_x)
-            scale_y=instance.scale*motion_scale*projected.perspective_scale*abs(layer_value.scale_y)
+            candidates.append((order,instance,pixels,amount,motion_scale,age,normalized,position))
+            local_points.append((local_x,local_y,position.z))
+    if candidates:
+        projected_xy,depths,perspective_scales,valid_points=project_local_points(
+            np.asarray(local_points,dtype=np.float64),layer_value,project.width,project.height,
+        )
+    for index,(order,instance,pixels,amount,motion_scale,age,normalized,position) in enumerate(candidates):
+            if not valid_points[index]:continue
+            x,y=map(float,projected_xy[index]);view_z=float(depths[index]);perspective_scale=float(perspective_scales[index])
+            scale_x=instance.scale*motion_scale*perspective_scale*abs(layer_value.scale_x)
+            scale_y=instance.scale*motion_scale*perspective_scale*abs(layer_value.scale_y)
             if diagnostic_collector is not None:
                 source_frame=particle_clip_frame_index(clip,instance,age,project.fps)
                 diagnostic_collector.append(ParticleFrameDiagnostic(
                     instance.particle_id,order,instance.birth_frame,instance.lifetime,age,normalized,source_frame,
-                    x,y,projected.view_z,instance.rotation+instance.angular_velocity*age,
+                    x,y,view_z,instance.rotation+instance.angular_velocity*age,
                     (scale_x+scale_y)*0.5,
                     settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
-                    (projected.view_z,order),position.x,position.y,position.z,
+                    (view_z,order),position.x,position.y,position.z,
                 ))
-            alive.append((projected.view_z,order,instance,pixels,amount,x,y,scale_x,scale_y,age))
+            alive.append((view_z,order,instance,pixels,amount,x,y,scale_x,scale_y,age))
     alive.sort(key=lambda item:(item[0],item[1]))
     for _,_,instance,pixels,amount,x,y,scale_x,scale_y,age in alive:
             asset = SourceAsset(name="particle", pixels=pixels, pivot_x=clip.pivot_x, pivot_y=clip.pivot_y)

@@ -24,7 +24,7 @@ class EffectRenderError(ValueError):
     """Raised when a generator cannot be rendered without partial mutation."""
 
 
-EFFECT_RASTER_STATS={"source_over_calls":0,"transparent_skips":0,"opaque_fast_paths":0,"identity_blits":0,"roi_pixels":0,"offscreen_skips":0}
+EFFECT_RASTER_STATS={"source_over_calls":0,"transparent_skips":0,"opaque_fast_paths":0,"identity_blits":0,"translation_blits":0,"affine_blits":0,"roi_pixels":0,"offscreen_skips":0}
 
 
 def reset_effect_raster_stats() -> None:
@@ -113,6 +113,57 @@ def _source_over(destination: np.ndarray, source: np.ndarray) -> None:
     destination[:] = np.clip(np.rint(output * 255.0), 0, 255).astype(np.uint8)
 
 
+def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x: float,top_left_y: float,opacity: float) -> None:
+    """Sample an unrotated unit-scale sprite without projective setup."""
+    height,width=canvas.shape[:2]
+    left=max(0,int(math.floor(top_left_x)));right=min(width-1,int(math.ceil(top_left_x+asset.width)))
+    top=max(0,int(math.floor(top_left_y)));bottom=min(height-1,int(math.ceil(top_left_y+asset.height)))
+    if right<left or bottom<top:EFFECT_RASTER_STATS["offscreen_skips"]+=1;return
+    u=(np.arange(left,right+1,dtype=np.float64)-top_left_x)/asset.width
+    v=(np.arange(top,bottom+1,dtype=np.float64)-top_left_y)/asset.height
+    valid_x=(u>=0.0)&(u<=1.0);valid_y=(v>=0.0)&(v<=1.0)
+    source_x=np.clip(np.rint(u*(asset.width-1)),0,asset.width-1).astype(int)
+    source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
+    sampled=asset.pixels[source_y[:,None],source_x[None,:]].copy()
+    sampled[~(valid_y[:,None]&valid_x[None,:])]=0
+    if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
+    _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["translation_blits"]+=1
+
+
+def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,opacity: float) -> None:
+    """Sample the 2D rotate/scale path with an analytic affine inverse."""
+    destination=_destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,0.0,0.0,0.0)
+    origin=destination[0];axis_u=destination[1]-origin;axis_v=destination[3]-origin
+    determinant=axis_u[0]*axis_v[1]-axis_u[1]*axis_v[0]
+    if abs(float(determinant))<=1e-12:return
+    height,width=canvas.shape[:2];left=max(0,int(math.floor(float(destination[:,0].min()))));right=min(width-1,int(math.ceil(float(destination[:,0].max()))));top=max(0,int(math.floor(float(destination[:,1].min()))));bottom=min(height-1,int(math.ceil(float(destination[:,1].max()))))
+    if right<left or bottom<top:EFFECT_RASTER_STATS["offscreen_skips"]+=1;return
+    dx=np.arange(left,right+1,dtype=np.float64)[None,:]-origin[0];dy=np.arange(top,bottom+1,dtype=np.float64)[:,None]-origin[1]
+    u=(dx*axis_v[1]-dy*axis_v[0])/determinant;v=(-dx*axis_u[1]+dy*axis_u[0])/determinant
+    valid=(u>=0.0)&(u<=1.0)&(v>=0.0)&(v<=1.0)
+    source_x=np.clip(np.rint(u*(asset.width-1)),0,asset.width-1).astype(int);source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
+    sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
+    if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
+    _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["affine_blits"]+=1
+
+
+def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,horizontal_tilt: float,vertical_tilt: float,perspective: float,opacity: float) -> None:
+    """Retain the general projective nearest sampler as the exact fallback/reference."""
+    destination = _destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective)
+    try:inverse = np.linalg.inv(_homography_from_unit_square(destination))
+    except np.linalg.LinAlgError:return
+    height,width=canvas.shape[:2];left=max(0,int(math.floor(float(destination[:,0].min()))));right=min(width-1,int(math.ceil(float(destination[:,0].max()))));top=max(0,int(math.floor(float(destination[:,1].min()))));bottom=min(height-1,int(math.ceil(float(destination[:,1].max()))))
+    if right<left or bottom<top:EFFECT_RASTER_STATS["offscreen_skips"]+=1;return
+    grid_x,grid_y=np.meshgrid(np.arange(left,right+1,dtype=np.float64),np.arange(top,bottom+1,dtype=np.float64))
+    points=np.stack((grid_x,grid_y,np.ones_like(grid_x)),axis=-1);mapped=points@inverse.T;denominator=mapped[...,2]
+    valid_denominator=np.abs(denominator)>1e-10;safe_denominator=np.where(valid_denominator,denominator,1.0);u=mapped[...,0]/safe_denominator;v=mapped[...,1]/safe_denominator
+    valid=valid_denominator&(u>=0.0)&(u<=1.0)&(v>=0.0)&(v<=1.0)
+    source_x=np.clip(np.rint(u*(asset.width-1)),0,asset.width-1).astype(int);source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
+    sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
+    if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
+    _source_over(canvas[top:bottom+1,left:right+1],sampled)
+
+
 def render_transformed_source(
     canvas: np.ndarray,
     asset: SourceAsset,
@@ -150,57 +201,11 @@ def render_transformed_source(
         else:_source_over(destination,source)
         EFFECT_RASTER_STATS["identity_blits"]+=1
         return
-    destination = _destination_corners(
-        asset,
-        position_x,
-        position_y,
-        rotation,
-        scale_x,
-        scale_y,
-        horizontal_tilt,
-        vertical_tilt,
-        perspective,
-    )
-    try:
-        inverse = np.linalg.inv(_homography_from_unit_square(destination))
-    except np.linalg.LinAlgError:
-        return
-    height, width = canvas.shape[:2]
-    left = max(0, int(math.floor(float(destination[:, 0].min()))))
-    right = min(width - 1, int(math.ceil(float(destination[:, 0].max()))))
-    top = max(0, int(math.floor(float(destination[:, 1].min()))))
-    bottom = min(height - 1, int(math.ceil(float(destination[:, 1].max()))))
-    if right < left or bottom < top:
-        EFFECT_RASTER_STATS["offscreen_skips"]+=1
-        return
-    grid_x, grid_y = np.meshgrid(
-        np.arange(left, right + 1, dtype=np.float64),
-        np.arange(top, bottom + 1, dtype=np.float64),
-    )
-    points = np.stack((grid_x, grid_y, np.ones_like(grid_x)), axis=-1)
-    mapped = points @ inverse.T
-    denominator = mapped[..., 2]
-    valid_denominator = np.abs(denominator) > 1e-10
-    safe_denominator = np.where(valid_denominator, denominator, 1.0)
-    u = mapped[..., 0] / safe_denominator
-    v = mapped[..., 1] / safe_denominator
-    valid = (
-        valid_denominator
-        & (u >= 0.0)
-        & (u <= 1.0)
-        & (v >= 0.0)
-        & (v <= 1.0)
-    )
-    source_x = np.clip(np.rint(u * (asset.width - 1)), 0, asset.width - 1).astype(int)
-    source_y = np.clip(np.rint(v * (asset.height - 1)), 0, asset.height - 1).astype(int)
-    sampled = asset.pixels[source_y, source_x].copy()
-    sampled[~valid] = 0
-    if opacity < 1.0:
-        sampled[..., 3] = np.rint(sampled[..., 3].astype(float) * opacity).astype(
-            np.uint8
-        )
-    region = canvas[top : bottom + 1, left : right + 1]
-    _source_over(region, sampled)
+    if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
+        _render_translation_source(canvas,asset,top_left_x,top_left_y,opacity);return
+    if abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
+        _render_affine_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,opacity);return
+    _render_projective_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective,opacity)
 
 
 def render_generator_frames(

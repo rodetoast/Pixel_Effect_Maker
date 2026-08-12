@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Particle Renderer Second Profiling Pass
+
+- Batched frame-invariant Motion/System transform evaluation and particle-center projection instead of rebuilding the same evaluated transforms per particle.
+- Added byte-exact translation and affine nearest-sampling paths that avoid per-particle homography solve, inverse matrix and meshgrid setup when no projective tilt is present.
+- Reduced the fixed 600×600 Particle-100 warm-frame fixtures by about 46–60% and the representative 12-frame cold prebuffer by about 46%, while preserving Linear/Orbit/Helix, animated Resource, 2.5D, Playback/Bake/PNG output semantics.
+
 ## Unreleased — v9 Integrated Production Workflow Stability QA
 
 - Added deterministic PNG/animated Resource fixtures that connect Resource Sprite 2.5D, Single/Linear/Orbit/Helix, System and Surface transforms through frame-order access, metadata-only Save/Reload, Playback, Bake, PNG and PNG Sequence output.
