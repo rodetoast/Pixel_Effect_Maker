@@ -15,8 +15,8 @@ def test_display_name() -> None:
 
 
 def test_project_format_version_is_seven_for_compact_pixels() -> None:
-    assert FORMAT_VERSION == 8
-    assert Project.create_default().to_dict()["format_version"] == 8
+    assert FORMAT_VERSION == 9
+    assert Project.create_default().to_dict()["format_version"] == 9
 
 
 def test_version_cli_does_not_start_gui(capsys) -> None:

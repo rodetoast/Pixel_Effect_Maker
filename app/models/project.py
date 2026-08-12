@@ -24,7 +24,7 @@ from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 
-FORMAT_VERSION = 8
+FORMAT_VERSION = 9
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -209,7 +209,7 @@ class Project:
             raise ProjectError(
                 f"unsupported format_version {version}: project requires a newer application version"
             )
-        if version not in (1, 2, 3, 4, 5, 6, 7, FORMAT_VERSION):
+        if version not in (1, 2, 3, 4, 5, 6, 7, 8, FORMAT_VERSION):
             raise ProjectError(f"unsupported format_version: {version!r}")
         if int(version) >= 7:
             compact_bytes = 0
@@ -261,7 +261,10 @@ class Project:
             if int(version) == 5:
                 project.effect_composition_layers = [EffectCompositionLayer.from_dict(item) for item in data.get("effect_composition_layers", [])]
             if int(version) >= 6:
-                project.effect_resource_layers = [EffectResourceLayer.from_dict(item) for item in data.get("effect_resource_layers", [])]
+                project.effect_resource_layers = [
+                    EffectResourceLayer.from_dict(item, source_version=int(version))
+                    for item in data.get("effect_resource_layers", [])
+                ]
                 project.effect_composition_layers = [item.as_composition_layer() for item in project.effect_resource_layers if item.placement_mode != PLACEMENT_PARTICLE]
                 project.particle_emitters = [item.as_particle_emitter() for item in project.effect_resource_layers if item.placement_mode == PLACEMENT_PARTICLE]
         except (KeyError, TypeError, ValueError) as exc:
@@ -278,7 +281,7 @@ class Project:
             if unknown:
                 raise ProjectError("frame contains unknown layer IDs")
             missing = layer_ids - set(frame.layer_pixels)
-            if missing and int(version) >= FORMAT_VERSION:
+            if missing and int(version) >= 8:
                 raise ProjectError("frame is missing layer pixel payloads")
             for layer in project.layers:
                 frame.layer_pixels.setdefault(

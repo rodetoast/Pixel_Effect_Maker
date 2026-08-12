@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QFormLayout, QVBoxLayout, QWidget
 
 from app.models.source_asset import SourceAsset
@@ -23,31 +23,77 @@ def asset_durations(asset):
 
 
 class AssetPreviewCanvas(QWidget):
+    MIN_ZOOM=0.1;MAX_ZOOM=32.0;FIT_MARGIN=32
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.asset = None
-        self.frame = 0
-        self.setMinimumSize(320, 260)
+        self.asset=None;self.frame=0;self.zoom=1.0;self.pan=QPointF();self.fit_mode=True;self._panning=False;self._pan_start=QPointF();self._pan_origin=QPointF();self.paint_calls=0
+        self.setMinimumSize(320,260);self.setMouseTracking(True);self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_asset(self, asset, frame=0):
-        self.asset, self.frame = asset, frame
-        self.update()
+        changed=asset is not self.asset;self.asset,self.frame=asset,frame
+        if changed:self.fit_to_view()
+        else:self.update()
+
+    def _pixels(self):return None if self.asset is None else asset_frames(self.asset)[self.frame]
+
+    def _fit_zoom(self):
+        pixels=self._pixels()
+        if pixels is None:return 1.0
+        raw=min(max(1,self.width()-self.FIT_MARGIN*2)/pixels.shape[1],max(1,self.height()-self.FIT_MARGIN*2)/pixels.shape[0],self.MAX_ZOOM)
+        return max(self.MIN_ZOOM,float(max(1,int(raw))) if raw>=1 else float(raw))
+
+    def fit_to_view(self):self.fit_mode=True;self.zoom=self._fit_zoom();self.pan=QPointF();self.update()
+    def actual_pixels(self):self.fit_mode=False;self.zoom=1.0;self.pan=QPointF();self.update()
+
+    def image_rect(self):
+        pixels=self._pixels()
+        if pixels is None:return QRectF()
+        width=pixels.shape[1]*self.zoom;height=pixels.shape[0]*self.zoom;center=QPointF(self.width()/2,self.height()/2)+self.pan
+        return QRectF(center.x()-width/2,center.y()-height/2,width,height)
+
+    def source_to_widget(self,point):
+        rect=self.image_rect();return QPointF(rect.left()+float(point.x())*self.zoom,rect.top()+float(point.y())*self.zoom)
+
+    def pivot_marker_position(self):return QPointF() if self.asset is None else self.source_to_widget(QPointF(self.asset.pivot_x,self.asset.pivot_y))
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if self.fit_mode:self.zoom=self._fit_zoom();self.pan=QPointF()
+
+    def wheelEvent(self,event):
+        if self.asset is None:return super().wheelEvent(event)
+        delta=event.angleDelta().y()
+        if delta==0:event.ignore();return
+        old=self.zoom;new=max(self.MIN_ZOOM,min(self.MAX_ZOOM,old*(2.0 if delta>0 else .5)))
+        if new==old:event.accept();return
+        cursor=event.position();local=(cursor-(QPointF(self.width()/2,self.height()/2)+self.pan))/old;self.fit_mode=False;self.zoom=new;self.pan=cursor-QPointF(self.width()/2,self.height()/2)-local*new;self.update();event.accept()
+
+    def mousePressEvent(self,event):
+        if event.button()==Qt.MouseButton.MiddleButton:self._panning=True;self._pan_start=event.position();self._pan_origin=QPointF(self.pan);self.setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self,event):
+        if self._panning:self.fit_mode=False;self.pan=self._pan_origin+(event.position()-self._pan_start);self.update();event.accept();return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        if self._panning and event.button()==Qt.MouseButton.MiddleButton:self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
+        self.paint_calls+=1
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#20242b"))
         if self.asset is None:
             return
-        pixels = np.ascontiguousarray(asset_frames(self.asset)[self.frame])
-        scale = max(1, min(32, int(min(self.width() / pixels.shape[1], self.height() / pixels.shape[0]))))
-        rect = QRectF((self.width() - pixels.shape[1] * scale) / 2, (self.height() - pixels.shape[0] * scale) / 2, pixels.shape[1] * scale, pixels.shape[0] * scale)
-        tile = max(4, scale * 2)
+        pixels=np.ascontiguousarray(self._pixels());rect=self.image_rect();tile=max(4,round(self.zoom*2))
         for y in range(int(rect.top()), int(rect.bottom()) + 1, tile):
             for x in range(int(rect.left()), int(rect.right()) + 1, tile):
                 painter.fillRect(x, y, tile, tile, QColor("#dfe3e8") if ((x - int(rect.left())) // tile + (y - int(rect.top())) // tile) % 2 else QColor("#aeb4bc"))
         image = QImage(pixels.data, pixels.shape[1], pixels.shape[0], pixels.strides[0], QImage.Format.Format_RGBA8888).copy()
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
         painter.drawPixmap(rect, QPixmap.fromImage(image), QRectF(0, 0, pixels.shape[1], pixels.shape[0]))
+        pivot=self.pivot_marker_position();painter.setRenderHint(QPainter.RenderHint.Antialiasing,True);painter.setPen(QPen(QColor("#ff6b6b"),2));painter.setBrush(QColor(32,36,43,210));painter.drawEllipse(pivot,7,7);painter.drawLine(pivot-QPointF(10,0),pivot+QPointF(10,0));painter.drawLine(pivot-QPointF(0,10),pivot+QPointF(0,10));painter.setPen(QColor("#ffffff"));painter.drawText(pivot+QPointF(10,-8),"P")
 
 
 class AssetFrameStrip(QListWidget):

@@ -15,11 +15,13 @@ from app.models.frame import empty_pixels
 from app.models.layer import Layer
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings, ParticleInstance, ParticleMotionSettings
 from app.models.project import Project
+from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.models.source_asset import SourceAsset
 from app.services.effect_render_service import EffectRenderError, render_transformed_source
 from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
+from app.services.layer_space_transform_service import project_local_point
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -56,6 +58,9 @@ class ParticleFrameDiagnostic:
     scale: float
     opacity: float
     depth_key: tuple[float, int]
+    local_x: float = 0.0
+    local_y: float = 0.0
+    local_z: float = 0.0
 
 
 def _motion_ease(value: float, easing: str) -> float:
@@ -244,11 +249,13 @@ def particle_spawn_states(settings: ParticleEmitterSettings, clip_length: int) -
     return cached
 
 
-def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None, diagnostic_collector: list[ParticleFrameDiagnostic] | None = None) -> np.ndarray:
+def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None, diagnostic_collector: list[ParticleFrameDiagnostic] | None = None, layer_space_transform: EffectLayerTransform3D | None = None) -> np.ndarray:
     """Render one exact frame while reusing deterministic spawn/resource state."""
     settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
     output=empty_pixels(project.width,project.height);alive=[]
+    layer_space_transform = layer_space_transform or EffectLayerTransform3D()
+    layer_value = layer_space_transform.evaluated(frame_index)
     for order,instance in enumerate(instances):
             age = frame_index - instance.birth_frame
             if age < 0 or age >= instance.lifetime: continue
@@ -257,35 +264,42 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             amount = 1.0 if instance.lifetime <= 1 else ease(age / (instance.lifetime - 1), settings.easing)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
             position=evaluate_particle_motion(settings,instance,normalized,frame_index)
-            x,y,perspective_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
+            local_x,local_y,motion_scale,visible=project_particle_billboard(position,settings.motion.value("perspective_strength",frame_index),project.width,project.height)
             if not visible:continue
+            projected=project_local_point(local_x,local_y,position.z,layer_space_transform,project.width,project.height,frame_index)
+            if not projected.valid:continue
+            x,y=projected.x,projected.y
+            scale_x=instance.scale*motion_scale*projected.perspective_scale*abs(layer_value.scale_x)
+            scale_y=instance.scale*motion_scale*projected.perspective_scale*abs(layer_value.scale_y)
             if diagnostic_collector is not None:
                 source_frame=particle_clip_frame_index(clip,instance,age,project.fps)
                 diagnostic_collector.append(ParticleFrameDiagnostic(
                     instance.particle_id,order,instance.birth_frame,instance.lifetime,age,normalized,source_frame,
-                    x,y,position.z,instance.rotation+instance.angular_velocity*age,
-                    instance.scale*perspective_scale,
+                    x,y,projected.view_z,instance.rotation+instance.angular_velocity*age,
+                    (scale_x+scale_y)*0.5,
                     settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
-                    (position.z,order),
+                    (projected.view_z,order),position.x,position.y,position.z,
                 ))
-            alive.append((position.z,order,instance,pixels,amount,x,y,perspective_scale,age))
-    if settings.motion.mode!="linear":alive.sort(key=lambda item:(item[0],item[1]))
-    for _,_,instance,pixels,amount,x,y,perspective_scale,age in alive:
+            alive.append((projected.view_z,order,instance,pixels,amount,x,y,scale_x,scale_y,age))
+    alive.sort(key=lambda item:(item[0],item[1]))
+    for _,_,instance,pixels,amount,x,y,scale_x,scale_y,age in alive:
             asset = SourceAsset(name="particle", pixels=pixels, pivot_x=clip.pivot_x, pivot_y=clip.pivot_y)
             render_transformed_source(output, asset,
                 position_x=x, position_y=y,
                 rotation=instance.rotation + instance.angular_velocity * age,
-                scale_x=instance.scale*perspective_scale, scale_y=instance.scale*perspective_scale,
+                scale_x=scale_x, scale_y=scale_y,
                 horizontal_tilt=0, vertical_tilt=0, perspective=0,
                 opacity=settings.opacity_start + (settings.opacity_end - settings.opacity_start) * amount)
+    if layer_value.opacity < 1.0:
+        output[...,3]=np.rint(output[...,3].astype(np.float64)*layer_value.opacity).astype(np.uint8)
     PARTICLE_RENDER_STATS["current_frame_renders"]+=1
     return output
 
 
-def render_particle_frames(project: Project, emitter: ParticleEmitter) -> list[np.ndarray]:
+def render_particle_frames(project: Project, emitter: ParticleEmitter, *, layer_space_transform: EffectLayerTransform3D | None = None) -> list[np.ndarray]:
     settings = emitter.settings; settings.validate();clip=_resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames));PARTICLE_RENDER_STATS["full_sequence_renders"]+=1
-    outputs=[render_particle_frame(project,emitter,index,clip=clip,instances=instances) for index in range(settings.output_frame_count)]
+    outputs=[render_particle_frame(project,emitter,index,clip=clip,instances=instances,layer_space_transform=layer_space_transform) for index in range(settings.output_frame_count)]
     return outputs
 
 

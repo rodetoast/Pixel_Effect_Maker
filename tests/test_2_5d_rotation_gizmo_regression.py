@@ -1,11 +1,13 @@
 import os
+import time
 from copy import deepcopy
 
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QPoint,QPointF,QSettings,Qt
+from PySide6.QtCore import QPoint,QPointF,QSettings,QThreadPool,Qt
+from PySide6.QtGui import QImage,QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -57,6 +59,42 @@ def target_for(window,angle=135):
     radians=np.radians(angle);return QPoint(round(center.x()+42*np.cos(radians)),round(center.y()+42*np.sin(radians)))
 
 
+def test_gizmo_remains_visible_while_delayed_exact_worker_installs(tmp_path,monkeypatch):
+    window,layer=context(tmp_path,"delayed-overlay");select_mode(window,"rotate_y")
+    import app.services.interactive_gizmo_service as service
+    original=service.render_effect_resource_layer_current_base_frame
+    monkeypatch.setattr(service,"render_effect_resource_layer_current_base_frame",lambda *args,**kwargs:(time.sleep(.15),original(*args,**kwargs))[1])
+    handle=window.canvas.resource_transform_handle_positions()["rotate_y"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle)
+    installed_before=window.interactive_gizmo_renderer.collector.installed
+    for index in range(100):
+        QTest.mouseMove(window.canvas,target_for(window,45+index));QTest.qWait(10);APP.processEvents()
+        positions=window.canvas.resource_transform_handle_positions()
+        assert window.canvas._resource_transform_drag=="rotate_y" and window.canvas.resource_transform is not None
+        assert {"center","rotate_y","x","y","z"}<=set(positions)
+    elapsed=0
+    while window.interactive_gizmo_renderer.collector.installed<=installed_before and elapsed<1000:
+        QTest.qWait(10);APP.processEvents();elapsed+=10
+        assert window.canvas._resource_transform_drag=="rotate_y"
+        assert {"center","rotate_y","x","y","z"}<=set(window.canvas.resource_transform_handle_positions())
+    assert window.interactive_gizmo_renderer.collector.installed>installed_before
+    assert window.canvas._resource_transform_drag=="rotate_y" and window.canvas.effect_guide_settings is not None
+    QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=target_for(window,145));close(window)
+
+
+def test_proxy_paint_order_keeps_guide_and_gizmo_as_final_overlay(tmp_path,monkeypatch):
+    window,layer=context(tmp_path,"paint-order");select_mode(window,"rotate_x");window.canvas.set_effect_guide(layer.id,"particle",layer.particle_settings);window.canvas.set_effect_guides_visible(True)
+    handle=window.canvas.resource_transform_handle_positions()["rotate_x"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle);QTest.mouseMove(window.canvas,target_for(window));
+    state=wait_proxy(window,active=True);assert state is not None
+    order=[]
+    monkeypatch.setattr(window.canvas,"_paint_interactive_transform_proxy",lambda painter,state:order.append("proxy"))
+    monkeypatch.setattr(window.canvas,"_paint_resource_transform_gizmo",lambda painter:order.append("gizmo"))
+    monkeypatch.setattr(window.canvas,"_paint_effect_guide",lambda painter:order.append("guide"))
+    image=QImage(window.canvas.size(),QImage.Format.Format_ARGB32);painter=QPainter(image);window.canvas.render(painter,QPoint());painter.end()
+    assert "proxy" in order and order[-2:]==["guide","gizmo"]
+    assert window.canvas._resource_transform_drag=="rotate_x"
+    QTest.keyClick(window.canvas,Qt.Key.Key_Escape);close(window)
+
+
 @pytest.mark.parametrize("mode",AXES)
 def test_rotation_button_selects_canonical_tool(mode,tmp_path):
     window,_=context(tmp_path,f"button-{mode}");select_mode(window,mode);close(window)
@@ -65,7 +103,7 @@ def test_rotation_button_selects_canonical_tool(mode,tmp_path):
 @pytest.mark.parametrize("mode",AXES)
 def test_rotation_qtest_drag_updates_transient_inspector_proxy_and_release(mode,tmp_path,monkeypatch):
     window,layer=context(tmp_path,f"drag-{mode}");select_mode(window,mode);property_name=mode.replace("rotate_","rotation_")
-    before=deepcopy(layer.layer_transform);before_undo=window.application_undo_stack.count();before_quad,_=projected_quad((10,10,30,30),before,window.project.width,window.project.height)
+    before=deepcopy(layer.layer_transform);before_undo=window.application_undo_stack.count()
     full=[];current=[];module=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer","apply_effect_resource_layer_current_frame"])
     original_full=module.apply_effect_resource_layer;original_current=module.apply_effect_resource_layer_current_frame
     monkeypatch.setattr(module,"apply_effect_resource_layer",lambda *a,**k:full.append(1) or original_full(*a,**k))
@@ -76,15 +114,18 @@ def test_rotation_qtest_drag_updates_transient_inspector_proxy_and_release(mode,
     transient=deepcopy(window.canvas.resource_transform);value=getattr(transient,property_name)
     assert value==pytest.approx(135,abs=2) and not hasattr(transient,mode)
     assert layer.layer_transform.to_dict()==before.to_dict()
-    QTest.qWait(45);APP.processEvents();panel=window.particle_properties.transform_panel
+    panel=window.particle_properties.transform_panel;elapsed=0
+    while panel.fields[property_name].value()!=pytest.approx(value,abs=.01) and elapsed<500:
+        QTest.qWait(10);APP.processEvents();elapsed+=10
     assert panel.fields[property_name].value()==pytest.approx(value,abs=.01)
     state=wait_proxy(window,active=True);assert state is not None
-    after_quad,_=projected_quad((10,10,30,30),state.applied_transform.evaluated(0),window.project.width,window.project.height)
-    assert getattr(state.applied_transform,property_name)==pytest.approx(value) and not np.allclose(before_quad,after_quad)
+    assert state.last_applied_revision>=transient.revision and state.applied_transform.is_identity()
     assert full==[] and current==[]
     QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=target_for(window));APP.processEvents()
     assert getattr(layer.layer_transform,property_name)==pytest.approx(value)
-    assert window.application_undo_stack.count()==before_undo+1 and full==[] and current==[1]
+    elapsed=0
+    while elapsed<2500 and window.canvas.interactive_transform_proxy is not None:QTest.qWait(10);APP.processEvents();elapsed+=10
+    assert window.application_undo_stack.count()==before_undo+1 and full==[] and current==[]
     window.application_undo_stack.undo();assert getattr(layer.layer_transform,property_name)==getattr(before,property_name)
     window.application_undo_stack.redo();assert getattr(layer.layer_transform,property_name)==pytest.approx(value)
     close(window)
@@ -105,7 +146,15 @@ def test_rotation_escape_restores_without_model_mutation_undo_or_exact(mode,tmp_
 @pytest.mark.parametrize("mode",AXES)
 def test_one_hundred_rotation_moves_use_proxy_only(mode,tmp_path,monkeypatch):
     window,layer=context(tmp_path,f"perf-{mode}");select_mode(window,mode)
-    window._schedule_resource_transform_prewarm();state=wait_proxy(window,active=False);assert state is not None
+    window._schedule_resource_transform_prewarm();revision=window.interactive_proxy_prewarm.request_revision;state=None;elapsed=0
+    while elapsed<2500:
+        APP.processEvents();state=window.canvas.interactive_transform_proxy;token=None if state is None else state.prewarm_token
+        if state is not None and not state.active and token is not None and token.request_revision==revision:break
+        QTest.qWait(10);elapsed+=10
+    assert state is not None and state.prewarm_token.request_revision==revision
+    # Isolate the drag measurement from any lower-priority current-frame job
+    # already queued while the window/selection was being initialized.
+    assert QThreadPool.globalInstance().waitForDone(2500);APP.processEvents()
     panel=window.particle_properties.transform_panel;set_layers=[];timeline=[]
     monkeypatch.setattr(panel,"set_layer",lambda *a,**k:set_layers.append(1))
     monkeypatch.setattr(window.timeline,"refresh",lambda *a,**k:timeline.append(1))

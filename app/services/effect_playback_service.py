@@ -103,7 +103,7 @@ class PlaybackFrameCache:
 def playback_relevant_revision(project) -> tuple:
     return (
         tuple((item.id,item.revision) for item in project.resource_compositions),
-        tuple((item.id,item.layer_transform.revision,item.particle_settings.motion.revision) for item in project.effect_resource_layers),
+        tuple((item.id,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision) for item in project.effect_resource_layers),
         tuple((layer.id,layer.visible,layer.opacity) for layer in project.layers),
         project.width,project.height,project.fps,project.loop,
     )
@@ -111,13 +111,14 @@ def playback_relevant_revision(project) -> tuple:
 
 def _static_resource_layer_key(project,layer):
     if layer.placement_mode==PLACEMENT_PARTICLE:return None
-    settings=layer.single_settings;transform=layer.layer_transform
+    settings=layer.single_settings;transform=layer.layer_space_transform;surface=layer.surface_transform
     if settings.start_x!=settings.end_x or settings.start_y!=settings.end_y:return None
     if settings.start_frame>0 or settings.end_frame<len(project.frames)-1:return None
     if any(track.keyframes for track in transform.tracks.values()):return None
+    if any(track.keyframes for track in surface.tracks.values()):return None
     composition=next((item for item in project.resource_compositions if item.id==layer.resource_composition_id),None)
     if composition is None or composition.frame_count!=1:return None
-    return (layer.id,repr(settings.to_dict()),repr(transform.to_dict()),composition.id,composition.revision,project.width,project.height,project.fps)
+    return (layer.id,repr(settings.to_dict()),repr(transform.to_dict()),repr(surface.to_dict()),composition.id,composition.revision,project.width,project.height,project.fps)
 
 
 class PlaybackStaticLayerCache:
@@ -155,7 +156,7 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
         if layer.generated_layer_id is not None:dynamic[layer.generated_layer_id]=pixels
     resource_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
     slots=[index for index,layer in enumerate(project.layers) if layer.id in resource_by_generated]
-    ordered=list(project.layers);sorted_resources=sorted((project.layers[index] for index in slots),key=lambda layer:resource_by_generated[layer.id].layer_transform.value("position_z",frame_index))
+    ordered=list(project.layers);sorted_resources=sorted((project.layers[index] for index in slots),key=lambda layer:resource_by_generated[layer.id].layer_space_transform.value("position_z",frame_index))
     for slot,layer in zip(slots,sorted_resources,strict=True):ordered[slot]=layer
     composite_started=perf_counter();output=np.zeros((project.height,project.width,4),dtype=np.float32)
     preview=None if preview_frames is None or not 0<=frame_index<len(preview_frames) else preview_frames[frame_index]

@@ -11,7 +11,7 @@ from PySide6.QtCore import QPointF, QRect
 from PySide6.QtGui import QImage, QPixmap, QPolygonF, QTransform
 
 from app.models.effect_resource_layer import EffectLayerTransform3D
-from app.services.effect_layer_transform_3d_render_service import projected_quad
+from app.services.layer_space_transform_service import projected_layer_quad
 
 
 @dataclass
@@ -116,8 +116,8 @@ def proxy_projected_quad(
     if bounds is None:
         return None, True
     left, top, right, bottom = bounds
-    destination, valid = projected_quad(
-        (left - .5, top - .5, right + .5, bottom + .5),
+    destination, valid = projected_layer_quad(
+        (left, top, right + 1, bottom + 1),
         transform, canvas_width, canvas_height,
     )
     return destination, bool(valid.all() and np.isfinite(destination).all())

@@ -1,6 +1,6 @@
 # Early Preview Build Notice
 
-`PREVIEW_BUILD`, `PREVIEW_LABEL`, and `PREVIEW_NOTICE_REVISION` live in `app/version.py`. They describe the distribution channel without changing `Pixel Effect Maker v0.0.04` or project `FORMAT_VERSION = 8`.
+`PREVIEW_BUILD`, `PREVIEW_LABEL`, and `PREVIEW_NOTICE_REVISION` live in `app/version.py`. They describe the distribution channel without changing `Pixel Effect Maker v0.0.04` or project `FORMAT_VERSION = 9`.
 
 ## Display policy
 

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.models.project import Project
 from app.models.effect_composition_layer import EffectCompositionLayer
-from app.models.effect_resource_layer import EffectLayerTransform3D
+from app.models.effect_resource_layer import EffectLayerTransform3D,PLACEMENT_PARTICLE
 from app.models.particle_emitter import ParticleEmitterSettings
 from app.services.particle_render_service import particle_motion_guide, project_particle_billboard, representative_particle_guide
 
@@ -23,8 +23,7 @@ RESOURCE_TRANSFORM_HANDLE_PROPERTIES={
     "scale":("scale_x","scale_y"),"pivot":("pivot_x","pivot_y"),
 }
 from app.services.resource_composition_render_service import render_composition_frames
-from app.services.effect_layer_transform_3d_render_service import project_points_3d,unproject_point_2d
-from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
+from app.services.layer_space_transform_service import project_local_point,project_local_points,projected_local_axes,transform_layer_space_rgba_frame,unproject_layer_space_point
 from app.services.effect_render_service import render_transformed_source
 from app.models.frame import empty_pixels
 from app.models.source_asset import SourceAsset
@@ -70,7 +69,7 @@ class CanvasWidget(QWidget):
         self._guide_before = None
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
-        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None
+        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self.resource_transform_tooltips={}
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
@@ -78,7 +77,7 @@ class CanvasWidget(QWidget):
         self.interaction_stats={"calls":{},"total_ms":{},"maximum_ms":{},"full_updates_without_rect":0,"partial_paints":0,"full_paints":0}
         self.proxy_base_image_cache=ProxyBaseImageCache()
         self.proxy_composite_cache=InteractiveCompositeCache()
-        self.proxy_stats={"apply_calls":0,"motion_apply_calls":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
+        self.proxy_stats={"apply_calls":0,"motion_apply_calls":0,"motion_composite_waits":0,"paint_calls":0,"paint_skips":0,"depth_rebuilds":0,"partial_updates":0,"full_updates":0,"overlap_rejections":0,"prewarm_installs":0,"prewarm_hits":0,"prewarm_misses":0}
         self.last_proxy_dirty_rect=QRect()
         self.last_prewarm_install_timings={}
         self.last_prewarm_payload_timings={}
@@ -154,10 +153,34 @@ class CanvasWidget(QWidget):
             if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
         self.update()
 
+    def set_resource_transform_tooltips(self,values) -> None:
+        self.resource_transform_tooltips=dict(values)
+
     def resource_transform_handle_positions(self) -> dict[str,QPointF]:
         if self.project is None or self.resource_transform is None:return {}
-        t=self.resource_transform.evaluated(self.frame_index);center=self.canvas_to_widget(self.project.width/2+t.pivot_x+t.position_x,self.project.height/2+t.pivot_y+t.position_y)
-        return {"center":center,"x":center+QPointF(42,0),"y":center+QPointF(0,42),"z":center+QPointF(34,-34),"rotate_x":center+QPointF(44,0),"rotate_y":center+QPointF(0,44),"rotate_z":center+QPointF(34,34),"scale":center+QPointF(38,38),"pivot":center+QPointF(-14,-14)}
+        projected,valid=projected_local_axes(self.resource_transform,self.project.width,self.project.height,self.frame_index,42/max(.001,self.zoom))
+        if not valid.all():return {}
+        points=[self.canvas_to_widget(float(x),float(y)) for x,y in projected]
+        center,x_axis,y_axis,z_axis=points
+        z_handle=z_axis
+        if math.hypot(z_axis.x()-center.x(),z_axis.y()-center.y())<18:z_handle=center+QPointF(30,-30)
+        t=self.resource_transform.evaluated(self.frame_index);pivot=np.array((self.project.width/2+t.pivot_x,self.project.height/2+t.pivot_y,0.0));r=42/max(.001,self.zoom)
+        z_ring=project_local_point(pivot[0]+r/math.sqrt(2),pivot[1]+r/math.sqrt(2),0,self.resource_transform,self.project.width,self.project.height,self.frame_index)
+        rotate_z=self.canvas_to_widget(z_ring.x,z_ring.y) if z_ring.valid else center+QPointF(30,30)
+        # Scale and pivot remain screen-space affordances; all XYZ/rotation
+        # handles are exact projections of the canonical local axes.
+        return {"center":center,"x":x_axis,"y":y_axis,"z":z_handle,"projected_z":z_axis,"rotate_x":y_axis,"rotate_y":x_axis,"rotate_z":rotate_z,"scale":center+QPointF(38,38),"pivot":center+QPointF(-14,-14)}
+
+    def _resource_rotation_ring(self,axis):
+        if self.project is None or self.resource_transform is None:return QPolygonF()
+        t=self.resource_transform.evaluated(self.frame_index);pivot=np.array((self.project.width/2+t.pivot_x,self.project.height/2+t.pivot_y,0.0));radius=38/max(.001,self.zoom);points=[]
+        for index in range(49):
+            angle=index*math.tau/48;c=math.cos(angle)*radius;s=math.sin(angle)*radius
+            offset=(0,c,s) if axis=="x" else (c,0,s) if axis=="y" else (c,s,0)
+            points.append(pivot+offset)
+        projected,_,_,valid=project_local_points(np.asarray(points),self.resource_transform,self.project.width,self.project.height,self.frame_index)
+        if not valid.all():return QPolygonF()
+        return QPolygonF(tuple(self.canvas_to_widget(float(x),float(y)) for x,y in projected))
 
     def canvas_to_widget(self, x: float, y: float) -> QPointF:
         if self.project is None: return QPointF()
@@ -311,7 +334,7 @@ class CanvasWidget(QWidget):
             if result.underlay_rgba is None or result.overlay_rgba is None:return False
             _,underlay=self._proxy_pixmap_from_rgba(result.underlay_rgba,"underlay");_,overlay=self._proxy_pixmap_from_rgba(result.overlay_rgba,"overlay")
             entry=self.proxy_composite_cache.put(token.composite_key,underlay,overlay,result.underlay_rgba.nbytes+result.overlay_rgba.nbytes)
-        dragging=self._resource_transform_drag is not None and self.resource_transform_id==layer.id
+        dragging=self._resource_transform_drag is not None and self.resource_transform_id==layer.id and layer.placement_mode!=PLACEMENT_PARTICLE
         transform=deepcopy(self.resource_transform if dragging and self.resource_transform is not None else layer.layer_transform);polygon,valid=self._proxy_widget_quad(base.alpha_bounds,transform.evaluated(self.frame_index))
         state=InteractiveTransformProxyState(layer.id,self.frame_index,token.particle_base_revision,base,active=dragging,applied_transform=transform)
         state.prewarm_token=token;state.depth_order_signature=token.depth_signature;state.underlay_pixmap=entry.underlay;state.overlay_pixmap=entry.overlay
@@ -399,7 +422,7 @@ class CanvasWidget(QWidget):
         left=min(point.x() for point in points);right=max(point.x() for point in points);top=min(point.y() for point in points);bottom=max(point.y() for point in points)
         return QRectF(left,top,right-left,bottom-top).toAlignedRect().adjusted(-16,-16,16,16)
 
-    def apply_interactive_motion_proxy(self,layer,base_frame,base_key,motion_revision) -> bool:
+    def apply_interactive_motion_proxy(self,layer,base_frame,base_key,motion_revision,*,already_transformed=False) -> bool:
         """Replace only the selected particle image and reuse cached composites."""
         interaction_started=perf_counter()
         if self.project is None or self.preview_frames is not None or base_frame is None:return False
@@ -413,7 +436,7 @@ class CanvasWidget(QWidget):
             reusable=old_token is not None and old_token.composite_key==token.composite_key and previous.underlay_pixmap is not None and previous.overlay_pixmap is not None
         if previous is not None and previous.render_in_progress:
             self.proxy_stats["overlap_rejections"]+=1;return False
-        base=self.proxy_base_image_cache.get(cache_key,base_frame);transform=deepcopy(layer.layer_transform)
+        base=self.proxy_base_image_cache.get(cache_key,base_frame);transform=EffectLayerTransform3D() if already_transformed else deepcopy(layer.layer_transform)
         state=InteractiveTransformProxyState(layer.id,self.frame_index,cache_key,base,active=True,applied_transform=transform)
         state.render_in_progress=True
         try:
@@ -501,13 +524,13 @@ class CanvasWidget(QWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No project")
             return
 
-        width = self.project.width * self.zoom
-        height = self.project.height * self.zoom
+        width = max(1,round(self.project.width * self.zoom))
+        height = max(1,round(self.project.height * self.zoom))
         origin = self._canvas_origin()
         canvas_rect = QRect(origin.x(), origin.y(), width, height)
         painter.setClipRect(canvas_rect)
 
-        checker = max(1, 8 * self.zoom)
+        checker = max(1,round(8 * self.zoom))
         colors = (QColor("#b8bdc4"), QColor("#e1e4e8"))
         for y in range(origin.y(), origin.y() + height, checker):
             for x in range(origin.x(), origin.x() + width, checker):
@@ -548,12 +571,14 @@ class CanvasWidget(QWidget):
             )
         if not self.playback_mode and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._paint_gizmo(painter)
-        if not self.playback_mode and self.resource_transform_id and self.resource_transform is not None:
-            self._paint_resource_transform_gizmo(painter)
         if not self.playback_mode and proxy is not None and proxy.active and len(proxy.projected_quad)==4:
             painter.setPen(QPen(QColor("#74c0fc"),1,Qt.PenStyle.DashLine));painter.setBrush(Qt.BrushStyle.NoBrush);painter.drawPolygon(proxy.projected_quad)
-        if not self.playback_mode and (proxy is None or not proxy.active) and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
+        # Guides and gizmos are a lightweight GUI-thread overlay.  Exact/proxy
+        # frame installation must never hide them during direct manipulation.
+        if not self.playback_mode and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
+        if not self.playback_mode and self.resource_transform_id and self.resource_transform is not None:
+            self._paint_resource_transform_gizmo(painter)
         if hasattr(event,"rect") and event.rect()!=self.rect():self.interaction_stats["partial_paints"]+=1
         else:self.interaction_stats["full_paints"]+=1
         self._record_interaction("paint_event",paint_started)
@@ -601,10 +626,14 @@ class CanvasWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing,True);mode=self.resource_transform_mode
         if mode=="move":
             for name,color in (("x","#ff6b6b"),("y","#51cf66"),("z","#4dabf7")):
-                painter.setPen(QPen(QColor(color),3));painter.drawLine(center,p[name]);painter.drawEllipse(p[name],5,5)
+                axis_point=p.get("projected_z") if name=="z" else p[name];painter.setPen(QPen(QColor(color),3));painter.drawLine(center,axis_point)
+                if name=="z" and p[name]!=axis_point:painter.setPen(QPen(QColor(color),2,Qt.PenStyle.DashLine));painter.drawLine(axis_point,p[name])
+                painter.drawEllipse(p[name],5,5);painter.drawText(p[name]+QPointF(7,-5),name.upper())
             painter.setPen(QPen(QColor("#ffffff"),2));painter.drawEllipse(center,5,5)
         elif mode.startswith("rotate_"):
-            color={"rotate_x":"#ff6b6b","rotate_y":"#51cf66","rotate_z":"#4dabf7"}[mode];painter.setPen(QPen(QColor(color),3));painter.drawEllipse(center,38,38);painter.drawEllipse(p[mode],5,5)
+            axis=mode[-1];color={"rotate_x":"#ff6b6b","rotate_y":"#51cf66","rotate_z":"#4dabf7"}[mode];painter.setPen(QPen(QColor(color),3));ring=self._resource_rotation_ring(axis)
+            if len(ring)>1:painter.drawPolyline(ring)
+            painter.drawLine(center,p[mode]);painter.drawEllipse(p[mode],5,5);painter.drawText(p[mode]+QPointF(7,-5),axis.upper())
         elif mode=="scale":
             painter.setPen(QPen(QColor("#ffd43b"),2));painter.drawRect(QRectF(center-QPointF(38,38),center+QPointF(38,38)));painter.drawRect(QRectF(p["scale"]-QPointF(5,5),p["scale"]+QPointF(5,5)))
         elif mode=="pivot":
@@ -614,6 +643,9 @@ class CanvasWidget(QWidget):
         points=self.resource_transform_handle_positions();mode=self.resource_transform_mode
         names=("x","y","z","center") if mode=="move" else (mode,) if mode.startswith("rotate_") else (mode,)
         return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=12),None)
+
+    def _start_resource_transform_drag(self,handle,event,event_started):
+        self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
 
     def _guide_points(self) -> dict[str, QPointF]:
         settings = self.effect_guide_settings
@@ -629,7 +661,7 @@ class CanvasWidget(QWidget):
                 projected=[]
                 for item in path:
                     x,y,_,valid=project_particle_billboard(item,evaluated_motion.perspective_strength,self.project.width if self.project else 64,self.project.height if self.project else 64)
-                    if valid:projected.append(self.canvas_to_widget(*self._project_effect_point(x,y)))
+                    if valid:projected.append(self.canvas_to_widget(*self._project_effect_point(x,y,item.z)))
                 if not projected:return {}
                 center_raw=(settings.origin_x+evaluated_motion.center_x,settings.origin_y+evaluated_motion.center_y)
                 center=self.canvas_to_widget(*self._project_effect_point(*center_raw))
@@ -653,11 +685,10 @@ class CanvasWidget(QWidget):
             return points
         return {}
 
-    def _project_effect_point(self,x,y):
+    def _project_effect_point(self,x,y,z=0.0):
         if self.project is None or self.resource_transform is None:return float(x),float(y)
-        t=self.resource_transform.evaluated(self.frame_index);pivot_x=self.project.width/2+t.pivot_x;pivot_y=self.project.height/2+t.pivot_y
-        point,valid=project_points_3d(np.array(((x-pivot_x,y-pivot_y,0.0),)),t,self.project.width,self.project.height)
-        return (float(point[0,0]+pivot_x),float(point[0,1]+pivot_y)) if valid[0] else (float(x),float(y))
+        point=project_local_point(x,y,z,self.resource_transform,self.project.width,self.project.height,self.frame_index)
+        return (point.x,point.y) if point.valid else (float(x),float(y))
 
     def _paint_effect_guide(self, painter: QPainter) -> None:
         points = self._guide_points()
@@ -717,7 +748,7 @@ class CanvasWidget(QWidget):
             return
         if self.resource_transform is not None:
             t=self.resource_transform.evaluated(self.frame_index);a=self.widget_to_canvas(start);b=self.widget_to_canvas(end)
-            raw_a=unproject_point_2d(a.x(),a.y(),t,self.project.width,self.project.height);raw_b=unproject_point_2d(b.x(),b.y(),t,self.project.width,self.project.height)
+            raw_a=unproject_layer_space_point(a.x(),a.y(),self.resource_transform,self.project.width,self.project.height,self.frame_index);raw_b=unproject_layer_space_point(b.x(),b.y(),self.resource_transform,self.project.width,self.project.height,self.frame_index)
             if raw_a is None or raw_b is None:return
             values=tuple(getattr(t,name) for name in ("position_x","position_y","position_z","rotation_x","rotation_y","rotation_z","scale_x","scale_y","opacity","pivot_x","pivot_y","perspective_strength"))
             key=("2.5d",composition.id,composition.revision,self.frame_index,values,tuple(round(v,3) for v in (*raw_a,*raw_b)))
@@ -728,7 +759,7 @@ class CanvasWidget(QWidget):
                     amount=order/max(1,len(indexes)-1);x=raw_a[0]+(raw_b[0]-raw_a[0])*amount;y=raw_a[1]+(raw_b[1]-raw_a[1])*amount
                     raw=empty_pixels(self.project.width,self.project.height);asset=SourceAsset(composition.name,frames[index],pivot_x=composition.pivot_x,pivot_y=composition.pivot_y)
                     render_transformed_source(raw,asset,position_x=x,position_y=y,rotation=0,scale_x=1,scale_y=1,horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=1)
-                    pixels=np.ascontiguousarray(transform_rgba_frame(raw,self.resource_transform,self.frame_index));image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy();pixmaps.append(QPixmap.fromImage(image))
+                    pixels=np.ascontiguousarray(transform_layer_space_rgba_frame(raw,self.resource_transform,self.frame_index));image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy();pixmaps.append(QPixmap.fromImage(image))
                 self._ghost_cache[key]=pixmaps
             origin=self._canvas_origin();target=QRectF(origin.x(),origin.y(),self.project.width*self.zoom,self.project.height*self.zoom);painter.save();painter.setOpacity(.28)
             for pixmap in pixmaps:painter.drawPixmap(target,pixmap,QRectF(pixmap.rect()))
@@ -767,6 +798,15 @@ class CanvasWidget(QWidget):
         event_started=perf_counter()
         if event.button() == Qt.MouseButton.MiddleButton:
             self._panning = True; self._pan_last = event.position(); self.setCursor(Qt.CursorShape.ClosedHandCursor); event.accept(); return
+        active_transform_layer = next((item for item in self.project.effect_resource_layers if item.id==self.resource_transform_id),None) if self.project is not None else None
+        transform_is_selected = active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id
+        transform_handle=None
+        if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
+            hit_started=perf_counter();handle=self._hit_resource_transform(event.position());self._record_interaction("transform_hit_test",hit_started)
+            transform_handle=handle
+            # Explicit axis handles must win over an overlapping Motion Guide;
+            # the central free-move affordance yields to semantic Guide points.
+            if handle and handle!="center":self._start_resource_transform_drag(handle,event,event_started);return
         if event.button() == Qt.MouseButton.LeftButton and self.show_effect_guides and self.effect_guide_id:
             hit_started=perf_counter();handle = self._hit_guide_handle(event.position());self._record_interaction("guide_hit_test",hit_started)
             if handle:
@@ -777,12 +817,7 @@ class CanvasWidget(QWidget):
                 event.accept()
                 self._record_interaction("mouse_press_total",event_started)
                 return
-        active_transform_layer = next((item for item in self.project.effect_resource_layers if item.id==self.resource_transform_id),None) if self.project is not None else None
-        transform_is_selected = active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id
-        if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
-            hit_started=perf_counter();handle=self._hit_resource_transform(event.position());self._record_interaction("transform_hit_test",hit_started)
-            if handle:
-                self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started);return
+        if transform_handle:self._start_resource_transform_drag(transform_handle,event,event_started);return
         if event.button() == Qt.MouseButton.LeftButton and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._gizmo_drag = True; self._gizmo_before = deepcopy(self.gizmo_settings); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton:
@@ -842,6 +877,12 @@ class CanvasWidget(QWidget):
             if dirty.isNull():self.interaction_stats["full_updates_without_rect"]+=1
             else:self.update(dirty)
             event.accept();self._record_interaction("mouse_move_total",event_started);return
+        transform_hover=self._hit_resource_transform(event.position()) if self.resource_transform_id and self.resource_transform is not None else None
+        if transform_hover:
+            changed=transform_hover!=self._resource_transform_hover;self._resource_transform_hover=transform_hover;self._guide_hover=None;self.setCursor(Qt.CursorShape.PointingHandCursor);self.setToolTip(self.resource_transform_tooltips.get(transform_hover,""))
+            if changed:self.update()
+            return super().mouseMoveEvent(event)
+        if self._resource_transform_hover is not None:self._resource_transform_hover=None;self.setToolTip("")
         if self.effect_guide_id:
             hover = self._hit_guide_handle(event.position())
             if hover != self._guide_hover:
@@ -898,7 +939,7 @@ class CanvasWidget(QWidget):
     def _move_effect_guide(self, point: QPointF, modifiers) -> None:
         settings = self.effect_guide_settings
         if self.project is not None and self.resource_transform is not None:
-            local=unproject_point_2d(point.x(),point.y(),self.resource_transform.evaluated(self.frame_index),self.project.width,self.project.height)
+            local=unproject_layer_space_point(point.x(),point.y(),self.resource_transform,self.project.width,self.project.height,self.frame_index)
             if local is None:return
             point=QPointF(*local)
         x, y = round(point.x()), round(point.y())

@@ -75,6 +75,22 @@ class EffectLayerTransform3D:
         self.revision += 1
         return keyframe
 
+    def set_property(self, property_id: str, value: float) -> None:
+        """Set one canonical transform property and reject misspelled aliases."""
+        if property_id not in TRANSFORM_TRACK_PROPERTIES and property_id not in {"pivot_x", "pivot_y"}:
+            raise ValueError("unsupported Resource Layer transform property")
+        numeric = float(value)
+        if not isfinite(numeric):
+            raise ValueError("Resource Layer transform values must be finite")
+        if property_id == "opacity":
+            numeric = max(0.0, min(1.0, numeric))
+        elif property_id == "perspective_strength":
+            numeric = max(0.0, min(1.0, numeric))
+        elif property_id in {"scale_x", "scale_y"}:
+            numeric = max(0.01, numeric)
+        setattr(self, property_id, numeric)
+        self.revision += 1
+
     def reset_base(self) -> None:
         for name in TRANSFORM_TRACK_PROPERTIES:
             setattr(self, name, 1.0 if name in {"scale_x", "scale_y", "opacity"} else 0.0)
@@ -138,7 +154,11 @@ class EffectResourceLayer:
     generated_layer_id: str | None = None
     single_settings: EffectCompositionLayer | None = None
     particle_settings: ParticleEmitterSettings | None = None
+    # Kept as a Python compatibility name while v9 serializes this value as
+    # ``layer_space_transform``. Existing integrations therefore move to the
+    # new semantic without a risky flag-day rename.
     layer_transform: EffectLayerTransform3D = field(default_factory=EffectLayerTransform3D)
+    surface_transform: EffectLayerTransform3D = field(default_factory=EffectLayerTransform3D)
     id: str = field(default_factory=lambda: uuid4().hex)
 
     def __post_init__(self) -> None:
@@ -196,6 +216,14 @@ class EffectResourceLayer:
             raise ValueError("unsupported Resource Layer placement mode")
         self.placement_mode = mode
 
+    @property
+    def layer_space_transform(self) -> EffectLayerTransform3D:
+        return self.layer_transform
+
+    @layer_space_transform.setter
+    def layer_space_transform(self, value: EffectLayerTransform3D) -> None:
+        self.layer_transform = value
+
     # Compatibility accessors keep existing renderer/gizmo integrations thin.
     @property
     def layer_type(self): return "resource_layer"
@@ -234,11 +262,12 @@ class EffectResourceLayer:
             "generated_layer_id": self.generated_layer_id,
             "single_settings": self.single_settings.to_dict(),
             "particle_settings": self.particle_settings.to_dict(),
-            "layer_transform": self.layer_transform.to_dict(),
+            "layer_space_transform": self.layer_space_transform.to_dict(),
+            "surface_transform": self.surface_transform.to_dict(),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "EffectResourceLayer":
+    def from_dict(cls, data: dict[str, Any], source_version: int = 9) -> "EffectResourceLayer":
         single_data = data.get("single_settings")
         particle_data = data.get("particle_settings")
         return cls(
@@ -256,7 +285,15 @@ class EffectResourceLayer:
                 if single_data.get("resource_composition_id") else EffectCompositionLayer(**single_data)
             ),
             particle_settings=None if not particle_data else ParticleEmitterSettings.from_dict(particle_data),
-            layer_transform=EffectLayerTransform3D.from_dict(data.get("layer_transform")),
+            # v8 and earlier applied ``layer_transform`` to the already
+            # rasterized layer. Preserve that exact behavior as Surface
+            # Transform while the new Layer Space transform starts at identity.
+            layer_transform=EffectLayerTransform3D.from_dict(
+                data.get("layer_space_transform") if source_version >= 9 else None
+            ),
+            surface_transform=EffectLayerTransform3D.from_dict(
+                data.get("surface_transform") if source_version >= 9 else data.get("layer_transform")
+            ),
         )
 
     @classmethod

@@ -6,7 +6,7 @@ from pathlib import Path
 from copy import deepcopy
 from time import perf_counter
 
-from PySide6.QtCore import QElapsedTimer, QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QElapsedTimer, QSignalBlocker, QTimer, Qt, Slot
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -144,6 +144,7 @@ class MainWindow(QMainWindow):
         self.effect_playback.frame_ready.connect(self._playback_frame_ready)
         self.effect_playback.preparation_failed.connect(self._playback_preparation_failed)
         self.interactive_gizmo_renderer=InteractiveGizmoRenderManager(self)
+        self._pending_interactive_gizmo_results={}
         self.interactive_gizmo_renderer.ready.connect(self._interactive_gizmo_frame_ready)
         self.interactive_gizmo_renderer.failed.connect(lambda message:runtime_logger().error("interactive_gizmo failed message=%s",message))
         self.interactive_proxy_prewarm=InteractiveProxyPrewarmManager(self._build_resource_transform_prewarm_payload,self)
@@ -404,6 +405,7 @@ class MainWindow(QMainWindow):
         self._refresh_undo_action_texts()
         self._refresh_tooltips()
         self.canvas.preview_badge_text = t("effects.preview_badge")
+        self.canvas.set_resource_transform_tooltips({name:t("tooltip.resource_layer.move_"+name) for name in ("x","y","z")}|{"center":t("tooltip.resource_layer.move_center")})
         self.canvas.update()
         self._refresh_playback_status()
 
@@ -538,6 +540,7 @@ class MainWindow(QMainWindow):
             panel.transform_panel.transform_edit_finished.connect(self.finalize_resource_layer_transform)
             panel.transform_keyframe_requested.connect(self.add_resource_layer_transform_keyframe)
             panel.transform_gizmo_changed.connect(self._set_resource_transform_gizmo)
+            panel.transform_panel.surface_transform_changed.connect(self.update_resource_surface_transform)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
         self.particle_preview_manager.preview_failed.connect(self._particle_preview_failed)
         self.resource_editor.import_requested.connect(self.import_resources)
@@ -603,7 +606,8 @@ class MainWindow(QMainWindow):
         self.dirty = True
         self._update_title()
 
-    def _undo_index_changed(self, *args) -> None:
+    @Slot(int)
+    def _undo_index_changed(self, index: int) -> None:
         if hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=True)
         self._project_edit_revision+=1
         self.dirty = self._non_undo_dirty or not self.application_undo_stack.isClean()
@@ -674,8 +678,13 @@ class MainWindow(QMainWindow):
                 property_id=field.partition(":")[2]
                 if property_id:panel.set_transform_fields(current,self.frame_index,(property_id,))
                 else:panel.set_layer(current,self.frame_index)
+        elif field=="resource_surface_transform":
+            current=next((item for item in self.project.effect_resource_layers if item.id==target_id),None)
+            if current:
+                current.surface_transform=deepcopy(value);invalidate_effect_resource_layer_base(current.id);apply_effect_resource_layer_current_frame(self.project,current,self.frame_index);self._sync_resource_layer_adapters();self._refresh_all();self.select_resource_layer(current.id)
 
     def _queue_resource_transform_render(self,layer) -> None:
+        if self.active_preview_generator_id==layer.id:self._clear_preview()
         self._pending_resource_transforms[layer.id]=int(layer.layer_transform.revision)
         self._dirty_resource_transform_layers.add(layer.id)
         if self.canvas.resource_transform_id==layer.id:
@@ -705,7 +714,7 @@ class MainWindow(QMainWindow):
         for identifier,(revision,frame) in dict(self._pending_particle_motion).items():
             layer=self._pending_particle_motion_layers.get(identifier)
             if layer is None or layer.particle_settings.motion.revision!=revision:continue
-            self.interactive_gizmo_renderer.schedule(self.project,layer,frame,immediate=True)
+            self.interactive_gizmo_renderer.schedule(self.project,layer,frame,immediate=True,purpose="motion")
 
     def _flush_particle_motion_final(self) -> None:
         if self.canvas._guide_handle:
@@ -715,7 +724,7 @@ class MainWindow(QMainWindow):
         for identifier,(revision,frame) in pending.items():
             layer=layers.get(identifier) or next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is None or layer.particle_settings.motion.revision!=revision:continue
-            self.interactive_gizmo_renderer.schedule(self.project,layer,frame,final=True)
+            self.interactive_gizmo_renderer.schedule(self.project,layer,frame,final=True,purpose="motion")
         if pending:self._schedule_resource_transform_prewarm()
 
     def _interactive_gizmo_frame_ready(self,result) -> None:
@@ -727,8 +736,14 @@ class MainWindow(QMainWindow):
             generated=next((item for item in self.project.layers if item.id==actual.generated_layer_id),None)
             if generated is not None and 0<=request.frame<len(self.project.frames):
                 self.project.frames[request.frame].layer_pixels[generated.id]=result.exact_rgba.copy();self.layer_index=self.project.layers.index(generated)
-            self.interactive_gizmo_renderer.collector.final_exact_installs+=1;self.canvas.finish_interactive_motion_proxy(layer.id);self._schedule_resource_transform_prewarm();return
-        self.canvas.apply_interactive_motion_proxy(layer,result.base_rgba,result.base_key,layer.particle_settings.motion.revision)
+            self.interactive_gizmo_renderer.collector.final_exact_installs+=1
+            if request.purpose=="layer_transform":self.canvas.finish_interactive_transform_proxy(layer.id,actual.layer_space_transform)
+            else:self.canvas.finish_interactive_motion_proxy(layer.id)
+            self._schedule_resource_transform_prewarm();return
+        revision=layer.layer_space_transform.revision if request.purpose=="layer_transform" else layer.particle_settings.motion.revision
+        installed=self.canvas.apply_interactive_motion_proxy(layer,result.exact_rgba,(*result.base_key,request.revision),revision,already_transformed=True)
+        if installed:self._pending_interactive_gizmo_results.pop(layer.id,None)
+        else:self._pending_interactive_gizmo_results[layer.id]=result
 
     def _render_dirty_particle_motion_frame(self,frame: int) -> None:
         """Install exact particle pixels for paused arbitrary frame access.
@@ -746,16 +761,21 @@ class MainWindow(QMainWindow):
         for identifier,revision in pending.items():
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is None or layer.layer_transform.revision!=revision:continue
-            self.canvas.apply_interactive_transform_proxy(layer)
+            if layer.placement_mode==PLACEMENT_PARTICLE:
+                self.interactive_gizmo_renderer.schedule(self.project,layer,self.frame_index,immediate=True,purpose="layer_transform")
+            else:self.canvas.apply_interactive_transform_proxy(layer)
 
     def _flush_resource_transform_final(self) -> None:
         self.resource_transform_render_timer.stop();pending=dict(self._pending_resource_transforms);self._pending_resource_transforms.clear()
         for identifier,revision in pending.items():
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is None or layer.layer_transform.revision!=revision:continue
-            generated=apply_effect_resource_layer_current_frame(self.project,layer,self.frame_index)
-            if generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
-            self.canvas.finish_interactive_transform_proxy(identifier,layer.layer_transform)
+            if layer.placement_mode==PLACEMENT_PARTICLE:
+                self.interactive_gizmo_renderer.schedule(self.project,layer,self.frame_index,final=True,purpose="layer_transform")
+            else:
+                generated=apply_effect_resource_layer_current_frame(self.project,layer,self.frame_index)
+                if generated in self.project.layers:self.layer_index=self.project.layers.index(generated)
+                self.canvas.finish_interactive_transform_proxy(identifier,layer.layer_transform)
         if pending:self._schedule_resource_transform_prewarm()
 
     def _selected_resource_layer(self):
@@ -787,11 +807,16 @@ class MainWindow(QMainWindow):
         if not self.canvas.install_proxy_prewarm(result):self.interactive_proxy_prewarm.collector.stale_rejections+=1
         else:
             for name,value in self.canvas.last_prewarm_install_timings.items():self.interactive_proxy_prewarm.collector.record(name,value)
-            if self.canvas._resource_transform_drag or token.resource_layer_id in self._pending_resource_transforms:
-                layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
+            layer=next((item for item in self.project.effect_resource_layers if item.id==token.resource_layer_id),None)
+            if layer is not None and (self.canvas._resource_transform_drag or token.resource_layer_id in self._pending_resource_transforms) and layer.placement_mode!=PLACEMENT_PARTICLE:
                 state=self.canvas.interactive_transform_proxy
                 if layer is not None and state is not None:
                     state.active=True;state.queue(self.canvas.resource_transform if self.canvas._resource_transform_drag and self.canvas.resource_transform is not None else layer.layer_transform);self.canvas.apply_interactive_transform_proxy(layer)
+            pending=self._pending_interactive_gizmo_results.get(token.resource_layer_id)
+            if pending is not None and pending.request.revision==self.interactive_gizmo_renderer.revision and pending.request.frame==self.frame_index:
+                request=pending.request;pending_layer=request.layer
+                revision=pending_layer.layer_space_transform.revision if request.purpose=="layer_transform" else pending_layer.particle_settings.motion.revision
+                if self.canvas.apply_interactive_motion_proxy(pending_layer,pending.exact_rgba,(*pending.base_key,request.revision),revision,already_transformed=True):self._pending_interactive_gizmo_results.pop(token.resource_layer_id,None)
 
     def _resource_timeline_scrub_started(self) -> None:
         self._timeline_scrubbing=True;self.interactive_proxy_prewarm.cancel();self.set_playing(False)
@@ -800,8 +825,10 @@ class MainWindow(QMainWindow):
         self._timeline_scrubbing=False;self._schedule_resource_transform_prewarm()
 
     def _materialize_resource_transform_sequences(self) -> None:
-        self._flush_resource_transform_final();self._flush_particle_motion_final()
-        identifiers=set(self._dirty_resource_transform_layers)|set(self._dirty_particle_motion_layers);self._dirty_resource_transform_layers.clear();self._dirty_particle_motion_layers.clear()
+        self.resource_transform_render_timer.stop();self.resource_transform_finalize_timer.stop();self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop()
+        identifiers=set(self._dirty_resource_transform_layers)|set(self._dirty_particle_motion_layers)|set(self._pending_resource_transforms)|set(self._pending_particle_motion)
+        self._pending_resource_transforms.clear();self._pending_particle_motion.clear();self._pending_particle_motion_layers.clear();self._dirty_resource_transform_layers.clear();self._dirty_particle_motion_layers.clear()
+        self.interactive_gizmo_renderer.cancel();self.canvas.clear_interactive_transform_proxy(update=False)
         for identifier in identifiers:
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is not None:apply_effect_resource_layer(self.project,layer)
@@ -1374,6 +1401,11 @@ class MainWindow(QMainWindow):
         if layer is None:return
         self.application_undo_stack.push(EditorValueCommand(self,identifier,f"resource_layer_transform:{property_id}",layer.layer_transform,transform,"Resource Layer 2.5D Transform",704))
 
+    def update_resource_surface_transform(self,identifier,transform) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_surface_transform",layer.surface_transform,transform,"Resource Layer Surface Transform",705))
+
     def finalize_resource_layer_transform(self,identifier=None) -> None:
         if identifier is not None and identifier not in self._pending_resource_transforms:return
         self.resource_transform_finalize_timer.stop();self._flush_resource_transform_final()
@@ -1412,7 +1444,9 @@ class MainWindow(QMainWindow):
         fields=self.canvas.resource_transform_changed_fields or tuple(panel.fields)
         self.canvas.resource_transform=deepcopy(transform);transient=deepcopy(layer);transient.layer_transform=deepcopy(transform)
         state=self.canvas.interactive_transform_proxy
-        if state is not None and state.active and state.resource_layer_id==identifier:
+        if layer.placement_mode==PLACEMENT_PARTICLE:
+            self.interactive_gizmo_renderer.schedule(self.project,transient,self.frame_index,purpose="layer_transform")
+        elif state is not None and state.active and state.resource_layer_id==identifier:
             state.queue(transform);self.canvas.apply_interactive_transform_proxy(transient)
         self._pending_transform_inspector=(panel,transient,self.frame_index,fields)
         if not self.transform_inspector_timer.isActive():self.transform_inspector_timer.start(33)
@@ -1431,7 +1465,7 @@ class MainWindow(QMainWindow):
         started=perf_counter();panel,layer,frame,fields=pending;panel.set_transform_fields(layer,frame,fields);self.interactive_gizmo_renderer.collector.record("inspector_sync",(perf_counter()-started)*1000.0)
 
     def _begin_effect_gizmo_interaction(self):
-        self._invalidate_playback_cache(stop=True);self.interactive_proxy_prewarm.cancel();self.interactive_gizmo_renderer.cancel()
+        self._invalidate_playback_cache(stop=True);self.interactive_proxy_prewarm.cancel();self.interactive_gizmo_renderer.cancel();self._pending_interactive_gizmo_results.clear()
 
     def _effect_guide_started(self,identifier):
         self._begin_effect_gizmo_interaction()
@@ -1536,10 +1570,6 @@ class MainWindow(QMainWindow):
 
     def _particle_preview_ready(self, emitter_id: str, revision: int, frames: list) -> None:
         if self.particle_properties.emitter_id!=emitter_id:return
-        unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
-        if unified:
-            from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
-            frames=[transform_rgba_frame(frame,unified.layer_transform,index) for index,frame in enumerate(frames)]
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter:self._activate_particle_preview(emitter,frames)
 
@@ -1556,6 +1586,7 @@ class MainWindow(QMainWindow):
     def bake_particle_emitter(self, emitter_id: str, settings: ParticleEmitterSettings) -> bool:
         runtime_logger().info("bake_particle start emitter=%s", emitter_id[:12])
         self.finalize_resource_layer_transform(emitter_id)
+        self.interactive_gizmo_renderer.cancel();self.canvas.clear_interactive_transform_proxy(update=False)
         unified = next(
             (item for item in self.project.effect_resource_layers if item.id == emitter_id),
             None,
@@ -1628,9 +1659,11 @@ class MainWindow(QMainWindow):
         emitter=next(e for e in self.project.particle_emitters if e.id==emitter_id)
         frames=session.frames
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
-        if unified:
+        if unified is not None:
+            preview_emitter=ParticleEmitter(id=emitter.id,name=emitter.name,settings=deepcopy(draft.settings))
+            frames=render_particle_frames(self.project,preview_emitter,layer_space_transform=unified.layer_space_transform)
             from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
-            frames=[transform_rgba_frame(frame,unified.layer_transform,index) for index,frame in enumerate(frames)]
+            frames=[transform_rgba_frame(frame,unified.surface_transform,index) for index,frame in enumerate(frames)]
         runtime_logger().info("export_particle_preview start emitter=%s",emitter_id[:12])
         try:
             export_preview_sequence(frames, directory, emitter.name)

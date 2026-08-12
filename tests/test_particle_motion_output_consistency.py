@@ -42,8 +42,7 @@ def context(mode):
 @pytest.mark.parametrize("mode",["orbit","helix"])
 def test_motion_direct_preview_bake_and_exports_match(mode,tmp_path):
     project,layer=context(mode);emitter=layer.as_particle_emitter();invalidate_effect_resource_layer_base()
-    base=render_particle_frames(project,emitter)
-    exact=[transform_rgba_frame(frame,layer.layer_transform,index) for index,frame in enumerate(base)]
+    exact=render_particle_frames(project,emitter,layer_space_transform=layer.layer_space_transform)
     direct=[render_effect_resource_layer_current_frame(project,layer,index) for index in range(6)]
     full=render_effect_resource_layer(project,layer)
     assert all(np.array_equal(a,b) and np.array_equal(a,c) for a,b,c in zip(exact,direct,full,strict=True))

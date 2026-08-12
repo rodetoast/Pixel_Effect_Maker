@@ -6,7 +6,7 @@
 
 현재 프로그램 버전은 `0.0.04`, 사용자 표시 버전은 `v0.0.04`입니다. `PREVIEW_BUILD`, `PREVIEW_LABEL`, `PREVIEW_NOTICE_REVISION`은 같은 파일에서 배포 채널을 설명하지만 `--version` 문자열에는 포함하지 않습니다.
 
-프로그램 버전과 프로젝트 파일의 `format_version`은 서로 독립적입니다. 앱 버전은 `0.0.04`이고 최신 파일 형식은 `format_version = 8`입니다. 형식 8은 형식 7 compact pixel payload에 Particle Motion metadata를 추가합니다. 형식 1~7은 기존 데이터를 유지해 메모리에서 마이그레이션하며 이후 사용자가 저장할 때 형식 8로 기록합니다. 미래 형식은 거부합니다.
+프로그램 버전과 프로젝트 파일의 `format_version`은 서로 독립적입니다. 앱 버전은 `0.0.04`이고 최신 파일 형식은 `format_version = 9`입니다. 형식 9는 기존 최종 RGBA 변형을 `surface_transform`으로 보존하면서 새 `layer_space_transform`을 분리합니다. 형식 1~8은 기존 데이터를 유지해 메모리에서 마이그레이션하며 이후 사용자가 저장할 때 형식 9로 기록합니다. 미래 형식은 거부합니다. 자세한 의미와 평가 순서는 `LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 
 ## 구조와 주요 클래스
 

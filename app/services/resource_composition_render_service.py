@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections import OrderedDict
 import numpy as np
 from app.models.animation_clip import AnimationClipAsset
+from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.models.frame import empty_pixels
 from app.models.project import Project
 from app.models.resource_composition import ResourceComposition,CompositionLayer
 from app.models.source_asset import SourceAsset
-from app.services.effect_render_service import render_transformed_source
+from app.services.effect_render_service import _source_over,render_transformed_source
+from app.services.layer_space_transform_service import transform_layer_space_rgba_frame
 
 _CACHE:OrderedDict[tuple,list[np.ndarray]]=OrderedDict()
 _CACHE_BYTES=0
@@ -40,6 +42,25 @@ def _pixels_at(project,composition,layer,frame):
     if isinstance(source,SourceAsset):return source.pixels
     local=max(0,frame-layer.start_frame+layer.source_start_frame);elapsed=local*1000/composition.fps;index=_clip_index(source,elapsed)
     return None if index is None else source.frames[index]
+
+def composition_layer_transform(layer:CompositionLayer,frame:int)->EffectLayerTransform3D:
+    """Build the Resource Editor sprite-plane transform without sharing Effect state."""
+    position=layer.value("position",frame);scale=layer.value("scale",frame)
+    return EffectLayerTransform3D(
+        position_x=float(position[0]),position_y=float(position[1]),
+        position_z=float(layer.value("position_z",frame)),
+        rotation_x=float(layer.value("rotation_x",frame)),
+        rotation_y=float(layer.value("rotation_y",frame)),
+        # Resource Composition's established `rotation` track is canonical Z.
+        rotation_z=float(layer.value("rotation",frame)),
+        scale_x=float(scale[0]),scale_y=float(scale[1]),
+        opacity=max(0.0,min(1.0,float(layer.value("opacity",frame)))),
+        perspective_strength=max(0.0,float(layer.value("perspective_strength",frame))),
+    )
+
+def _has_sprite_2_5d(layer:CompositionLayer,frame:int)->bool:
+    return any(abs(float(layer.value(name,frame)))>1e-9 for name in ("rotation_x","rotation_y","position_z","perspective_strength"))
+
 def render_composition_frame(project:Project,composition:ResourceComposition,frame:int)->np.ndarray:
     if not 0<=frame<composition.frame_count:raise ValueError("composition frame out of range")
     output=empty_pixels(composition.width,composition.height)
@@ -49,7 +70,14 @@ def render_composition_frame(project:Project,composition:ResourceComposition,fra
         if pixels is None:continue
         position=layer.value("position",frame);rotation=float(layer.value("rotation",frame));scale=layer.value("scale",frame);opacity=float(layer.value("opacity",frame))
         asset=SourceAsset(layer.name,pixels,pivot_x=layer.pivot_x,pivot_y=layer.pivot_y)
-        render_transformed_source(output,asset,position_x=composition.width/2+float(position[0]),position_y=composition.height/2+float(position[1]),rotation=rotation,scale_x=float(scale[0]),scale_y=float(scale[1]),horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=max(0,min(1,opacity)))
+        if not _has_sprite_2_5d(layer,frame):
+            # Preserve the exact legacy 2D raster path and canonical `rotation` result.
+            render_transformed_source(output,asset,position_x=composition.width/2+float(position[0]),position_y=composition.height/2+float(position[1]),rotation=rotation,scale_x=float(scale[0]),scale_y=float(scale[1]),horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=max(0,min(1,opacity)))
+        else:
+            local=empty_pixels(composition.width,composition.height)
+            render_transformed_source(local,asset,position_x=composition.width/2,position_y=composition.height/2,rotation=0,scale_x=1,scale_y=1,horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=1)
+            transformed=transform_layer_space_rgba_frame(local,composition_layer_transform(layer,frame),local_z_spin=True)
+            _source_over(output,transformed)
     return output
 def render_composition_frames(project,composition,use_cache=True):
     global _CACHE_BYTES

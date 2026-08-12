@@ -60,7 +60,7 @@ def test_single_path_panel_fits_narrow_inspector(tmp_path):
 
 def test_particle_panel_fits_narrow_inspector(tmp_path):
     project,layer=context(PLACEMENT_PARTICLE);panel=ParticlePropertiesPanel();panel.retranslate_ui(localization(tmp_path,"en"));panel.set_resource_layer(layer,project);show_and_assert_fits(panel,280)
-    assert all(group.width()<=panel.viewport().width() for _,group,_,_ in panel._group_records)
+    assert all(group.width()<=panel.viewport().width() for _,group,_,_ in panel._group_records if group.isVisible())
 
 
 @pytest.mark.parametrize("language",["ko","en"])
@@ -91,7 +91,7 @@ def test_every_effect_property_keeps_a_visible_text_label(tmp_path,panel_type,mo
     project,layer=context(mode);panel=panel_type();panel.retranslate_ui(localization(tmp_path,language));panel.set_resource_layer(layer,project);show_and_assert_fits(panel,width,1.5)
     forms=[panel.transform_panel.form]
     if isinstance(panel,CompositionLayerPropertiesPanel):forms.extend((panel.common_form,panel.form))
-    else:forms.append(panel.common_form);forms.extend(record[2] for record in panel._group_records)
+    else:forms.append(panel.common_form);forms.extend(record[2] for record in panel._group_records if record[1].isVisible())
     for form in forms:
         for row in range(form.rowCount()):
             label_item=form.itemAt(row,QFormLayout.ItemRole.LabelRole)

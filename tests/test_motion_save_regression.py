@@ -133,5 +133,5 @@ def test_motion_metadata_round_trip_without_materialization(tmp_path, monkeypatc
     loaded = load_project(target)
     actual = loaded.effect_resource_layers[0].particle_settings.motion
     assert actual == expected and len(calls) == 1
-    assert json.loads(target.read_text(encoding="utf-8"))["format_version"] == 8
+    assert json.loads(target.read_text(encoding="utf-8"))["format_version"] == 9
     close_window(window)

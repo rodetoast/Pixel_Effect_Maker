@@ -1,5 +1,16 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Asset Preview Pivot / Navigation / 2.5D Raster Edge
+
+- [ ] Resource 생성 전 28×28 Asset의 `(14,14)` 및 29×29 Asset의 `(14.5,14.5)` Pivot이 이미지 중앙에 `십자 + 원 + P`로 보인다.
+- [ ] Asset Pivot X/Y 입력과 중앙 정렬 버튼이 Preview Marker를 즉시 이동시키며 Source RGBA와 Project render에는 Marker가 포함되지 않는다.
+- [ ] Asset 선택 시 24~48 logical-pixel 범위의 여백으로 전체 이미지가 Fit되고, `맞춤`과 `100%` 버튼이 동작한다.
+- [ ] Wheel Up/Down이 커서 위치 기준으로 10%~3200% Zoom하고 확대된 Pixel Art가 흐려지지 않는다.
+- [ ] Middle Mouse Drag Pan 뒤 이미지와 Pivot Marker가 같은 offset으로 이동하며 Asset Pivot/Dirty 상태는 바뀌지 않는다.
+- [ ] Windows DPI 100%, 125%, 150%에서 Fit 여백, Marker 위치, Wheel Zoom, Pan을 확인한다.
+- [ ] 28×28 transparent-margin directional fixture를 Rotation X/Y 5°, 15°, 30°, 60°, 89°와 Perspective 0/0.2/0.6/1.0에서 확인해 우측·하단·우하단 색이 Quad 밖으로 늘어나지 않는다.
+- [ ] Rotation X/Y 0°, 0.001°, 0.1°, 1° 및 양·음 각도에서 갑작스러운 1px streak, 0.5px Pivot 이동, Local Z plane-normal 회귀가 없다.
+
 ## Project Defaults & Effect Playback
 
 - [ ] New Project를 열면 600×600, 12 FPS, 12 Frames이며 FPS를 24/30/60으로 바꾸면 Frames도 직접 편집 전까지 같은 값이 된다.
@@ -533,6 +544,27 @@
 - [ ] Rotate Z를 ±180° 경계 근처에서 조작하고 Shift 15° snap, Release, Undo/Redo와 Escape를 확인한다.
 - [ ] Rotation keyframe이 현재 Frame에 있는 경우 해당 Key 값이 바뀌고 다른 Frame의 Key는 유지되는지 확인한다.
 - [ ] Zoom 25/100/400%, Pan 적용, Windows DPI 100/125/150%에서 Handle hit area와 조작 방향을 확인한다.
+
+## 2.5D Interaction & Stability Completion
+
+- [ ] Particle 100인 Effect Layer에서 2초 이상 연속 Drag하고 Exact 결과가 늦게 교체되는 동안 Gizmo, 활성 Handle, XYZ 축, Rotation Ring, Motion Guide가 한 번도 사라지지 않는지 확인한다.
+- [ ] Linear에서는 Orbit/Helix 그룹이 숨고, Orbit에서는 Helix 축만 숨으며, Helix에서는 필요한 전체 그룹이 표시되는지 확인한다.
+- [ ] 한국어/영어 Motion Mode와 회전 방향에 내부 값(`helix`, `counter_clockwise`, `center_x`)이 노출되지 않고 긴 Label이 글자 단위로 줄바꿈되지 않는지 확인한다.
+- [ ] Motion 각 항목의 Tooltip과 각도 `°`, 회전 횟수 `회/turns` 단위가 실제 의미와 맞는지 확인한다.
+- [ ] 0~1 Opacity/Perspective를 0.95 부근에서 Up, 0.05 부근에서 Down, 범위 밖 직접 입력, Ctrl+Wheel로 조작해 0/1에서 제한되고 앱이 종료되지 않는지 확인한다.
+- [ ] 방향성 강한 Sprite를 X 55°, Y 20°, Perspective 활성 상태로 둔 뒤 Z를 0→360° 돌려 Plane 기울기는 유지되고 무늬만 Plane 안에서 도는지 확인한다.
+- [ ] 같은 Resource Z 변경 전후 Particle 중심, Linear, Orbit, Helix 경로가 움직이지 않는지 확인한다.
+- [ ] Resource Preview, Effect Current Frame, Playback, Bake, PNG, PNG Sequence에서 Local Z Spin 의미가 같은지 확인한다.
+
+## Resource 2.5D Identity / Pivot / Effect X Gizmo
+
+- [ ] `테스트소스.png`(28×28)를 가져와 Source 크기의 Resource를 만든 직후 원본 형태·색·투명 여백이 변하지 않고 오른쪽/아래로 1px 늘어나지 않는지 확인한다.
+- [ ] 불투명 픽셀 외곽과 초록 Selection/Projected Box가 맞고 Box 밖으로 픽셀이 삐져나오지 않는지 100%와 400% Zoom에서 확인한다.
+- [ ] Pivot Tool에서 `(14,14)`가 28×28 Sprite의 중앙에 `십자 + 원 + P`로 보이며, Pivot X/Y를 바꾸면 Sprite/Selection이 Marker에 대해 즉시 이동하는지 확인한다.
+- [ ] Pivot Marker가 Preview/Bake/PNG/Particle Sprite 결과에 포함되지 않고 Zoom 25/100/400%와 Pan 뒤에도 같은 로컬 Pivot을 가리키는지 확인한다.
+- [ ] X/Y Tilt와 Local Z Spin 뒤 Pivot Marker, Projected Quad, Z Ring이 같은 평면 수학을 사용하며 비중앙 Pivot을 중심으로 회전하는지 확인한다.
+- [ ] Effect Move XYZ의 빨간 X에 Hover해 Layer Space X 이동 설명이 보이고, Motion Guide Handle과 겹쳐도 X를 Drag하면 Layer와 Guide 및 Inspector 위치 X가 함께 변하는지 확인한다.
+- [ ] 빨간 X Drag Release는 Undo 하나, Escape는 원래 Position X와 Guide로 복원되고 Undo를 만들지 않는지 확인한다.
 
 ## Effect Playback Prebuffer
 

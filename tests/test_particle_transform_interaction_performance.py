@@ -26,7 +26,7 @@ def _particle_context():
     return project, layer
 
 
-def test_transform_reuses_particle_base_and_settings_invalidate(monkeypatch):
+def test_transform_direct_render_avoids_full_sequence_and_invalidates_layer_space_sequence(monkeypatch):
     project, layer = _particle_context(); render_service.invalidate_effect_resource_layer_base()
     original = render_service.render_particle_frames; calls = []
     def counted(*args, **kwargs):
@@ -38,11 +38,13 @@ def test_transform_reuses_particle_base_and_settings_invalidate(monkeypatch):
     for value in range(20):
         layer.layer_transform.rotation_y = value; layer.layer_transform.revision += 1
         render_service.apply_effect_resource_layer_current_frame(project, layer, 0)
-    assert len(calls) == 1 and render_service.render_effect_resource_layer_base(project, layer) is base
+    assert len(calls) == 1
+    rebuilt=render_service.render_effect_resource_layer_base(project,layer)
+    assert len(calls)==2 and rebuilt is not base
     layer.particle_settings.seed += 1
     render_service.invalidate_effect_resource_layer_base(layer.id)
     render_service.apply_effect_resource_layer(project, layer)
-    assert len(calls) == 2
+    assert len(calls) == 3
     render_service.invalidate_effect_resource_layer_base()
 
 
@@ -55,7 +57,7 @@ def test_current_transform_renders_one_frame_and_only_selected_layer(monkeypatch
     first.layer_transform.rotation_x=30;first.layer_transform.revision+=1
     render_service.apply_effect_resource_layer_current_frame(project,first,0)
     assert calls==[0]
-    assert render_service.render_effect_resource_layer_base(project,first) is first_base
+    assert render_service.render_effect_resource_layer_base(project,first) is not first_base
     assert render_service.render_effect_resource_layer_base(project,second) is second_base
     render_service.invalidate_effect_resource_layer_base(first.id)
     assert render_service.render_effect_resource_layer_base(project,second) is second_base
@@ -74,14 +76,19 @@ def test_transform_timer_is_latest_wins_and_rejects_stale_revision(tmp_path, mon
         layer.layer_transform.rotation_y = value; layer.layer_transform.revision += 1; window._queue_resource_transform_render(layer)
     window.resource_transform_finalize_timer.stop()
     elapsed = 0
-    while elapsed < 2000 and window.canvas.interactive_transform_proxy is None:
-        QTest.qWait(10); elapsed += 10
+    while elapsed < 2000:
+        state=window.canvas.interactive_transform_proxy
+        if state is not None and state.active and state.last_applied_revision==20:break
+        QTest.qWait(10);elapsed+=10
     assert current_calls == [] and final_calls == []
     assert window.canvas.interactive_transform_proxy.last_applied_revision==20
     window._pending_resource_transforms[layer.id] = 19; window._flush_resource_transform_current()
     assert current_calls == []
+    installed=window.interactive_gizmo_renderer.collector.final_exact_installs
     window._pending_resource_transforms[layer.id] = 20; window._flush_resource_transform_final()
-    assert current_calls == [(20, 19)] and final_calls == []
+    elapsed=0
+    while elapsed<2000 and window.interactive_gizmo_renderer.collector.final_exact_installs==installed:QTest.qWait(10);elapsed+=10
+    assert current_calls == [] and final_calls == []
     window._materialize_resource_transform_sequences()
     assert final_calls == [20]
     window.dirty = False; window._non_undo_dirty = False; window.close()

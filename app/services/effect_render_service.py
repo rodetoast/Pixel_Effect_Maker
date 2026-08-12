@@ -24,7 +24,7 @@ class EffectRenderError(ValueError):
     """Raised when a generator cannot be rendered without partial mutation."""
 
 
-EFFECT_RASTER_STATS={"source_over_calls":0,"transparent_skips":0,"opaque_fast_paths":0,"roi_pixels":0,"offscreen_skips":0}
+EFFECT_RASTER_STATS={"source_over_calls":0,"transparent_skips":0,"opaque_fast_paths":0,"identity_blits":0,"roi_pixels":0,"offscreen_skips":0}
 
 
 def reset_effect_raster_stats() -> None:
@@ -129,6 +129,26 @@ def render_transformed_source(
 ) -> None:
     """Warp one source into an RGBA canvas using inverse nearest sampling."""
     if abs(scale_x) < 1e-6 or abs(scale_y) < 1e-6 or opacity <= 0.0:
+        return
+    # Pixel coordinates describe outer edges: an WxH source occupies
+    # [0, W] x [0, H], while array indexes identify the enclosed pixel cells.
+    # The projective sampler works in continuous coordinates and its legacy
+    # unit-square mapping is intentionally retained for non-identity warps.
+    # For an integer-aligned identity placement, direct slicing is the only
+    # unambiguous pixel-exact result and also preserves transparent RGB bytes.
+    top_left_x=position_x-asset.pivot_x;top_left_y=position_y-asset.pivot_y
+    identity_rotation=abs(math.remainder(float(rotation),360.0))<=1e-9
+    integer_aligned=abs(top_left_x-round(top_left_x))<=1e-9 and abs(top_left_y-round(top_left_y))<=1e-9
+    if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9 and abs(opacity-1.0)<=1e-9 and integer_aligned:
+        left=int(round(top_left_x));top=int(round(top_left_y));right=left+asset.width;bottom=top+asset.height
+        canvas_left=max(0,left);canvas_top=max(0,top);canvas_right=min(canvas.shape[1],right);canvas_bottom=min(canvas.shape[0],bottom)
+        if canvas_left>=canvas_right or canvas_top>=canvas_bottom:
+            EFFECT_RASTER_STATS["offscreen_skips"]+=1;return
+        source=asset.pixels[canvas_top-top:canvas_bottom-top,canvas_left-left:canvas_right-left]
+        destination=canvas[canvas_top:canvas_bottom,canvas_left:canvas_right]
+        if not np.any(destination[...,3]):destination[:]=source
+        else:_source_over(destination,source)
+        EFFECT_RASTER_STATS["identity_blits"]+=1
         return
     destination = _destination_corners(
         asset,

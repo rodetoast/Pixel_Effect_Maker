@@ -9,6 +9,8 @@ from app.models.source_asset import SourceAsset
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from app.models.project import Project
 from app.services.particle_render_service import render_particle_frames
+from app.models.effect_resource_layer import EffectLayerTransform3D
+from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
 from app.services.runtime_diagnostics import log_exception
 
 @dataclass
@@ -19,20 +21,25 @@ class ParticlePreviewSession:
     emitter_id: str; revision: int; frames: list
 @dataclass(frozen=True)
 class ParticlePreviewSnapshot:
-    emitter_id: str; revision: int; width: int; height: int; fps: int; resource: object; settings: ParticleEmitterSettings; context_revision: int=0
+    emitter_id: str; revision: int; width: int; height: int; fps: int; resource: object; settings: ParticleEmitterSettings; layer_space_transform: EffectLayerTransform3D; surface_transform: EffectLayerTransform3D; context_revision: int=0
     @classmethod
     def from_project(cls, project, emitter_id, revision, settings, context_revision=0):
         if settings.resource_type=="resource_composition":resource=deepcopy(project)
         else:
             items=project.source_assets if settings.resource_type=="source_asset" else project.animation_clips
             resource=next(c for c in items if c.id==settings.clip_asset_id)
-        return cls(emitter_id,revision,project.width,project.height,project.fps,resource,deepcopy(settings),context_revision)
+        layer=next((item for item in project.effect_resource_layers if item.id==emitter_id),None)
+        layer_space=EffectLayerTransform3D() if layer is None else deepcopy(layer.layer_space_transform)
+        surface=EffectLayerTransform3D() if layer is None else deepcopy(layer.surface_transform)
+        return cls(emitter_id,revision,project.width,project.height,project.fps,resource,deepcopy(settings),layer_space,surface,context_revision)
 def render_particle_snapshot(snapshot):
     if snapshot.settings.resource_type=="resource_composition":project=snapshot.resource
     else:
         project=Project.create_default("Particle Preview",snapshot.width,snapshot.height,snapshot.fps,True)
         (project.source_assets if snapshot.settings.resource_type=="source_asset" else project.animation_clips).append(snapshot.resource)
-    emitter=ParticleEmitter(id=snapshot.emitter_id,name="Preview",settings=deepcopy(snapshot.settings)); return render_particle_frames(project,emitter)
+    emitter=ParticleEmitter(id=snapshot.emitter_id,name="Preview",settings=deepcopy(snapshot.settings))
+    frames=render_particle_frames(project,emitter,layer_space_transform=snapshot.layer_space_transform)
+    return [transform_rgba_frame(frame,snapshot.surface_transform,index) for index,frame in enumerate(frames)]
 class _Worker(QRunnable):
     def __init__(self,snapshot,queue): super().__init__(); self.snapshot=snapshot; self.queue=queue
     def run(self):

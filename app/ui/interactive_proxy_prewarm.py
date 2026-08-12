@@ -13,7 +13,7 @@ import numpy as np
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from app.services.runtime_diagnostics import log_exception
-from app.services.effect_resource_layer_render_service import render_effect_resource_layer_current_base_frame
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer_local_current_frame
 from app.services.alpha_composite_service import composite_layers_rgba8
 
 
@@ -169,7 +169,7 @@ class _PrewarmWorker(QRunnable):
         timings={};started=perf_counter();frame=self.payload.base_frame
         if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
         if frame is None and self.payload.cached_crop is None:
-            frame=render_effect_resource_layer_current_base_frame(self.payload.project,self.payload.layer,self.payload.frame_index)
+            frame=render_effect_resource_layer_local_current_frame(self.payload.project,self.payload.layer,self.payload.frame_index)
             timings["current_base_render"]=(perf_counter()-started)*1000.0;started=perf_counter()
         if self.cancelled.is_set():self.output.put(ProxyPrewarmCancelled(self.payload.token));return
         if self.payload.cached_crop is not None:

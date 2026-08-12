@@ -101,7 +101,8 @@ def test_property_search_is_bilingual_and_full_rotation_directions(tmp_path):
     assert dialog.results.count() == 1 and dialog.results.item(0).data(256) == "rotation"
     localization.set_language("ko")
     dialog.search.setText("회전")
-    assert dialog.results.count() == 1
+    assert dialog.results.count() == 3
+    assert {dialog.results.item(index).data(256) for index in range(dialog.results.count())} == {"rotation","rotation_x","rotation_y"}
 
     window = MainWindow(service(tmp_path))
     path = tmp_path / "pixel.png"

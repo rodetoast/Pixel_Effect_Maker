@@ -7,6 +7,7 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import QComboBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from app.models.effect_resource_layer import TRANSFORM_TRACK_PROPERTIES
+from app.models.property_registry import NUMERIC_PROPERTY_SPECS
 from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox
 
 
@@ -16,9 +17,10 @@ class ResourceLayerTransformPanel(QGroupBox):
     transform_edit_finished = Signal(str)
     keyframe_requested = Signal(str, str, int, float, str)
     gizmo_mode_changed = Signal(str, str)
+    surface_transform_changed = Signal(str, object)
 
     def __init__(self, parent=None):
-        super().__init__("2.5D Transform", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
+        super().__init__("Layer Space Transform", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         root=QVBoxLayout(self);root.setContentsMargins(8,10,8,8);self.description=QLabel("Transform the final Resource Layer output as a flat plane.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);root.addWidget(self.description)
         tools=QGridLayout();tools.setColumnStretch(0,1);tools.setColumnStretch(1,1);self.gizmo_buttons={}
@@ -31,7 +33,8 @@ class ResourceLayerTransformPanel(QGroupBox):
             spin=ScrollSafeDoubleSpinBox();spin.setObjectName(f"resourceLayer_{name}");spin.setDecimals(3);spin.setMinimumWidth(70);spin.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
             if name.startswith("rotation_"):spin.setRange(-36000,36000);spin.setSingleStep(1)
             elif name in {"scale_x","scale_y"}:spin.setRange(.01,100);spin.setSingleStep(.05)
-            elif name in {"opacity","perspective_strength"}:spin.setRange(0,1);spin.setSingleStep(.05)
+            elif name in {"opacity","perspective_strength"}:
+                spec=NUMERIC_PROPERTY_SPECS["normalized.opacity" if name=="opacity" else "normalized.perspective"];spin.setRange(spec.minimum,spec.maximum);spin.setSingleStep(spec.step)
             elif name=="position_z":spin.setRange(-4096,4096)
             else:spin.setRange(-8192,8192)
             row=QWidget();row.setMinimumWidth(0);row.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);column=QVBoxLayout(row);column.setContentsMargins(0,0,0,0);column.setSpacing(3);column.addWidget(spin)
@@ -39,7 +42,17 @@ class ResourceLayerTransformPanel(QGroupBox):
                 footer=QWidget();footer.setMinimumWidth(0);footer.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);line=QHBoxLayout(footer);line.setContentsMargins(0,0,0,0);line.setSpacing(3);easing_label=QLabel("Easing");easing_label.setObjectName(f"resourceLayerEasingLabel_{name}");easing_label.setMinimumWidth(0);easing=QComboBox();[easing.addItem(v,v) for v in ("Linear","Ease In","Ease Out","Ease In/Out")];easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
                 key=QPushButton("◆");key.setObjectName(f"resourceLayerKey_{name}");key.setFixedSize(30,28);key.clicked.connect(lambda checked=False,n=name:self._add_key(n));line.addWidget(easing_label);line.addWidget(easing,1);line.addWidget(key);column.addWidget(footer);self.key_buttons[name]=key;self.easings[name]=easing;self.easing_labels[name]=easing_label
             form.addRow(labels[name],row);label=form.labelForField(row);label.setWordWrap(True);label.setMinimumWidth(0);label.setMaximumWidth(88);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.field_rows[name]=row;self.fields[name]=spin;spin.valueChanged.connect(self._changed);spin.editingFinished.connect(self._editing_finished)
-        self.reset=QPushButton("Reset 2.5D Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);root.addWidget(self.reset)
+        self.reset=QPushButton("Reset Layer Space Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);root.addWidget(self.reset)
+        self.surface_group=QGroupBox("Advanced / Compatibility — Surface Transform");surface_form=QFormLayout(self.surface_group);self.surface_warning=QLabel("Migrated transforms are retained here to preserve the v8 rendered result.");self.surface_warning.setWordWrap(True);surface_form.addRow(self.surface_warning);self.surface_fields={}
+        for name in (*TRANSFORM_TRACK_PROPERTIES,"pivot_x","pivot_y"):
+            spin=ScrollSafeDoubleSpinBox();spin.setDecimals(3);spin.setMinimumWidth(70)
+            if name.startswith("rotation_"):spin.setRange(-36000,36000)
+            elif name in {"scale_x","scale_y"}:spin.setRange(.01,100);spin.setSingleStep(.05)
+            elif name in {"opacity","perspective_strength"}:
+                spec=NUMERIC_PROPERTY_SPECS["normalized.opacity" if name=="opacity" else "normalized.perspective"];spin.setRange(spec.minimum,spec.maximum);spin.setSingleStep(spec.step)
+            else:spin.setRange(-8192,8192)
+            spin.valueChanged.connect(self._surface_changed);surface_form.addRow(labels[name],spin);self.surface_fields[name]=spin
+        self.surface_reset=QPushButton("Reset Surface Transform");self.surface_reset.setToolTip("Reset the compatibility Surface Transform to identity.");self.surface_reset.clicked.connect(self._reset_surface);surface_form.addRow(self.surface_reset);root.addWidget(self.surface_group)
 
     def set_layer(self, layer, frame=0):
         self.layer=layer;self.frame=int(frame);self._loading=True
@@ -47,6 +60,8 @@ class ResourceLayerTransformPanel(QGroupBox):
             transform=layer.layer_transform
             for name,spin in self.fields.items():spin.setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
             for name,button in self.key_buttons.items():button.setChecked(any(key.frame==self.frame for key in transform.tracks.get(name,()).keyframes) if name in transform.tracks else False)
+            for name,spin in self.surface_fields.items():spin.setValue(layer.surface_transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(layer.surface_transform,name))
+            self.surface_warning.setVisible(not layer.surface_transform.is_identity())
         self.setEnabled(layer is not None);self._loading=False
 
     def set_transform_fields(self,layer,frame,names):
@@ -63,15 +78,26 @@ class ResourceLayerTransformPanel(QGroupBox):
     def _changed(self,*args):
         if self._loading or self.layer is None:return
         transform=deepcopy(self.layer.layer_transform)
-        for name,spin in self.fields.items():
-            track=transform.tracks.get(name)
-            key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
-            if key is not None:key.value=float(spin.value())
-            else:setattr(transform,name,float(spin.value()))
-        transform.revision+=1
         name=next((name for name,field in self.fields.items() if field is self.sender()),"")
+        if not name:return
+        spin=self.fields[name];track=transform.tracks.get(name);key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
+        if key is not None:key.value=float(spin.value());transform.revision+=1
+        else:transform.set_property(name,float(spin.value()))
         if name:self.interactive_transform_changed.emit(self.layer.id,transform,name)
         else:self.transform_changed.emit(self.layer.id,transform)
+
+    def _surface_changed(self,*args):
+        if self._loading or self.layer is None:return
+        name=next((name for name,field in self.surface_fields.items() if field is self.sender()),"")
+        if not name:return
+        transform=deepcopy(self.layer.surface_transform);track=transform.tracks.get(name);key=next((item for item in track.keyframes if item.frame==self.frame),None) if track else None
+        if key is not None:key.value=float(self.surface_fields[name].value());transform.revision+=1
+        else:transform.set_property(name,float(self.surface_fields[name].value()))
+        self.surface_transform_changed.emit(self.layer.id,transform)
+
+    def _reset_surface(self):
+        if self.layer is None:return
+        transform=deepcopy(self.layer.surface_transform);transform.reset_base();self.surface_transform_changed.emit(self.layer.id,transform)
 
     def _editing_finished(self):
         if not self._loading and self.layer is not None:self.transform_edit_finished.emit(self.layer.id)
@@ -89,6 +115,8 @@ class ResourceLayerTransformPanel(QGroupBox):
 
     def retranslate_ui(self, localization):
         self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"))
+        self.surface_group.setTitle(t("resource_layer.surface_transform"));self.surface_warning.setText(t("resource_layer.surface_help"));self.surface_reset.setText(t("resource_layer.surface_reset"))
+        self.surface_reset.setToolTip(t("resource_layer.surface_reset")+". "+t("resource_layer.surface_help"))
         tips={"rotation_x":"tooltip.resource_layer.rotation_x","rotation_y":"tooltip.resource_layer.rotation_y","rotation_z":"tooltip.resource_layer.rotation_z","position_z":"tooltip.resource_layer.position_z","perspective_strength":"tooltip.resource_layer.perspective"}
         for name,field in self.fields.items():field.setToolTip(t(tips.get(name,"resource_layer.transform_help")))
         label_keys={"position_x":"field.position_x","position_y":"field.position_y","position_z":"resource_layer.position_z","rotation_x":"resource_layer.rotation_x","rotation_y":"resource_layer.rotation_y","rotation_z":"resource_layer.rotation_z","scale_x":"field.scale_x","scale_y":"field.scale_y","opacity":"field.opacity","pivot_x":"resource.pivot_x","pivot_y":"resource.pivot_y","perspective_strength":"resource_layer.perspective"}

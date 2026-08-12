@@ -26,11 +26,11 @@ def window_context(tmp_path):
     window.select_resource_layer(layer.id);window.canvas.resize(700,500);window.show();APP.processEvents();return window,layer
 
 
-def test_motion_mode_disables_linear_and_enables_orbit_fields():
+def test_motion_mode_hides_irrelevant_groups():
     panel=ParticlePropertiesPanel();project=__import__("app.models.project",fromlist=["Project"]).Project.create_default();composition=ResourceComposition("c");project.resource_compositions.append(composition);layer=EffectResourceLayer("p",composition.id,placement_mode=PLACEMENT_PARTICLE)
-    panel.set_resource_layer(layer,project);assert panel.direction_group.isEnabled() and not panel.motion_radius_start.isEnabled()
-    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("orbit"));assert not panel.direction_group.isEnabled() and panel.motion_radius_start.isEnabled() and not panel.motion_axis_end.isEnabled()
-    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("helix"));assert panel.motion_axis_end.isEnabled()
+    panel.set_resource_layer(layer,project);assert panel.direction_group.isEnabled() and panel.motion_basic_group.isVisibleTo(panel) and not panel.motion_shape_group.isVisibleTo(panel)
+    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("orbit"));assert not panel.direction_group.isEnabled() and panel.motion_shape_group.isVisibleTo(panel) and not panel.motion_helix_group.isVisibleTo(panel)
+    panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("helix"));assert panel.motion_shape_group.isVisibleTo(panel) and panel.motion_helix_group.isVisibleTo(panel)
 
 
 def test_motion_reset_preserves_animation_tracks():
@@ -75,8 +75,9 @@ def test_motion_inspector_has_visible_labels_without_horizontal_scroll(width):
     panel=ParticlePropertiesPanel();project=__import__("app.models.project",fromlist=["Project"]).Project.create_default();composition=ResourceComposition("c");project.resource_compositions.append(composition);layer=EffectResourceLayer("p",composition.id,placement_mode=PLACEMENT_PARTICLE)
     layer.particle_settings.motion.mode="helix";panel.set_resource_layer(layer,project);panel.resize(width,720);panel.show();APP.processEvents()
     assert panel.horizontalScrollBar().maximum()==0
-    records=next(records for title,_,_,records in panel._group_records if title=="Motion")
-    assert all(label.isVisible() for _,widget in records if widget.isEnabled() for label in [next(form.labelForField(widget) for title,_,form,items in panel._group_records if title=="Motion")])
+    motion_groups=(panel.motion_basic_group,panel.motion_center_group,panel.motion_shape_group,panel.motion_helix_group,panel.motion_easing_group,panel.motion_advanced_group)
+    assert all(group.width()<=panel.viewport().width() for group in motion_groups if group.isVisible())
+    assert all(form.labelForField(widget).isVisible() for _,group,form,records in panel._group_records if group in motion_groups and group.isVisible() for _,widget in records)
     panel.close()
 
 
@@ -110,11 +111,11 @@ def test_motion_reset_is_one_undo_and_preserves_tracks(tmp_path):
     window.dirty=False;window.close()
 
 
-def test_motion_handle_has_priority_over_resource_transform_handle(tmp_path):
+def test_visible_resource_transform_handle_has_priority_when_motion_handle_overlaps(tmp_path):
     window,layer=window_context(tmp_path);canvas=window.canvas;motion=canvas._guide_points()["motion_center"].toPoint()
     canvas.resource_transform_handle_positions=lambda:{"center":motion,"x":motion,"y":motion,"z":motion}
     QTest.mousePress(canvas,Qt.MouseButton.LeftButton,pos=motion)
-    assert canvas._guide_handle=="motion_center" and canvas._resource_transform_drag is None
+    assert canvas._guide_handle is None and canvas._resource_transform_drag=="x"
     QTest.mouseRelease(canvas,Qt.MouseButton.LeftButton,pos=motion)
     window.dirty=False;window.close()
 

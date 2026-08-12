@@ -30,7 +30,7 @@ def test_effect_layer_transform_identity_defaults_and_v6_round_trip():
 def test_existing_v6_without_transform_and_migrated_v5_are_identity():
     project=Project.create_default();composition=ResourceComposition("R");project.resource_compositions.append(composition)
     layer=EffectResourceLayer("Layer",composition.id);project.effect_resource_layers.append(layer)
-    data=project.to_dict();data["effect_resource_layers"][0].pop("layer_transform")
+    data=project.to_dict();data["effect_resource_layers"][0].pop("layer_space_transform")
     assert Project.from_dict(data).effect_resource_layers[0].layer_transform.is_identity()
     data=project.to_dict();data["format_version"]=5;data.pop("effect_resource_layers")
     assert all(item.layer_transform.is_identity() for item in Project.from_dict(data).effect_resource_layers)

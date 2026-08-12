@@ -58,7 +58,7 @@ Canvas는 Preview 활성 Generator의 실제 Generated Layer를 transient Previe
 
 ## 파일 형식
 
-애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `8`입니다. 형식 8은 형식 7의 compact `rgba8-zlib-base64` Payload를 그대로 유지하고 Particle Motion Metadata를 추가합니다. 형식 1~7은 로드 시 Linear Motion 기본값으로 변환하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
+애플리케이션 버전은 `0.0.04`, 최신 프로젝트 `FORMAT_VERSION`은 `9`입니다. 형식 9는 compact `rgba8-zlib-base64` Payload를 유지하고 Resource Layer의 새 Layer Space Transform과 호환 Surface Transform을 분리합니다. 형식 1~8은 메모리에서 마이그레이션하며 원본 파일은 사용자가 저장하기 전까지 다시 쓰지 않습니다. Legacy Transform Generator는 별도 호환 모델로 유지합니다.
 
 ## Particle 규칙
 

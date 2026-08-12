@@ -62,7 +62,7 @@ def test_copy_diagnostics_excludes_current_project_pixels(tmp_path):
     window.copy_diagnostic_information()
     text = APP.clipboard().text()
     assert "Pixel Effect Maker v0.0.04" in text
-    assert "Project Format: 8" in text
+    assert "Project Format: 9" in text
     assert "PRIVATE_PROJECT_SENTINEL" not in text
     assert "layer_pixels" not in text
     finish(window)

@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased — Asset Preview Navigation & Projective Raster Accuracy
+
+- Added a pre-Resource Asset Preview pivot overlay, immediate source-local pivot updates, 32px-margin Fit, cursor-anchored 10%–3200% wheel zoom, middle-mouse pan, and Fit/100% controls while retaining nearest-neighbor pixels.
+- Unified non-identity Resource 2.5D rasterization around half-open source outer edges and destination pixel centers; samples at `u/v == 1` or otherwise outside the inverse-mapped crop are transparent instead of clamped to the right/bottom border.
+- Added independent X/Y orthographic references, perspective-footprint checks, transparent-margin and isolated right/bottom/corner fixtures, small-angle symmetry, and Asset Preview interaction regressions.
+
+## Unreleased — Resource 2.5D Identity Accuracy & Gizmo Clarity
+
+- Added an integer-aligned identity raster path that preserves every source RGBA byte, including transparent RGB, and prevents right/bottom edge duplication caused by mapping outer-edge coordinates through the projective sampler.
+- Documented half-open source/alpha bounds and aligned Resource selection geometry with the exact rendered pixel footprint for even, odd, 1×1, full-edge, and transparent-margin assets.
+- Clarified the Resource layer pivot with a projected crosshair, active Pivot ring and `P` marker, source-local outer-edge tooltips, and immediate Inspector/Canvas synchronization without baking overlays into output.
+- Identified the Effect red X handle as Layer Space `position_x`, gave Resource transform handles priority over overlapping Motion Guide handles, and added localized hover help plus Drag/Inspector/Guide/Undo/Escape coverage.
+
+## Unreleased — 2.5D Interaction & Stability Completion
+
+- Kept Effect Gizmo and Motion Guide geometry in the final GUI overlay during exact/proxy frame replacement, and retried the newest exact revision when it arrived before composite prewarm instead of silently discarding it.
+- Reorganized Motion into mode-aware Basic, Orbit Center, Orbit Shape, Helix, Interpolation, and Advanced groups with bilingual enum labels, help text, stable one-line labels, and localized units.
+- Centralized bounded Opacity/Perspective metadata, aligned Effect and Resource UI ranges with model validation, and registered the MainWindow undo-index callback as a real Qt integer slot.
+- Changed Resource canonical Z rotation to local-plane spin (`Ry @ Rx @ Rz` for column vectors), including renderer, projected axes/quad/ring gizmos, legacy XY-zero compatibility, and Particle-coordinate invariance coverage.
+
+## Unreleased — Layer Space 2.5D Transform v9
+
+- 프로젝트 형식을 v9로 올리고 새 `layer_space_transform`과 호환 `surface_transform`을 명시적으로 분리
+- v8 `layer_transform`을 Surface Transform으로 정확히 이관하고 새 Layer Space Transform은 Identity로 초기화
+- Single과 Particle의 로컬 좌표, Canvas Guide, XYZ 축 및 회전 링이 하나의 고정 카메라 투영 서비스를 공유
+- Particle 중심·Motion·Billboard 크기에 Layer Space Scale/Rotation/Depth/Perspective를 적용하고 변환된 view Z로 안정 정렬
+- Particle Transform 드래그는 전체 레이어 Projective Proxy 대신 latest-wins 정확 현재 프레임을 백그라운드에서 계산
+- Inspector 기본 섹션을 Layer Space Transform으로 변경하고 비 Identity 호환 Surface Transform 경고 및 편집 영역 추가
+- v1~v8 마이그레이션, v8 RGBA 보존, v9 Round-trip, Preview/Playback/Save Cache 회귀 테스트 추가
+
 ## Unreleased — 2.5D Rotation Gizmo Interaction
 
 - Fixed Rotate X/Y/Z handles writing `rotate_*` dynamic attributes instead of the canonical `rotation_*` transform fields, which made Canvas and Inspector appear completely unresponsive.

@@ -12,8 +12,8 @@ from PySide6.QtWidgets import QApplication
 from app.models.effect_resource_layer import PLACEMENT_PARTICLE
 from app.models.resource_composition import CompositionLayer, ResourceComposition
 from app.models.source_asset import SourceAsset
-from app.services.effect_layer_transform_3d_render_service import projected_quad
-from app.services.effect_resource_layer_render_service import render_effect_resource_layer_base_frame
+from app.services.layer_space_transform_service import projected_layer_quad
+from app.services.effect_resource_layer_render_service import render_effect_resource_layer_base_frame,render_effect_resource_layer_local_current_frame
 from app.services import effect_resource_layer_render_service as render_service
 from app.services.settings_service import ShortcutSettingsService
 from app.ui.main_window import MainWindow
@@ -22,12 +22,13 @@ from app.ui.main_window import MainWindow
 APP=QApplication.instance() or QApplication([])
 
 
-def context(tmp_path,name="proxy"):
+def context(tmp_path,name="proxy",particle=False):
     settings=QSettings(str(tmp_path/f"{name}.ini"),QSettings.Format.IniFormat);settings.setValue("ui/language","en")
     window=MainWindow(ShortcutSettingsService(settings));pixels=np.zeros((12,12,4),dtype=np.uint8);pixels[2:10,3:9]=[240,90,30,173]
     asset=SourceAsset("spark",pixels,pivot_x=6,pivot_y=6);composition=ResourceComposition("Proxy Resource",12,12,12,3,True)
     composition.layers.append(CompositionLayer("spark","source_asset",asset.id,0,2,pivot_x=6,pivot_y=6));window.project.source_assets.append(asset);window.project.resource_compositions.append(composition)
-    layer=window.create_resource_layer_from_resource(composition.id,PLACEMENT_PARTICLE);window.canvas.resize(760,700);window.show();APP.processEvents()
+    layer=window.create_resource_layer_from_resource(composition.id,PLACEMENT_PARTICLE) if particle else window.create_resource_layer_from_resource(composition.id)
+    window.canvas.resize(760,700);window.show();APP.processEvents()
     return window,layer,composition
 
 
@@ -81,7 +82,7 @@ def test_spinbox_burst_uses_proxy_and_idle_or_editing_finished_finalizes_once(tm
     window,layer,_=context(tmp_path,"spin");calls=[];original=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer_current_frame"]).apply_effect_resource_layer_current_frame
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer_current_frame",lambda *args,**kwargs:calls.append(args[1].layer_transform.position_x) or original(*args,**kwargs))
     retranslations=[];monkeypatch.setattr(window,"retranslate_ui",lambda *args:retranslations.append(1))
-    spin=window.particle_properties.transform_panel.fields["position_x"]
+    spin=window.composition_layer_properties.transform_panel.fields["position_x"]
     for value in range(1,21):spin.setValue(value)
     assert calls==[] and retranslations==[];window.resource_transform_render_timer.stop();window._flush_resource_transform_current();assert wait_for_active_proxy(window) is not None
     spin.editingFinished.emit();APP.processEvents()
@@ -95,7 +96,7 @@ def test_spinbox_burst_uses_proxy_and_idle_or_editing_finished_finalizes_once(tm
 def test_ctrl_wheel_burst_runs_one_idle_exact_render(tmp_path,monkeypatch):
     window,layer,_=context(tmp_path,"wheel");calls=[];original=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer_current_frame"]).apply_effect_resource_layer_current_frame
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer_current_frame",lambda *args,**kwargs:calls.append(1) or original(*args,**kwargs))
-    spin=window.particle_properties.transform_panel.fields["position_x"];spin.setFocus();local=QPointF(spin.rect().center())
+    spin=window.composition_layer_properties.transform_panel.fields["position_x"];spin.setFocus();local=QPointF(spin.rect().center())
     for _ in range(20):
         event=QWheelEvent(local,QPointF(spin.mapToGlobal(local.toPoint())),QPoint(),QPoint(0,120),Qt.MouseButton.NoButton,Qt.KeyboardModifier.ControlModifier,Qt.ScrollPhase.ScrollUpdate,False);APP.notify(spin,event)
     assert calls==[] and spin.value()==20
@@ -107,9 +108,9 @@ def test_proxy_reuses_cropped_base_image_and_shared_projected_quad(tmp_path):
     window,layer,_=context(tmp_path,"geometry");layer.layer_transform.rotation_x=28;layer.layer_transform.rotation_y=17;layer.layer_transform.perspective_strength=.6;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current()
     state=wait_for_active_proxy(window);assert state and state.base.alpha_bounds is not None
     assert state.base.rgba.shape[0]<window.project.height and state.base.rgba.shape[1]<window.project.width
-    base,_=render_effect_resource_layer_base_frame(window.project,layer,0);left,top,right,bottom=state.base.alpha_bounds
+    base=render_effect_resource_layer_local_current_frame(window.project,layer,0);left,top,right,bottom=state.base.alpha_bounds
     assert np.array_equal(state.base.rgba,base[top:bottom+1,left:right+1])
-    expected,valid=projected_quad(tuple(value+offset for value,offset in zip(state.base.alpha_bounds,(-.5,-.5,.5,.5))),layer.layer_transform.evaluated(0),window.project.width,window.project.height);assert valid.all()
+    expected,valid=projected_layer_quad((left,top,right+1,bottom+1),layer.layer_transform.evaluated(0),window.project.width,window.project.height);assert valid.all()
     actual=np.array([[window.canvas.widget_to_canvas(point).x(),window.canvas.widget_to_canvas(point).y()] for point in state.projected_quad])
     assert np.allclose(actual,expected) and window.canvas.proxy_base_image_cache.qimage_creations==1
     for value in range(10):layer.layer_transform.rotation_y+=1;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current()
@@ -152,7 +153,7 @@ def test_small_proxy_uses_old_and_new_partial_dirty_bounds(tmp_path):
 
 
 def test_depth_buffers_and_other_layers_stay_fixed_until_order_crossing(tmp_path):
-    window,layer,composition=context(tmp_path,"depth");other=window.create_resource_layer_from_resource(composition.id,PLACEMENT_PARTICLE);window.select_resource_layer(layer.id)
+    window,layer,composition=context(tmp_path,"depth");other=window.create_resource_layer_from_resource(composition.id);window.select_resource_layer(layer.id)
     layer.layer_transform.position_z=-2;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();state=wait_for_active_proxy(window);rebuilds=window.canvas.proxy_stats["depth_rebuilds"];underlay=state.underlay_pixmap.cacheKey();overlay=state.overlay_pixmap.cacheKey()
     for value in (-3,-4,-5):layer.layer_transform.position_z=value;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current()
     assert window.canvas.proxy_stats["depth_rebuilds"]==rebuilds and state.underlay_pixmap.cacheKey()==underlay and state.overlay_pixmap.cacheKey()==overlay
@@ -161,10 +162,10 @@ def test_depth_buffers_and_other_layers_stay_fixed_until_order_crossing(tmp_path
     close(window)
 
 
-def test_proxy_pauses_detailed_guides_and_is_not_serialized(tmp_path,monkeypatch):
+def test_proxy_keeps_gui_guides_visible_and_is_not_serialized(tmp_path,monkeypatch):
     window,layer,_=context(tmp_path,"guides");layer.layer_transform.position_x=4;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();assert wait_for_active_proxy(window) is not None;calls=[]
     original=window.canvas._paint_effect_guide;monkeypatch.setattr(window.canvas,"_paint_effect_guide",lambda painter:calls.append(1) or original(painter))
-    target=QImage(window.canvas.size(),QImage.Format.Format_ARGB32);window.canvas.render(target);assert calls==[] and "interactive_transform_proxy" not in window.project.to_dict()
+    target=QImage(window.canvas.size(),QImage.Format.Format_ARGB32);window.canvas.render(target);assert calls and "interactive_transform_proxy" not in window.project.to_dict()
     window._flush_resource_transform_final();window.canvas.render(target);assert calls
     close(window)
 
@@ -177,7 +178,7 @@ class LayoutCounter(QObject):
 
 
 def test_gizmo_updates_only_changed_inspector_field_without_layout(tmp_path,monkeypatch):
-    window,layer,_=context(tmp_path,"inspector");panel=window.particle_properties.transform_panel;window._set_resource_transform_gizmo(layer.id,"rotate_y");records=[];original=panel.set_transform_fields
+    window,layer,_=context(tmp_path,"inspector");panel=window.composition_layer_properties.transform_panel;window._set_resource_transform_gizmo(layer.id,"rotate_y");records=[];original=panel.set_transform_fields
     monkeypatch.setattr(panel,"set_transform_fields",lambda item,frame,names:records.append(tuple(names)) or original(item,frame,names))
     counter=LayoutCounter();panel.installEventFilter(counter);APP.processEvents();counter.count=0
     handle=window.canvas.resource_transform_handle_positions()["rotate_y"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle)
@@ -198,18 +199,18 @@ def test_playback_prepares_exact_cache_without_materializing_sequence_and_clears
 
 
 def test_bake_finalizes_proxy_then_uses_exact_sequence(tmp_path,monkeypatch):
-    window,layer,_=context(tmp_path,"bake");layer.layer_transform.rotation_y=14;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();current=[];sequence=[]
+    window,layer,_=context(tmp_path,"bake",particle=True);layer.layer_transform.rotation_y=14;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();current=[];sequence=[]
     module=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer_current_frame","apply_effect_resource_layer"]);original_current=module.apply_effect_resource_layer_current_frame;original_sequence=module.apply_effect_resource_layer
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer_current_frame",lambda *args,**kwargs:current.append(1) or original_current(*args,**kwargs));monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer",lambda *args,**kwargs:sequence.append(1) or original_sequence(*args,**kwargs))
     assert window.bake_particle_emitter(layer.id,deepcopy(layer.particle_settings))
-    assert current==[1] and sequence==[1] and window.canvas.interactive_transform_proxy is None
+    assert current==[] and sequence==[1] and window.canvas.interactive_transform_proxy is None
     close(window)
 
 
 def test_particle_preview_uses_exact_transform_and_clears_proxy(tmp_path,monkeypatch):
-    window,layer,_=context(tmp_path,"preview");base,_=render_effect_resource_layer_base_frame(window.project,layer,0);layer.layer_transform.rotation_x=19;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();calls=[]
+    window,layer,_=context(tmp_path,"preview",particle=True);base,_=render_effect_resource_layer_base_frame(window.project,layer,0);layer.layer_transform.rotation_x=19;layer.layer_transform.revision+=1;window._queue_resource_transform_render(layer);window.resource_transform_render_timer.stop();window._flush_resource_transform_current();calls=[]
     from app.services import effect_layer_transform_3d_render_service as exact_service
     original=exact_service.transform_rgba_frame;monkeypatch.setattr(exact_service,"transform_rgba_frame",lambda *args,**kwargs:calls.append(1) or original(*args,**kwargs))
     window._particle_preview_ready(layer.id,1,[base.copy(),base.copy()])
-    assert calls==[1,1] and window.canvas.preview_frames is not None and window.canvas.interactive_transform_proxy is None
+    assert calls==[] and window.canvas.preview_frames is not None and window.canvas.interactive_transform_proxy is None
     close(window)

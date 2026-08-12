@@ -24,6 +24,7 @@ class GizmoRenderRequest:
     layer: object
     frame: int
     final: bool
+    purpose: str = "motion"
 
 
 @dataclass
@@ -55,7 +56,7 @@ class _GizmoRenderWorker(QRunnable):
     def run(self):
         try:
             started=perf_counter();base=render_effect_resource_layer_current_base_frame(self.project,self.request.layer,self.request.frame)
-            base_ms=(perf_counter()-started)*1000.0;started=perf_counter();exact=transform_rgba_frame(base,self.request.layer.layer_transform,self.request.frame)
+            base_ms=(perf_counter()-started)*1000.0;started=perf_counter();exact=transform_rgba_frame(base,self.request.layer.surface_transform,self.request.frame)
             self.queue.put(GizmoRenderResult(self.request,base,exact,effect_resource_layer_base_frame_key(self.project,self.request.layer,self.request.frame),
                 {"interactive_current_base_render":base_ms,"interactive_current_transform":(perf_counter()-started)*1000.0}))
         except Exception as exc:
@@ -77,8 +78,8 @@ class InteractiveGizmoRenderManager(QObject):
     @property
     def revision(self):return self._revision
 
-    def schedule(self,project,layer,frame,final=False,immediate=False):
-        self._revision+=1;request=GizmoRenderRequest(self._revision,id(project),deepcopy(layer),int(frame),bool(final));self._pending=request;self._project=project
+    def schedule(self,project,layer,frame,final=False,immediate=False,purpose="motion"):
+        self._revision+=1;request=GizmoRenderRequest(self._revision,id(project),deepcopy(layer),int(frame),bool(final),str(purpose));self._pending=request;self._project=project
         self.collector.requests+=1
         if final or immediate:self._timer.stop();self._submit_pending()
         elif not self._timer.isActive():self._timer.start(self.delay_ms)
