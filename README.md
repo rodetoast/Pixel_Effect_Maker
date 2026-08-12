@@ -18,7 +18,7 @@ This source currently identifies itself as an **Early Preview Build**. Normal st
 
 현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
 
-Resource Layer는 로컬 리소스·파티클 좌표에 적용되는 Layer Space Transform과, 기존 v8 최종 RGBA 결과를 보존하는 고급 Surface Transform을 분리합니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 자세한 평가 순서와 제한은 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
+Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 
 Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽셀 편집기가 되는 것이 아닙니다. 사용자가 만든 임의의 투명 PNG를 비파괴 Source Asset으로 가져오고, 범용 Emitter와 시간 기반 Transform으로 여러 프레임의 픽셀 이펙트를 반자동 생성하는 도구를 목표로 합니다. 파일명이나 특정 실루엣에 따른 특수 처리는 사용하지 않습니다.
 

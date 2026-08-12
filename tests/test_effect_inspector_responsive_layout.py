@@ -48,6 +48,7 @@ def test_effect_inspector_content_fits_viewport_at_280px(tmp_path):
 
 def test_transform_mode_buttons_fit_narrow_inspector(tmp_path):
     project,layer=context();panel=CompositionLayerPropertiesPanel();panel.retranslate_ui(localization(tmp_path,"en"));panel.set_resource_layer(layer,project);show_and_assert_fits(panel,280)
+    panel.transform_panel.set_advanced_expanded(True);APP.processEvents()
     viewport_right=panel.viewport().rect().right();origin=panel.widget().mapTo(panel.viewport(),panel.transform_panel.pos())
     for button in panel.transform_panel.gizmo_buttons.values():assert origin.x()+button.geometry().right()<=viewport_right
     positions=[(button.geometry().x(),button.geometry().y()) for button in panel.transform_panel.gizmo_buttons.values()];assert len({x for x,_ in positions})==2 and len({y for _,y in positions})==3
@@ -89,6 +90,7 @@ def test_particle_inspector_large_font_150_percent(tmp_path):
 @pytest.mark.parametrize("width",[280,300,320])
 def test_every_effect_property_keeps_a_visible_text_label(tmp_path,panel_type,mode,language,width):
     project,layer=context(mode);panel=panel_type();panel.retranslate_ui(localization(tmp_path,language));panel.set_resource_layer(layer,project);show_and_assert_fits(panel,width,1.5)
+    panel.transform_panel.set_advanced_expanded(True);APP.processEvents()
     forms=[panel.transform_panel.form]
     if isinstance(panel,CompositionLayerPropertiesPanel):forms.extend((panel.common_form,panel.form))
     else:forms.append(panel.common_form);forms.extend(record[2] for record in panel._group_records if record[1].isVisible())

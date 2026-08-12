@@ -1,5 +1,14 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## 2.5D Inspector Architecture
+
+- [ ] Resource Editor의 X/Y/Z 회전, 크기, 피벗, 원근이 기본 Sprite 외형 편집 기능으로 이해되는지 확인한다.
+- [ ] Effect Editor의 일반 Particle 흐름에서 System Space와 Surface Transform이 앞에 나와 혼란을 만들지 않는지 확인한다.
+- [ ] 기본 접힌 `고급 / Advanced`를 열어 `시스템 공간 변형`과 `표면 변형 (호환성)`의 역할 차이를 설명만 읽고 구분할 수 있는지 확인한다.
+- [ ] Surface Transform이 non-identity인 기존 프로젝트에서 Advanced를 닫아도 `표면 변형이 적용됨` 상태가 보이는지 확인한다.
+- [ ] `리소스 원근`, `움직임 로컬 원근`, `시스템 원근`, `표면 원근`의 Tooltip이 각각 Sprite, Motion path, System coordinate, post-raster plane을 가리키는지 확인한다.
+- [ ] Advanced 접기/펴기만으로 Dirty 표시, Playback 정지·캐시 무효화, Canvas 변화가 발생하지 않는지 확인한다.
+
 ## Asset Preview Pivot / Navigation / 2.5D Raster Edge
 
 - [ ] Resource 생성 전 28×28 Asset의 `(14,14)` 및 29×29 Asset의 `(14.5,14.5)` Pivot이 이미지 중앙에 `십자 + 원 + P`로 보인다.
@@ -599,3 +608,16 @@ These are real Windows GUI checks and are not claimed by offscreen automation.
 - Editing: Composition, Single, Particle Linear/Orbit/Helix, 2.5D, keyframes, Undo/Redo.
 - Timeline/output: fast scrub, playback/loop/end frame, Preview/Bake/PNG/sequence pixel comparison.
 - UI: Korean/English, 100/125/150% DPI, inspector 280/300/320 px, zoom 25/100/400%, focus-sensitive wheel/Delete/Space/Ctrl+Z/Ctrl+Y/Ctrl+S.
+
+## v9 Integrated Production Workflow Stability QA
+
+The deterministic model/service and offscreen QTest paths are automated. The following remain real Windows GUI checks and are not claimed by automation.
+
+- [ ] Import a real PNG/GIF/Aseprite file, create a Resource, apply Sprite X/Y tilt, Local Z, Pivot and Perspective, then compare Resource Preview at Fit/100% with the source.
+- [ ] Add the Resource as Single, then Particle Linear/Orbit/Helix; visually confirm that Resource tilt changes sprite appearance while System Space moves spawn/path/guide coordinates.
+- [ ] Play the 600×600, 12 FPS, 12-frame representative project cold and warm; verify PREPARING→PLAYING, zero visible first-loop hitch/drop, responsive Stop, Pan, Zoom and selection.
+- [ ] Drag Resource and Effect XYZ gizmos for 1–2 seconds, change Timeline frame during a pending render, and press Escape; verify no stale frame, hidden handle, extra Undo or transient pixel remains.
+- [ ] Save, close the actual application, reopen, scrub sequential/reverse/random frames, Bake, and visually compare direct frame, playback stop frame, PNG and PNG Sequence.
+- [ ] Exercise New/Open/Close dirty-project dialogs with Save, Discard and Cancel; repeat A/B project opening while watching for stale guides, pixels or transforms.
+- [ ] Open an actual v8 project from an external copy, Save As v9, compare representative frames, and independently confirm the original file hash is unchanged.
+- [ ] Repeat the workflow on Windows 100/125/150% DPI and Korean/English UI; confirm Advanced status, four distinct Perspective tooltips and narrow Inspector layout.

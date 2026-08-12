@@ -39,7 +39,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         layout.addWidget(common)
         self.mode_help = QLabel("Place one resource directly in the Effect Composition."); self.mode_help.setWordWrap(True);self.mode_help.setMinimumWidth(0);self.mode_help.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); layout.addWidget(self.mode_help)
         self.mode.currentIndexChanged.connect(self._mode_changed)
-        self.transform_panel=ResourceLayerTransformPanel();layout.addWidget(self.transform_panel)
+        self.transform_panel=ResourceLayerTransformPanel()
         self.transform_panel.transform_changed.connect(self.transform_changed)
         self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested)
         self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
@@ -57,7 +57,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
             widget.setMinimumWidth(70);widget.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
             field_label=self.form.labelForField(widget);field_label.setMinimumWidth(0);field_label.setMaximumWidth(88);field_label.setWordWrap(True)
             widget.valueChanged.connect(self._changed)
-        layout.addWidget(group); layout.addStretch(); self.setWidget(body)
+        layout.addWidget(group);layout.addWidget(self.transform_panel);layout.addStretch(); self.setWidget(body)
 
     @staticmethod
     def _number():

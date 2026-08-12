@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — v9 Integrated Production Workflow Stability QA
+
+- Added deterministic PNG/animated Resource fixtures that connect Resource Sprite 2.5D, Single/Linear/Orbit/Helix, System and Surface transforms through frame-order access, metadata-only Save/Reload, Playback, Bake, PNG and PNG Sequence output.
+- Fixed Transform cache byte accounting after a Resource revision and preserved warm Playback caches when selecting an Effect Resource Layer with no active preview.
+- Added v8→v9 hash-preserving Save As, corruption, lifecycle, 20-switch, Undo/Redo and navigation-state integration coverage without changing app version 0.0.04 or FORMAT_VERSION 9.
+
+## Unreleased — 2.5D Inspector Architecture Finalization
+
+- Established Resource Editor Sprite 2.5D as the primary appearance workflow and moved Effect System Space plus compatibility Surface Transform into a default-collapsed Advanced section.
+- Added distinct bilingual names and help for Sprite, Motion-local, System and post-raster Surface perspective without changing serializer keys, FORMAT_VERSION 9 or renderer math.
+- Added a visible non-identity Surface compatibility status and verified that Advanced UI toggles do not dirty projects, invalidate playback or alter RGBA output.
+
 ## Unreleased — Asset Preview Navigation & Projective Raster Accuracy
 
 - Added a pre-Resource Asset Preview pivot overlay, immediate source-local pivot updates, 32px-margin Fit, cursor-anchored 10%–3200% wheel zoom, middle-mouse pan, and Fit/100% controls while retaining nearest-neighbor pixels.

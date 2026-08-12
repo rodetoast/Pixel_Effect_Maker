@@ -50,7 +50,7 @@ def wait_proxy(window,active=None,timeout=2500):
 
 
 def select_mode(window,mode):
-    panel=window.particle_properties.transform_panel;QTest.mouseClick(panel.gizmo_buttons[mode],Qt.MouseButton.LeftButton);APP.processEvents()
+    panel=window.particle_properties.transform_panel;panel.set_advanced_expanded(True);APP.processEvents();QTest.mouseClick(panel.gizmo_buttons[mode],Qt.MouseButton.LeftButton);APP.processEvents()
     assert window.canvas.resource_transform_mode==mode and panel.gizmo_buttons[mode].isChecked()
 
 

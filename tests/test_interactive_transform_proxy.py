@@ -96,6 +96,7 @@ def test_spinbox_burst_uses_proxy_and_idle_or_editing_finished_finalizes_once(tm
 def test_ctrl_wheel_burst_runs_one_idle_exact_render(tmp_path,monkeypatch):
     window,layer,_=context(tmp_path,"wheel");calls=[];original=__import__("app.ui.main_window",fromlist=["apply_effect_resource_layer_current_frame"]).apply_effect_resource_layer_current_frame
     monkeypatch.setattr("app.ui.main_window.apply_effect_resource_layer_current_frame",lambda *args,**kwargs:calls.append(1) or original(*args,**kwargs))
+    window.composition_layer_properties.transform_panel.set_advanced_expanded(True);APP.processEvents()
     spin=window.composition_layer_properties.transform_panel.fields["position_x"];spin.setFocus();local=QPointF(spin.rect().center())
     for _ in range(20):
         event=QWheelEvent(local,QPointF(spin.mapToGlobal(local.toPoint())),QPoint(),QPoint(0,120),Qt.MouseButton.NoButton,Qt.KeyboardModifier.ControlModifier,Qt.ScrollPhase.ScrollUpdate,False);APP.notify(spin,event)

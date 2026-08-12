@@ -79,6 +79,7 @@ def invalidate_effect_resource_layer_base(layer_id: str | None = None) -> None:
 
 
 def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
+    global _TRANSFORM_CACHE_BYTES
     key=_base_key(project,layer);cached=_BASE_CACHE.get(layer.id)
     if cached is not None and cached[0]==key:
         _BASE_CACHE.move_to_end(layer.id);return cached[1]
@@ -89,7 +90,7 @@ def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
         frames=[transform_layer_space_rgba_frame(frame,layer.layer_space_transform,index) for index,frame in enumerate(local_frames)]
     _put_base(layer.id,key,frames)
     for cache_key in list(_TRANSFORM_CACHE):
-        if cache_key[0]==layer.id:_TRANSFORM_CACHE.pop(cache_key,None)
+        if cache_key[0]==layer.id:_TRANSFORM_CACHE_BYTES-=_TRANSFORM_CACHE.pop(cache_key).nbytes
     return frames
 
 

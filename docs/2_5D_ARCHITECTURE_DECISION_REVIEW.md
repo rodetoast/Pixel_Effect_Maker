@@ -145,4 +145,14 @@ For each scenario compare current frame, playback, bake and PNG output, then ins
 
 Recommend **F — Resource Editor Sprite 2.5D as the default appearance workflow, with Effect System Space retained as an explicitly Advanced feature**.
 
-Reasoning: B directly matches the common “tilt the particle art” intent with fewer affected subsystems and fewer simultaneous perspective concepts. A remains technically coherent and useful when the user truly wants spawn, Orbit/Helix, depth and guides to rotate as a system. The two should use distinct names and UI grouping. This is a recommendation only; deletion, reduction or Advanced relocation of v9 code must wait for user A/B manual QA.
+Reasoning: B directly matches the common “tilt the particle art” intent with fewer affected subsystems and fewer simultaneous perspective concepts. A remains technically coherent and useful when the user truly wants spawn, Orbit/Helix, depth and guides to rotate as a system. The two should use distinct names and UI grouping.
+
+## Final Product Decision
+
+Decision F is now reflected in the product hierarchy:
+
+- **Resource Editor Sprite 2.5D** is the primary appearance workflow. X/Y tilt, local-plane Z spin, scale, pivot and Sprite Perspective change how the resource image looks without moving particle centers or paths.
+- **Effect Editor System Space Transform** remains available under the collapsed Advanced section. It transforms the full layer coordinate system, including particle spawn positions, Motion paths, axes and depth.
+- **Surface Transform (Compatibility)** remains under Advanced for post-raster v8/v9 compatibility. A non-identity value is indicated even while Advanced is collapsed.
+
+This decision changes labels, help and Inspector hierarchy only. FORMAT_VERSION remains 9; serializer keys, transform evaluation order, particle simulation and renderer output are unchanged.

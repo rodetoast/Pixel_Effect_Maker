@@ -1829,10 +1829,11 @@ class MainWindow(QMainWindow):
         self._refresh_playback_status()
 
     def _clear_preview(self) -> None:
+        had_preview=self.active_preview_generator_id is not None or self.canvas.preview_frames is not None
         if self.active_preview_generator_id is not None and self.play_timer.isActive():
             self.set_playing(False)
         self.active_preview_generator_id = None
-        if hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=False)
+        if had_preview and hasattr(self,"effect_playback"):self._invalidate_playback_cache(stop=False)
         self.canvas.clear_preview()
         self.frame_index = min(self.frame_index, len(self.project.frames) - 1)
         self.canvas.set_frame(self.frame_index)

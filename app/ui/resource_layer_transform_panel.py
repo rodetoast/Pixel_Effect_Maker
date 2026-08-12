@@ -20,14 +20,18 @@ class ResourceLayerTransformPanel(QGroupBox):
     surface_transform_changed = Signal(str, object)
 
     def __init__(self, parent=None):
-        super().__init__("Layer Space Transform", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
+        super().__init__("Advanced", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
-        root=QVBoxLayout(self);root.setContentsMargins(8,10,8,8);self.description=QLabel("Transform the final Resource Layer output as a flat plane.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);root.addWidget(self.description)
+        self.setCheckable(True);self.setChecked(False)
+        outer=QVBoxLayout(self);outer.setContentsMargins(8,6,8,8);self.advanced_status=QLabel("Surface Transform applied");self.advanced_status.setObjectName("surfaceTransformAppliedStatus");self.advanced_status.setWordWrap(True);self.advanced_status.hide();outer.addWidget(self.advanced_status)
+        self.advanced_body=QWidget();root=QVBoxLayout(self.advanced_body);root.setContentsMargins(0,4,0,0);outer.addWidget(self.advanced_body);self.advanced_body.hide();self.toggled.connect(self.advanced_body.setVisible)
+        self.system_group=QGroupBox("System Space Transform");system_root=QVBoxLayout(self.system_group);system_root.setContentsMargins(8,10,8,8);root.addWidget(self.system_group)
+        self.description=QLabel("Transform the whole layer coordinate system, including particle spawn positions and motion paths.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);system_root.addWidget(self.description)
         tools=QGridLayout();tools.setColumnStretch(0,1);tools.setColumnStretch(1,1);self.gizmo_buttons={}
         for mode,label in (("move","Move XYZ"),("rotate_x","Rotate X"),("rotate_y","Rotate Y"),("rotate_z","Rotate Z"),("scale","Scale"),("pivot","Pivot")):
             button=QPushButton(label);button.setCheckable(True);button.setObjectName(f"resourceLayerGizmo_{mode}");button.setMinimumWidth(0);button.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);button.clicked.connect(lambda checked=False,m=mode:self._select_mode(m));self.gizmo_buttons[mode]=button;index=len(self.gizmo_buttons)-1;tools.addWidget(button,index//2,index%2)
-        self.gizmo_buttons["move"].setChecked(True);root.addLayout(tools)
-        form=QFormLayout();self.form=form;form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop);root.addLayout(form);self.fields={};self.key_buttons={};self.easings={};self.easing_labels={};self.field_rows={}
+        self.gizmo_buttons["move"].setChecked(True);system_root.addLayout(tools)
+        form=QFormLayout();self.form=form;form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop);system_root.addLayout(form);self.fields={};self.key_buttons={};self.easings={};self.easing_labels={};self.field_rows={}
         labels={"position_x":"Position X","position_y":"Position Y","position_z":"Position Z","rotation_x":"Rotation X","rotation_y":"Rotation Y","rotation_z":"Rotation Z","scale_x":"Scale X","scale_y":"Scale Y","opacity":"Opacity","pivot_x":"Pivot X","pivot_y":"Pivot Y","perspective_strength":"Perspective Strength"}
         for name in (*TRANSFORM_TRACK_PROPERTIES,"pivot_x","pivot_y"):
             spin=ScrollSafeDoubleSpinBox();spin.setObjectName(f"resourceLayer_{name}");spin.setDecimals(3);spin.setMinimumWidth(70);spin.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
@@ -42,8 +46,8 @@ class ResourceLayerTransformPanel(QGroupBox):
                 footer=QWidget();footer.setMinimumWidth(0);footer.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);line=QHBoxLayout(footer);line.setContentsMargins(0,0,0,0);line.setSpacing(3);easing_label=QLabel("Easing");easing_label.setObjectName(f"resourceLayerEasingLabel_{name}");easing_label.setMinimumWidth(0);easing=QComboBox();[easing.addItem(v,v) for v in ("Linear","Ease In","Ease Out","Ease In/Out")];easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
                 key=QPushButton("◆");key.setObjectName(f"resourceLayerKey_{name}");key.setFixedSize(30,28);key.clicked.connect(lambda checked=False,n=name:self._add_key(n));line.addWidget(easing_label);line.addWidget(easing,1);line.addWidget(key);column.addWidget(footer);self.key_buttons[name]=key;self.easings[name]=easing;self.easing_labels[name]=easing_label
             form.addRow(labels[name],row);label=form.labelForField(row);label.setWordWrap(True);label.setMinimumWidth(0);label.setMaximumWidth(88);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.field_rows[name]=row;self.fields[name]=spin;spin.valueChanged.connect(self._changed);spin.editingFinished.connect(self._editing_finished)
-        self.reset=QPushButton("Reset Layer Space Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);root.addWidget(self.reset)
-        self.surface_group=QGroupBox("Advanced / Compatibility — Surface Transform");surface_form=QFormLayout(self.surface_group);self.surface_warning=QLabel("Migrated transforms are retained here to preserve the v8 rendered result.");self.surface_warning.setWordWrap(True);surface_form.addRow(self.surface_warning);self.surface_fields={}
+        self.reset=QPushButton("Reset System Space Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);system_root.addWidget(self.reset)
+        self.surface_group=QGroupBox("Surface Transform (Compatibility)");self.surface_form=QFormLayout(self.surface_group);surface_form=self.surface_form;self.surface_warning=QLabel("Applied after the layer has been rasterized. Retained for compatibility with migrated projects.");self.surface_warning.setWordWrap(True);surface_form.addRow(self.surface_warning);self.surface_fields={}
         for name in (*TRANSFORM_TRACK_PROPERTIES,"pivot_x","pivot_y"):
             spin=ScrollSafeDoubleSpinBox();spin.setDecimals(3);spin.setMinimumWidth(70)
             if name.startswith("rotation_"):spin.setRange(-36000,36000)
@@ -61,7 +65,7 @@ class ResourceLayerTransformPanel(QGroupBox):
             for name,spin in self.fields.items():spin.setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
             for name,button in self.key_buttons.items():button.setChecked(any(key.frame==self.frame for key in transform.tracks.get(name,()).keyframes) if name in transform.tracks else False)
             for name,spin in self.surface_fields.items():spin.setValue(layer.surface_transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(layer.surface_transform,name))
-            self.surface_warning.setVisible(not layer.surface_transform.is_identity())
+            self.advanced_status.setVisible(not layer.surface_transform.is_identity())
         self.setEnabled(layer is not None);self._loading=False
 
     def set_transform_fields(self,layer,frame,names):
@@ -114,16 +118,24 @@ class ResourceLayerTransformPanel(QGroupBox):
         if self.layer is not None:self.gizmo_mode_changed.emit(self.layer.id,mode)
 
     def retranslate_ui(self, localization):
-        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"))
+        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.advanced"));self.system_group.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"));self.advanced_status.setText(t("resource_layer.surface_applied"))
         self.surface_group.setTitle(t("resource_layer.surface_transform"));self.surface_warning.setText(t("resource_layer.surface_help"));self.surface_reset.setText(t("resource_layer.surface_reset"))
         self.surface_reset.setToolTip(t("resource_layer.surface_reset")+". "+t("resource_layer.surface_help"))
         tips={"rotation_x":"tooltip.resource_layer.rotation_x","rotation_y":"tooltip.resource_layer.rotation_y","rotation_z":"tooltip.resource_layer.rotation_z","position_z":"tooltip.resource_layer.position_z","perspective_strength":"tooltip.resource_layer.perspective"}
         for name,field in self.fields.items():field.setToolTip(t(tips.get(name,"resource_layer.transform_help")))
         label_keys={"position_x":"field.position_x","position_y":"field.position_y","position_z":"resource_layer.position_z","rotation_x":"resource_layer.rotation_x","rotation_y":"resource_layer.rotation_y","rotation_z":"resource_layer.rotation_z","scale_x":"field.scale_x","scale_y":"field.scale_y","opacity":"field.opacity","pivot_x":"resource.pivot_x","pivot_y":"resource.pivot_y","perspective_strength":"resource_layer.perspective"}
         for name,field in self.fields.items():self.form.labelForField(field.parentWidget()).setText(t(label_keys[name]))
+        for name,field in self.surface_fields.items():
+            label=self.surface_form.labelForField(field);label.setText(t("resource_layer.surface_perspective") if name=="perspective_strength" else t(label_keys[name]));field.setToolTip(t("tooltip.resource_layer.surface_perspective") if name=="perspective_strength" else t("resource_layer.surface_help"))
         mode_keys={"move":"resource_layer.move_xyz","rotate_x":"resource_layer.rotation_x","rotate_y":"resource_layer.rotation_y","rotate_z":"resource_layer.rotation_z","scale":"gizmo.scale","pivot":"composition.pivot"}
         for name,button in self.gizmo_buttons.items():button.setText(t(mode_keys[name]))
         for name,button in self.key_buttons.items():button.setToolTip(self.fields[name].toolTip()+"\n"+t("resource_layer.add_keyframe"))
         for label in self.easing_labels.values():label.setText(t("property.easing"));label.setVisible(True)
         for name,button in self.gizmo_buttons.items():button.setToolTip(t("tooltip.resource_layer.depth_handle") if name=="move" else t(tips.get(name,"resource_layer.transform_help")))
         self.reset.setToolTip(t("resource_layer.transform_reset")+". "+t("resource_layer.transform_help"))
+
+    def set_advanced_expanded(self, expanded: bool) -> None:
+        self.setChecked(bool(expanded))
+
+    def is_advanced_expanded(self) -> bool:
+        return self.isChecked()
