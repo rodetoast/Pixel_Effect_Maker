@@ -279,6 +279,7 @@ class TimelineWidget(QWidget):
             ["", localization.text("timeline.layer") if localization else "Layer"] + [str(index) for index in range(1, frame_count + 1)]
         )
         for display_row, layer in enumerate(reversed(project.layers)):
+            resource_layer=next((item for item in project.effect_resource_layers if item.generated_layer_id==layer.id),None)
             visibility = QTableWidgetItem()
             visibility.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             visibility.setIcon(self.style().standardIcon(
@@ -300,12 +301,13 @@ class TimelineWidget(QWidget):
                     else None
                 )
                 pixels = None if frame is None else frame.layer_pixels.get(layer.id)
-                marker = "■" if pixels is not None and pixels[..., 3].any() else "·"
+                transform_keys=[] if resource_layer is None else [name for name,track in resource_layer.layer_transform.tracks.items() if track.has_keyframe(frame_index)]
+                motion_keys=[] if resource_layer is None or resource_layer.placement_mode!="particle" else [name for name,track in resource_layer.particle_settings.motion.tracks.items() if track.has_keyframe(frame_index)]
+                marker = "◆" if transform_keys or motion_keys else "■" if pixels is not None and pixels[..., 3].any() else "·"
                 item = QTableWidgetItem(marker)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setToolTip(
-                    f"{layer.name} · Frame {frame_index + 1}"
-                )
+                key_detail=(" · Keys: "+", ".join(transform_keys+motion_keys)) if transform_keys or motion_keys else ""
+                item.setToolTip(f"{layer.name} · Frame {frame_index + 1}{key_detail}")
                 self.table.setItem(display_row, frame_index + self.FRAME_COLUMN_OFFSET, item)
         self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
         self.table.setColumnWidth(self.NAME_COLUMN, 160)
@@ -354,6 +356,19 @@ class TimelineWidget(QWidget):
             project.fps,
             preview=self._preview,
         )
+
+    def set_resource_layer_key_marker(self,project,resource_layer,frame_index):
+        """Refresh one transient Effect key marker without committing the drag model."""
+        generated=next((layer for layer in project.layers if layer.id==resource_layer.generated_layer_id),None)
+        if generated is None or not 0<=int(frame_index)<self._display_frame_count:return
+        layer_index=project.layers.index(generated);row=len(project.layers)-1-layer_index;column=int(frame_index)+self.FRAME_COLUMN_OFFSET;item=self.table.item(row,column)
+        if item is None:return
+        transform_keys=[name for name,track in resource_layer.layer_transform.tracks.items() if track.has_keyframe(frame_index)]
+        motion_keys=[] if resource_layer.placement_mode!="particle" else [name for name,track in resource_layer.particle_settings.motion.tracks.items() if track.has_keyframe(frame_index)]
+        if transform_keys or motion_keys:
+            item.setText("◆");item.setToolTip(f"{generated.name} · Frame {int(frame_index)+1} · Keys: {', '.join(transform_keys+motion_keys)}")
+            return
+        frame=project.frames[frame_index] if frame_index<len(project.frames) else None;pixels=None if frame is None else frame.layer_pixels.get(generated.id);item.setText("■" if pixels is not None and pixels[...,3].any() else "·");item.setToolTip(f"{generated.name} · Frame {int(frame_index)+1}")
 
     def _update_selection_label(self, layer_index: int, frame_index: int) -> None:
         if self._project is None:

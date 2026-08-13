@@ -44,8 +44,8 @@ class ResourceEditorWidget(QWidget):
         self.browser.import_requested.connect(lambda:self.import_requested.emit(None));self.browser.asset_selected.connect(self._select_asset);self.browser.composition_selected.connect(lambda identifier:self.controller.select_composition(identifier));self.browser.asset_delete_requested.connect(self.delete_requested);self.browser.composition_delete_requested.connect(self._delete_composition);self.asset_strip.frame_selected.connect(self.set_frame);self.asset_inspector.create_requested.connect(self._create_dialog);self.asset_inspector.reimport_requested.connect(self._reimport);self.asset_inspector.pivot_changed.connect(self._asset_pivot)
         self.asset_fit.clicked.connect(self.asset_canvas.fit_to_view);self.asset_actual.clicked.connect(self.asset_canvas.actual_pixels)
         self.empty.import_button.clicked.connect(lambda:self.import_requested.emit(None));self.empty.blank_button.clicked.connect(self._create_blank_dialog)
-        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
-        self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.layer_selected.connect(self.controller.select_layer);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe)
+        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
+        self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.layer_selected.connect(self.controller.select_layer);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe);self.composition_timeline.move_keyframe_requested.connect(self._move_keyframe)
         self.composition_timeline.scrub_started.connect(self.stop)
         self.composition_canvas.layer_selected.connect(self.controller.select_layer);self.composition_canvas.transform_changed.connect(self._gizmo_change);self.composition_canvas.transform_cancelled.connect(self._gizmo_cancel);self.composition_canvas.drag_started.connect(self.stop)
         self.controller.state_changed.connect(self._apply_state);self.controller.frame_changed.connect(lambda frame:self._apply_state(self.controller.state));self.controller.composition_changed.connect(self.composition_changed);self.controller.clear()
@@ -204,15 +204,26 @@ class ResourceEditorWidget(QWidget):
         if self.selected_layer is None:return
         properties=[property_id] if property_id in self.selected_layer.tracks else list(self.selected_layer.tracks)
         for prop in properties:
-            before=deepcopy(self.selected_layer.tracks.get(prop));after=deepcopy(before);after.delete_keyframe(self.frame_index)
-            self._push_value(self.selected_layer.id,"track:"+prop,before,after,"Delete Keyframe")
+            before=deepcopy(self.selected_layer.tracks.get(prop));after=deepcopy(before)
+            if after is not None and after.delete_keyframe(self.frame_index):self._push_value(self.selected_layer.id,"track:"+prop,before,after,"Delete Keyframe")
+
+    def _move_keyframe(self,property_id,source_frame,target_frame):
+        if self.selected_layer is None or property_id not in self.selected_layer.tracks:return
+        before=deepcopy(self.selected_layer.tracks[property_id]);after=deepcopy(before)
+        if after.move_keyframe(source_frame,target_frame,self.composition.frame_count):
+            self._push_value(self.selected_layer.id,"track:"+property_id,before,after,"Move Keyframe")
+            self.set_frame(max(0,min(int(target_frame),self.composition.frame_count-1)))
 
     def _remove_property(self,property_id):
         if self._confirm(self.localization.text("composition.properties"),self.localization.text("composition.remove_property_confirm"),"v2.delete"):self.selected_layer.remove_property(property_id);self.controller.changed()
 
     def _property_value(self,property_id,value):
+        if self.selected_layer is None or property_id not in self.selected_layer.tracks:return
         track=self.selected_layer.tracks[property_id];before=deepcopy(track);after=deepcopy(track);existing=next((item for item in after.keyframes if item.frame==self.frame_index),None)
+        current=after.evaluate(self.frame_index)
+        if current==value:return
         if existing:existing.value=value
+        elif after.keyframes:after.set_keyframe(self.frame_index,value,"Linear")
         else:after.default_value=value
         merge_ids={"position":100,"rotation":101,"scale":102,"opacity":103,"rotation_x":104,"rotation_y":105,"perspective_strength":106}
         self._push_value(self.selected_layer.id,"track:"+property_id,before,after,"Change "+property_id.title(),merge_ids.get(property_id,-1))
@@ -226,9 +237,24 @@ class ResourceEditorWidget(QWidget):
     def _gizmo_change(self,property_id,value,final):
         layer=self.selected_layer
         if layer is None:return
-        if property_id not in self._gizmo_before:self._gizmo_before[property_id]=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))
-        if property_id=="pivot":layer.pivot_x,layer.pivot_y=value
-        else:layer.add_property(property_id).set_keyframe(self.frame_index,value)
+        had_change=property_id in self._gizmo_before
+        if not had_change:self._gizmo_before[property_id]=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))
+        if property_id=="pivot":
+            if [layer.pivot_x,layer.pivot_y]==list(value):
+                if not final or not had_change:
+                    if final:self._gizmo_before.pop(property_id,None)
+                    return
+            layer.pivot_x,layer.pivot_y=value
+        else:
+            track=layer.add_property(property_id);current=track.evaluate(self.frame_index)
+            if current==value:
+                if not final or not had_change:
+                    if final:self._gizmo_before.pop(property_id,None)
+                    return
+            key=track.keyframe_at(self.frame_index)
+            if key is not None:key.value=value
+            elif track.keyframes:track.set_keyframe(self.frame_index,value,"Linear")
+            else:track.default_value=value
         self.composition.touch();invalidate_composition_cache(self.composition.id);self._apply_state(self.controller.state)
         if final:
             before=self._gizmo_before.pop(property_id,None);after=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))

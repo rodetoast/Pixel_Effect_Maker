@@ -1,5 +1,5 @@
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 
@@ -12,6 +12,7 @@ class CompositionTimeline(QWidget):
     previous_requested = Signal()
     next_requested = Signal()
     delete_keyframe_requested = Signal(object)
+    move_keyframe_requested = Signal(str,int,int)
     scrub_started = Signal()
 
     def __init__(self, parent=None):
@@ -21,11 +22,30 @@ class CompositionTimeline(QWidget):
         controls.addStretch(); layout.addLayout(controls)
         self.frame_cell_width=36; self.table=QTableWidget(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width); layout.addWidget(self.table)
         self.table.cellClicked.connect(self._clicked); self.table.verticalHeader().sectionClicked.connect(self._header_clicked)
-        self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self)
+        self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self._key_drag=None;self.table.viewport().installEventFilter(self)
         self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete)
 
     def _scrub_to(self,row,column):
         self.table.setCurrentCell(row,column);self._clicked(row,column)
+
+    def eventFilter(self,watched,event):
+        if watched is self.table.viewport():
+            if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
+                index=self.table.indexAt(event.position().toPoint());row=index.row();column=index.column()
+                if index.isValid() and 0<=row<len(self.rows) and self.rows[row][1] is not None and self.table.item(row,column).text()=="◆":
+                    self._key_drag=(row,column,event.position().toPoint(),False);self.table.setCurrentCell(row,column);self._clicked(row,column);event.accept();return True
+            elif event.type()==QEvent.Type.MouseMove and self._key_drag and event.buttons()&Qt.MouseButton.LeftButton:
+                row,column,start,_=self._key_drag;dragged=(event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance();self._key_drag=(row,column,start,dragged);event.accept();return True
+            elif event.type()==QEvent.Type.MouseButtonRelease and self._key_drag:
+                row,source,_,dragged=self._key_drag;self._key_drag=None
+                if dragged:
+                    target=self.table.columnAt(int(event.position().x()))
+                    if target<0:target=0 if event.position().x()<0 else self.table.columnCount()-1
+                    target=max(0,min(self.table.columnCount()-1,target))
+                    if target>=0 and target!=source:
+                        property_id=self.rows[row][1];self.move_keyframe_requested.emit(property_id,source,target)
+                event.accept();return True
+        return super().eventFilter(watched,event)
 
     def refresh(self, composition, selected_layer, frame):
         self.rows=[]

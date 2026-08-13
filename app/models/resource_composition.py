@@ -41,7 +41,24 @@ class AnimationTrack:
         by_frame={k.frame:k for k in self.keyframes};self.keyframes=sorted(by_frame.values(),key=lambda k:k.frame)
     def set_keyframe(self,frame,value,easing="Linear"):
         self.keyframes.append(Keyframe(frame,value,easing));self._normalize();return next(k for k in self.keyframes if k.frame==frame)
-    def delete_keyframe(self,frame):self.keyframes=[k for k in self.keyframes if k.frame!=frame]
+    def keyframe_at(self,frame):return next((key for key in self.keyframes if key.frame==int(frame)),None)
+    def has_keyframe(self,frame):return self.keyframe_at(frame) is not None
+    def delete_keyframe(self,frame):
+        """Delete one key, preserving its value when the track becomes static."""
+        key=self.keyframe_at(frame)
+        if key is None:return False
+        self.keyframes=[item for item in self.keyframes if item.frame!=int(frame)]
+        if not self.keyframes:self.default_value=key.value
+        return True
+    def move_keyframe(self,source_frame,target_frame,frame_count=None):
+        """Move a key without overwriting a target key; timeline bounds are clamped."""
+        source=int(source_frame);target=int(target_frame)
+        if frame_count is not None:target=max(0,min(target,max(0,int(frame_count)-1)))
+        if target<0:raise ValueError("keyframe frame must be non-negative")
+        key=self.keyframe_at(source)
+        if key is None:return False
+        if target!=source and self.has_keyframe(target):return False
+        key.frame=target;self._normalize();return True
     def evaluate(self,frame):
         if not self.keyframes:return self.default_value
         if frame<=self.keyframes[0].frame:return self.keyframes[0].value

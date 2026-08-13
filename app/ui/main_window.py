@@ -534,11 +534,13 @@ class MainWindow(QMainWindow):
         self.composition_layer_properties.resource_changed.connect(self.set_resource_layer_resource)
         self.particle_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.particle_properties.motion_keyframe_requested.connect(self.add_particle_motion_keyframe)
+        self.particle_properties.motion_keyframe_delete_requested.connect(self.delete_particle_motion_keyframe)
         for panel in (self.composition_layer_properties,self.particle_properties):
             panel.transform_changed.connect(self.update_resource_layer_transform)
             panel.transform_panel.interactive_transform_changed.connect(self.update_resource_layer_transform_property)
             panel.transform_panel.transform_edit_finished.connect(self.finalize_resource_layer_transform)
             panel.transform_keyframe_requested.connect(self.add_resource_layer_transform_keyframe)
+            panel.transform_keyframe_delete_requested.connect(self.delete_resource_layer_transform_keyframe)
             panel.transform_gizmo_changed.connect(self._set_resource_transform_gizmo)
             panel.transform_panel.surface_transform_changed.connect(self.update_resource_surface_transform)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
@@ -1416,11 +1418,30 @@ class MainWindow(QMainWindow):
         after=deepcopy(layer.layer_transform);after.set_keyframe(property_id,frame,value,easing)
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,after,"Add 2.5D Transform Keyframe"))
 
+    def delete_resource_layer_transform_keyframe(self,identifier,property_id,frame) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None:return
+        before=deepcopy(layer.layer_transform);after=deepcopy(before);track=after.tracks.get(property_id)
+        if track is None or not track.delete_keyframe(frame):return
+        if not track.keyframes:
+            static_value=float(track.default_value);after.tracks.pop(property_id,None);after.set_property(property_id,static_value)
+        else:after.revision+=1
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",before,after,"Delete 2.5D Transform Keyframe"))
+
     def add_particle_motion_keyframe(self,identifier,property_id,value,easing) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer is None or layer.placement_mode!=PLACEMENT_PARTICLE:return
         before=deepcopy(layer);after=deepcopy(layer);after.particle_settings.motion.set_keyframe(property_id,self.frame_index,float(value),str(easing))
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,after,"Add Particle Motion Keyframe"))
+
+    def delete_particle_motion_keyframe(self,identifier,property_id,frame) -> None:
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+        if layer is None or layer.placement_mode!=PLACEMENT_PARTICLE:return
+        before=deepcopy(layer);after=deepcopy(layer);motion=after.particle_settings.motion;track=motion.tracks.get(property_id)
+        if track is None or not track.delete_keyframe(frame):return
+        if not track.keyframes:setattr(motion,property_id,float(track.default_value));motion.tracks.pop(property_id,None)
+        motion.revision+=1
+        self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,after,"Delete Particle Motion Keyframe"))
 
     def _set_resource_transform_gizmo(self,identifier,mode) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
@@ -1443,6 +1464,7 @@ class MainWindow(QMainWindow):
         panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel
         fields=self.canvas.resource_transform_changed_fields or tuple(panel.fields)
         self.canvas.resource_transform=deepcopy(transform);transient=deepcopy(layer);transient.layer_transform=deepcopy(transform)
+        self.timeline.set_resource_layer_key_marker(self.project,transient,self.frame_index)
         state=self.canvas.interactive_transform_proxy
         if layer.placement_mode==PLACEMENT_PARTICLE:
             self.interactive_gizmo_renderer.schedule(self.project,transient,self.frame_index,purpose="layer_transform")
@@ -1457,7 +1479,7 @@ class MainWindow(QMainWindow):
         self.transform_inspector_timer.stop();self._pending_transform_inspector=None;before=getattr(self,"_resource_transform_before",{}).pop(identifier,transform);layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         self.interactive_gizmo_renderer.cancel();self.interactive_proxy_prewarm.cancel();self.canvas.clear_interactive_transform_proxy(update=True)
         if layer is not None:
-            self.canvas.set_resource_layer_transform(identifier,before,mode=self.canvas.resource_transform_mode);panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;panel.set_layer(layer,self.frame_index)
+            self.canvas.set_resource_layer_transform(identifier,before,mode=self.canvas.resource_transform_mode);panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;panel.set_layer(layer,self.frame_index);self.timeline.set_resource_layer_key_marker(self.project,layer,self.frame_index)
 
     def _flush_transform_inspector_sync(self):
         pending=self._pending_transform_inspector;self._pending_transform_inspector=None
@@ -1513,6 +1535,7 @@ class MainWindow(QMainWindow):
             transient=deepcopy(unified)
             if isinstance(settings,EffectCompositionLayer):transient.single_settings=deepcopy(settings);transient.start_frame=settings.start_frame;transient.end_frame=settings.end_frame
             else:transient.particle_settings=deepcopy(settings)
+            self.timeline.set_resource_layer_key_marker(self.project,transient,self.frame_index)
             self._pending_guide_inspector=(transient,deepcopy(settings));self._queue_particle_motion_render(transient,final=False)
             if not self.guide_inspector_timer.isActive():self.guide_inspector_timer.start(33)
             if final:
@@ -1547,7 +1570,7 @@ class MainWindow(QMainWindow):
         stored=self._effect_guide_before;self._effect_guide_before=None
         if isinstance(stored,EffectResourceLayer):
             self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self.guide_inspector_timer.stop();self._pending_guide_inspector=None;self._pending_particle_motion.clear();self._pending_particle_motion_layers.clear();self._dirty_particle_motion_layers.discard(identifier);self.interactive_gizmo_renderer.cancel();self.canvas.finish_interactive_motion_proxy(identifier)
-            self._sync_guide_inspector(stored,stored.particle_settings if stored.placement_mode==PLACEMENT_PARTICLE else stored.single_settings)
+            self._sync_guide_inspector(stored,stored.particle_settings if stored.placement_mode==PLACEMENT_PARTICLE else stored.single_settings);self.timeline.set_resource_layer_key_marker(self.project,stored,self.frame_index)
             return
         field="composition_layer_settings" if isinstance(before,EffectCompositionLayer) else "particle_settings"
         self.apply_undo_value(identifier,field,before)

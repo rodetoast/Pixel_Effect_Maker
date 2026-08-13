@@ -645,7 +645,16 @@ class CanvasWidget(QWidget):
         return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=12),None)
 
     def _start_resource_transform_drag(self,handle,event,event_started):
-        self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
+        self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self._resource_transform_changed=False;self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
+
+    def _set_resource_transform_interactive_value(self,transform,property_id,value):
+        numeric=float(value);track=transform.tracks.get(property_id);current=transform.value(property_id,self.frame_index)
+        if current==numeric:return False
+        key=track.keyframe_at(self.frame_index) if track else None
+        if key is not None:key.value=float(value)
+        elif track and track.keyframes:transform.set_keyframe(property_id,self.frame_index,numeric,"Linear")
+        else:setattr(transform,property_id,numeric)
+        return True
 
     def _guide_points(self) -> dict[str, QPointF]:
         settings = self.effect_guide_settings
@@ -813,6 +822,7 @@ class CanvasWidget(QWidget):
                 self._guide_handle = handle
                 self._guide_before = deepcopy(self.effect_guide_settings)
                 self._guide_last_canvas_point = None
+                self._guide_changed = False
                 self.effect_guide_started.emit(self.effect_guide_id);self.setFocus()
                 event.accept()
                 self._record_interaction("mouse_press_total",event_started)
@@ -844,20 +854,20 @@ class CanvasWidget(QWidget):
         if self._panning:
             delta=event.position()-self._pan_last;self._pan_last=event.position();self.pan_offset+=delta;self.update();event.accept();return
         if self._resource_transform_drag:
-            event_started=perf_counter();old_gizmo=self._resource_transform_gizmo_bounds();value_started=perf_counter();t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag
-            if handle in {"x","center"}:t.position_x=before.position_x+delta.x()
-            if handle in {"y","center"}:t.position_y=before.position_y+delta.y()
-            if handle=="z":t.position_z=before.position_z-delta.y()+delta.x()
+            event_started=perf_counter();old_gizmo=self._resource_transform_gizmo_bounds();value_started=perf_counter();t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag;changed=False
+            if handle in {"x","center"}:changed=self._set_resource_transform_interactive_value(t,"position_x",before.value("position_x",self.frame_index)+delta.x()) or changed
+            if handle in {"y","center"}:changed=self._set_resource_transform_interactive_value(t,"position_y",before.value("position_y",self.frame_index)+delta.y()) or changed
+            if handle=="z":changed=self._set_resource_transform_interactive_value(t,"position_z",before.value("position_z",self.frame_index)-delta.y()+delta.x()) or changed
             if handle.startswith("rotate_"):
                 center=self.resource_transform_handle_positions()["center"];angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()))
                 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier:angle=round(angle/15)*15
-                property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];track=t.tracks.get(property_name)
-                key=next((item for item in track.keyframes if item.frame==self.frame_index),None) if track else None
-                if key is not None:key.value=angle
-                else:setattr(t,property_name,angle)
+                property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];changed=self._set_resource_transform_interactive_value(t,property_name,angle) or changed
                 counter=f"{property_name}_updates";calls=self.interaction_stats["calls"];calls[counter]=calls.get(counter,0)+1
-            if handle=="scale":t.scale_x=max(.01,before.scale_x+delta.x()/32);t.scale_y=max(.01,before.scale_y+delta.y()/32)
-            if handle=="pivot":t.pivot_x=before.pivot_x+delta.x();t.pivot_y=before.pivot_y+delta.y()
+            if handle=="scale":changed=self._set_resource_transform_interactive_value(t,"scale_x",max(.01,before.value("scale_x",self.frame_index)+delta.x()/32)) or changed;changed=self._set_resource_transform_interactive_value(t,"scale_y",max(.01,before.value("scale_y",self.frame_index)+delta.y()/32)) or changed
+            if handle=="pivot":
+                pivot_x,pivot_y=before.pivot_x+delta.x(),before.pivot_y+delta.y();changed=(t.pivot_x,t.pivot_y)!=(pivot_x,pivot_y);t.pivot_x,t.pivot_y=pivot_x,pivot_y
+            if not changed:event.accept();self._record_interaction("mouse_move_total",event_started);return
+            self._resource_transform_changed=True
             self.resource_transform_changed_fields=RESOURCE_TRANSFORM_HANDLE_PROPERTIES.get(handle,())
             self._record_interaction("transform_value_calculation",value_started);signal_started=perf_counter();self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(t),False);self._record_interaction("transform_signal",signal_started)
             if self.interactive_transform_proxy is None:
@@ -871,7 +881,9 @@ class CanvasWidget(QWidget):
             if integer_point == self._guide_last_canvas_point:
                 event.accept(); return
             self._guide_last_canvas_point = integer_point
-            guide_started=perf_counter();self._move_effect_guide(point, event.modifiers());self._record_interaction("guide_value_calculation",guide_started)
+            guide_started=perf_counter();changed=self._move_effect_guide(point, event.modifiers());self._record_interaction("guide_value_calculation",guide_started)
+            if not changed:event.accept();self._record_interaction("mouse_move_total",event_started);return
+            self._guide_changed=True
             signal_started=perf_counter();self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), False);self._record_interaction("guide_signal",signal_started)
             dirty=old_guide.united(self._effect_guide_bounds()).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
             if dirty.isNull():self.interaction_stats["full_updates_without_rect"]+=1
@@ -911,12 +923,14 @@ class CanvasWidget(QWidget):
         if self._panning and event.button()==Qt.MouseButton.MiddleButton:
             self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
         if self._resource_transform_drag:
-            started=perf_counter();self._resource_transform_drag=None;self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True);event.accept();self._record_interaction("mouse_release_total",started);return
+            started=perf_counter();self._resource_transform_drag=None
+            if self._resource_transform_changed:self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True)
+            event.accept();self._record_interaction("mouse_release_total",started);return
         if self._guide_handle:
             started=perf_counter()
             self._guide_handle = None
             self._guide_last_canvas_point = None
-            self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), True)
+            if self._guide_changed:self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), True)
             event.accept();self._record_interaction("mouse_release_total",started); return
         if self._gizmo_drag: self._gizmo_drag = False; event.accept(); return
         super().mouseReleaseEvent(event)
@@ -936,34 +950,43 @@ class CanvasWidget(QWidget):
             self.gizmo_changed.emit(self.gizmo_generator_id, deepcopy(self.gizmo_settings)); self.update(); event.accept(); return
         super().keyPressEvent(event)
 
-    def _move_effect_guide(self, point: QPointF, modifiers) -> None:
+    def _set_motion_interactive_value(self,motion,property_id,value):
+        numeric=float(value);track=motion.tracks.get(property_id);current=motion.value(property_id,self.frame_index)
+        if current==numeric:return False
+        key=track.keyframe_at(self.frame_index) if track else None
+        if key is not None:key.value=numeric
+        elif track and track.keyframes:motion.set_keyframe(property_id,self.frame_index,numeric,"Linear")
+        else:setattr(motion,property_id,numeric)
+        return True
+
+    def _move_effect_guide(self, point: QPointF, modifiers) -> bool:
         settings = self.effect_guide_settings
         if self.project is not None and self.resource_transform is not None:
             local=unproject_layer_space_point(point.x(),point.y(),self.resource_transform,self.project.width,self.project.height,self.frame_index)
-            if local is None:return
+            if local is None:return False
             point=QPointF(*local)
         x, y = round(point.x()), round(point.y())
         if isinstance(settings, EffectCompositionLayer):
+            before=(settings.start_x,settings.start_y,settings.end_x,settings.end_y)
             if self._guide_handle == "start": settings.start_x, settings.start_y = x, y
             elif self._guide_handle == "end": settings.end_x, settings.end_y = x, y
-            return
+            return before!=(settings.start_x,settings.start_y,settings.end_x,settings.end_y)
         if not isinstance(settings, ParticleEmitterSettings):
-            return
+            return False
         if settings.motion.mode in {"orbit","helix"}:
-            center_x=settings.origin_x+settings.motion.center_x;center_y=settings.origin_y+settings.motion.center_y
-            if self._guide_handle=="motion_center":settings.motion.center_x=x-settings.origin_x;settings.motion.center_y=y-settings.origin_y
-            elif self._guide_handle=="radius_start":settings.motion.radius_start=max(0.0,math.hypot(x-center_x,y-center_y))
-            elif self._guide_handle=="radius_end":settings.motion.radius_end=max(0.0,math.hypot(x-center_x,y-center_y))
+            motion=settings.motion;evaluated=motion.evaluated(self.frame_index);center_x=settings.origin_x+evaluated.center_x;center_y=settings.origin_y+evaluated.center_y;changed=False
+            if self._guide_handle=="motion_center":changed=self._set_motion_interactive_value(motion,"center_x",x-settings.origin_x) or changed;changed=self._set_motion_interactive_value(motion,"center_y",y-settings.origin_y) or changed
+            elif self._guide_handle=="radius_start":changed=self._set_motion_interactive_value(motion,"radius_start",max(0.0,math.hypot(x-center_x,y-center_y)))
+            elif self._guide_handle=="radius_end":changed=self._set_motion_interactive_value(motion,"radius_end",max(0.0,math.hypot(x-center_x,y-center_y)))
             elif self._guide_handle=="start_angle":
-                angle=math.degrees(math.atan2(y-center_y,x-center_x));previous=float(settings.motion.start_angle_degrees)
+                angle=math.degrees(math.atan2(y-center_y,x-center_x));previous=float(evaluated.start_angle_degrees)
                 angle+=round((previous-angle)/360.0)*360.0
-                settings.motion.start_angle_degrees=round(angle/15)*15 if modifiers&Qt.KeyboardModifier.ShiftModifier else angle
+                changed=self._set_motion_interactive_value(motion,"start_angle_degrees",round(angle/15)*15 if modifiers&Qt.KeyboardModifier.ShiftModifier else angle)
             elif self._guide_handle=="axis_end":
-                if settings.motion.helix_axis=="x":settings.motion.axis_end=x-center_x
-                elif settings.motion.helix_axis=="y":settings.motion.axis_end=y-center_y
-                else:settings.motion.axis_end=(x-center_x)-(y-center_y)
-            settings.motion.revision+=1
-            return
+                value=x-center_x if motion.helix_axis=="x" else y-center_y if motion.helix_axis=="y" else (x-center_x)-(y-center_y);changed=self._set_motion_interactive_value(motion,"axis_end",value)
+            if changed:motion.revision+=1
+            return changed
+        before=deepcopy(settings)
         if self._guide_handle == "origin":
             dx, dy = x-settings.origin_x, y-settings.origin_y
             settings.origin_x, settings.origin_y = x, y
@@ -986,6 +1009,7 @@ class CanvasWidget(QWidget):
             elif settings.spawn_shape == "circle": settings.radius = max(0.0, math.hypot(x-settings.origin_x, y-settings.origin_y))
             elif settings.spawn_shape == "box":
                 settings.box_width = abs(x-settings.origin_x)*2; settings.box_height = abs(y-settings.origin_y)*2
+        return before!=settings
 
     def _compose_display_frame(self) -> np.ndarray:
         assert self.project is not None

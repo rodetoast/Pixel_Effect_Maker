@@ -16,12 +16,13 @@ class ParticlePropertiesPanel(QScrollArea):
     mode_changed = Signal(str, str)
     motion_reset_requested = Signal(str, object)
     motion_keyframe_requested = Signal(str, str, float, str)
-    transform_changed = Signal(str, object);transform_keyframe_requested = Signal(str, str, int, float, str);transform_gizmo_changed = Signal(str, str)
+    motion_keyframe_delete_requested = Signal(str, str, int)
+    transform_changed = Signal(str, object);transform_keyframe_requested = Signal(str, str, int, float, str);transform_keyframe_delete_requested = Signal(str, str, int);transform_gizmo_changed = Signal(str, str)
     def __init__(self, parent=None):
         super().__init__(parent); self.setWidgetResizable(True); self.setMinimumWidth(0); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.emitter_id = None; self._loading = False; self._localization = None; self._motion_tracks={};self._motion_revision=0
+        self.emitter_id = None; self._loading = False; self._localization = None; self._motion_tracks={};self._motion_revision=0;self._motion_frame=0;self._motion_base_values={}
         body=QWidget();body.setObjectName("particleInspectorContent");body.setMinimumWidth(0);body.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.layout=QVBoxLayout(body);self.layout.setAlignment(Qt.AlignmentFlag.AlignTop); self.title=QLabel("Resource Layer");self.title.setMinimumWidth(0);self.title.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.layout.addWidget(self.title);self.resource_layer_id=None;common=QGroupBox("Resource Layer");common.setMinimumWidth(0);common.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.common_form=QFormLayout(common);self.common_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);self.mode=FocusWheelComboBox();self.mode.setMinimumWidth(0);self.mode.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.mode.addItem("Single","single");self.mode.addItem("Particle Emission","particle");self.common_form.addRow("Placement Mode",self.mode);self.mode_label=self.common_form.labelForField(self.mode);self.mode_label.setMinimumWidth(0);self.mode_label.setMaximumWidth(112);self.mode_label.setWordWrap(True);self.mode_label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);self.mode_label.setBuddy(self.mode);self.layout.addWidget(common);self.mode_help=QLabel("Emit multiple instances of the same resource with direction, speed, and lifetime.");self.mode_help.setWordWrap(True);self.mode_help.setMinimumWidth(0);self.mode_help.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.layout.addWidget(self.mode_help);self.mode.currentIndexChanged.connect(self._mode_changed);self._group_records=[]
-        self.transform_panel=ResourceLayerTransformPanel();self.transform_panel.transform_changed.connect(self.transform_changed);self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested);self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
+        self.transform_panel=ResourceLayerTransformPanel();self.transform_panel.transform_changed.connect(self.transform_changed);self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested);self.transform_panel.keyframe_delete_requested.connect(self.transform_keyframe_delete_requested);self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
         self.clip=FocusWheelComboBox(); self.output_frame_count=self._i(1,512); self.start_frame=self._i(0,511)
         self.emission_mode=self._combo(("burst","over_time")); self.count_min=self._i(0,4096); self.count_max=self._i(0,4096); self.emission_duration=self._i(1,512)
         self.spawn_shape=self._combo(("point","line","circle","box")); self.origin_x=self._n(-4096,4096); self.origin_y=self._n(-4096,4096); self.line_end_x=self._n(-4096,4096); self.line_end_y=self._n(-4096,4096); self.radius=self._n(0,4096); self.box_width=self._n(0,4096); self.box_height=self._n(0,4096); self.start_angle=self._n(-3600,3600); self.end_angle=self._n(-3600,3600)
@@ -51,7 +52,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self.controls=[w for w in body.findChildren(QSpinBox)+body.findChildren(QDoubleSpinBox)+body.findChildren(QComboBox) if not self.transform_panel.isAncestorOf(w) and w not in {self.motion_keyframe_property,self.motion_keyframe_easing}]
         for w in self.controls:
             signal=w.currentIndexChanged if isinstance(w,FocusWheelComboBox) else w.valueChanged; signal.connect(self._changed)
-        self.random_start_frame.toggled.connect(self._changed); self.motion_mode.currentIndexChanged.connect(self._motion_mode_changed);self.reset_motion.clicked.connect(self._reset_motion);self.add_motion_keyframe.clicked.connect(self._add_motion_keyframe); self.randomize.clicked.connect(self._randomize); self.refresh.clicked.connect(lambda: self.emitter_id and self.refresh_requested.emit(self.emitter_id)); self.bake.clicked.connect(lambda: self.emitter_id and self.bake_requested.emit(self.emitter_id,self.settings())); self.export.clicked.connect(lambda: self.emitter_id and self.export_requested.emit(self.emitter_id)); self.revert.clicked.connect(lambda: self.emitter_id and self.revert_requested.emit(self.emitter_id))
+        self.random_start_frame.toggled.connect(self._changed); self.motion_mode.currentIndexChanged.connect(self._motion_mode_changed);self.motion_keyframe_property.currentIndexChanged.connect(self._sync_motion_key_state);self.reset_motion.clicked.connect(self._reset_motion);self.add_motion_keyframe.clicked.connect(self._add_motion_keyframe); self.randomize.clicked.connect(self._randomize); self.refresh.clicked.connect(lambda: self.emitter_id and self.refresh_requested.emit(self.emitter_id)); self.bake.clicked.connect(lambda: self.emitter_id and self.bake_requested.emit(self.emitter_id,self.settings())); self.export.clicked.connect(lambda: self.emitter_id and self.export_requested.emit(self.emitter_id)); self.revert.clicked.connect(lambda: self.emitter_id and self.revert_requested.emit(self.emitter_id))
     def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _bounded(self,name):
@@ -79,6 +80,9 @@ class ParticlePropertiesPanel(QScrollArea):
         self.resource_layer_id=None if layer is None else layer.id
         self.set_emitter(None if layer is None else layer.as_particle_emitter(),project)
         self.transform_panel.set_layer(layer,getattr(project,"_current_effect_frame",0))
+        self._motion_frame=int(getattr(project,"_current_effect_frame",0))
+        if layer is not None:
+            self._set_motion_frame(layer.particle_settings.motion,self._motion_frame)
         self._loading=True
         if layer is not None:
             self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
@@ -90,7 +94,7 @@ class ParticlePropertiesPanel(QScrollArea):
         if not self._loading and self.resource_layer_id:self.mode_changed.emit(self.resource_layer_id,mode)
     def set_settings(self,s):
         self._loading=True
-        self._motion_tracks=deepcopy(s.motion.tracks);self._motion_revision=s.motion.revision
+        self._motion_tracks=deepcopy(s.motion.tracks);self._motion_revision=s.motion.revision;self._motion_base_values={name:float(getattr(s.motion,name)) for name in self._motion_control_map()}
         mapping={"clip":"clip_asset_id","count_min":"particle_count_min","count_max":"particle_count_max"}
         for name in ("clip","output_frame_count","start_frame","emission_mode","count_min","count_max","emission_duration","spawn_shape","origin_x","origin_y","line_end_x","line_end_y","radius","box_width","box_height","start_angle","end_angle","direction_mode","direction_degrees","direction_spread_degrees","speed_min","speed_max","lifetime_min","lifetime_max","scale_min","scale_max","rotation_min","rotation_max","angular_velocity_min","angular_velocity_max","start_delay_min","start_delay_max","clip_speed_min","clip_speed_max","opacity_start","opacity_end","seed"):
             w=getattr(self,name); value=(s.resource_type,s.resource_id) if name=="clip" else getattr(s,mapping.get(name,name))
@@ -106,11 +110,28 @@ class ParticlePropertiesPanel(QScrollArea):
         self._loading=True
         for name,value in motion_mapping.items():
             w=getattr(self,name);w.setCurrentIndex(max(0,w.findData(value))) if isinstance(w,FocusWheelComboBox) else w.setValue(value)
-        self._loading=False;self._update_motion_visibility()
+        self._loading=False;self._update_motion_visibility();self._sync_motion_key_state()
+
+    @staticmethod
+    def _motion_control_map():
+        return {"center_x":"motion_center_x","center_y":"motion_center_y","center_z":"motion_center_z","radius_start":"motion_radius_start","radius_end":"motion_radius_end","start_angle_degrees":"motion_start_angle","turns":"motion_turns","axis_start":"motion_axis_start","axis_end":"motion_axis_end","perspective_strength":"motion_perspective"}
+
+    def _set_motion_frame(self,motion,frame):
+        self._motion_tracks=deepcopy(motion.tracks);self._motion_revision=motion.revision;self._motion_base_values={name:float(getattr(motion,name)) for name in self._motion_control_map()};self._loading=True
+        for property_id,control_name in self._motion_control_map().items():
+            control=getattr(self,control_name);control.setValue(motion.value(property_id,frame));control.setEnabled(True)
+        self._loading=False;self._sync_motion_key_state()
+
+    def _sync_motion_key_state(self,*args):
+        property_id=str(self.motion_keyframe_property.currentData());track=self._motion_tracks.get(property_id);current=bool(track and track.has_keyframe(self._motion_frame));animated=bool(track and track.keyframes);self.add_motion_keyframe.setText("◆ Delete Key" if current else "◇ Add Key");self.add_motion_keyframe.setProperty("keyState","current_key" if current else "animated_no_key" if animated else "static")
+        if self._localization:
+            ko=self._localization.language=="ko";self.add_motion_keyframe.setToolTip(("현재 프레임에 키가 있습니다. 클릭하면 이 키를 삭제합니다." if ko else "A keyframe exists at the current frame. Click to delete it.") if current else (("이 속성은 애니메이션 중입니다. 값을 변경하면 현재 프레임에 키프레임이 자동으로 추가됩니다." if ko else "This property is animated. Changing the value adds a keyframe at the current frame.") if animated else ("첫 키는 이 버튼으로 명시적으로 추가합니다." if ko else "Use this button to add the first key explicitly.")))
     def settings(self):
         def v(name): w=getattr(self,name); return w.currentData() if isinstance(w,FocusWheelComboBox) else w.value()
         resource=v("clip") or ("animation_clip","")
         motion=ParticleMotionSettings(mode=str(v("motion_mode")),center_x=v("motion_center_x"),center_y=v("motion_center_y"),center_z=v("motion_center_z"),radius_start=v("motion_radius_start"),radius_end=v("motion_radius_end"),ellipse_scale_x=v("motion_ellipse_x"),ellipse_scale_y=v("motion_ellipse_y"),start_angle_degrees=v("motion_start_angle"),turns=v("motion_turns"),direction=str(v("motion_direction")),phase_spread_degrees=v("motion_phase_spread"),orbit_plane_rotation_degrees=v("motion_plane_rotation"),helix_axis=str(v("motion_helix_axis")),axis_start=v("motion_axis_start"),axis_end=v("motion_axis_end"),perspective_strength=v("motion_perspective"),radius_easing=str(v("motion_radius_easing")),angle_easing=str(v("motion_angle_easing")),axis_easing=str(v("motion_axis_easing")),tracks=deepcopy(self._motion_tracks),revision=self._motion_revision)
+        for property_id,value in self._motion_base_values.items():
+            if property_id in motion.tracks and motion.tracks[property_id].keyframes:setattr(motion,property_id,value)
         return ParticleEmitterSettings(clip_asset_id=str(resource[1]),resource_type=str(resource[0]),output_frame_count=v("output_frame_count"),start_frame=v("start_frame"),emission_mode=str(v("emission_mode")),particle_count_min=v("count_min"),particle_count_max=v("count_max"),emission_duration=v("emission_duration"),spawn_shape=str(v("spawn_shape")),origin_x=v("origin_x"),origin_y=v("origin_y"),line_end_x=v("line_end_x"),line_end_y=v("line_end_y"),radius=v("radius"),box_width=v("box_width"),box_height=v("box_height"),start_angle=v("start_angle"),end_angle=v("end_angle"),direction_mode=str(v("direction_mode")),direction_degrees=v("direction_degrees"),direction_spread_degrees=v("direction_spread_degrees"),speed_min=v("speed_min"),speed_max=v("speed_max"),lifetime_min=v("lifetime_min"),lifetime_max=v("lifetime_max"),scale_min=v("scale_min"),scale_max=v("scale_max"),rotation_min=v("rotation_min"),rotation_max=v("rotation_max"),angular_velocity_min=v("angular_velocity_min"),angular_velocity_max=v("angular_velocity_max"),start_delay_min=v("start_delay_min"),start_delay_max=v("start_delay_max"),clip_speed_min=v("clip_speed_min"),clip_speed_max=v("clip_speed_max"),random_start_frame=self.random_start_frame.isChecked(),opacity_start=v("opacity_start"),opacity_end=v("opacity_end"),seed=v("seed"),motion=motion)
     def _motion_mode_changed(self,*args):
         self._update_motion_visibility();self._changed()
@@ -129,9 +150,20 @@ class ParticlePropertiesPanel(QScrollArea):
     def _add_motion_keyframe(self):
         if not self.emitter_id:return
         property_id=str(self.motion_keyframe_property.currentData());control={"center_x":self.motion_center_x,"center_y":self.motion_center_y,"center_z":self.motion_center_z,"radius_start":self.motion_radius_start,"radius_end":self.motion_radius_end,"start_angle_degrees":self.motion_start_angle,"turns":self.motion_turns,"axis_start":self.motion_axis_start,"axis_end":self.motion_axis_end,"perspective_strength":self.motion_perspective}[property_id]
-        self.motion_keyframe_requested.emit(self.emitter_id,property_id,float(control.value()),str(self.motion_keyframe_easing.currentData()))
+        track=self._motion_tracks.get(property_id)
+        if track and track.has_keyframe(self._motion_frame):self.motion_keyframe_delete_requested.emit(self.emitter_id,property_id,self._motion_frame)
+        else:self.motion_keyframe_requested.emit(self.emitter_id,property_id,float(control.value()),str(self.motion_keyframe_easing.currentData()))
     def _changed(self,*args):
         if not self._loading and self.emitter_id:
+            reverse={getattr(self,name):property_id for property_id,name in self._motion_control_map().items()};property_id=reverse.get(self.sender())
+            if property_id:
+                track=self._motion_tracks.get(property_id);control=self.sender()
+                if track and track.keyframes:
+                    if float(track.evaluate(self._motion_frame))==float(control.value()):return
+                    key=track.keyframe_at(self._motion_frame)
+                    if key is None:track.set_keyframe(self._motion_frame,float(control.value()),"Linear")
+                    else:key.value=float(control.value())
+                else:self._motion_base_values[property_id]=float(control.value())
             if self.sender() in {self.motion_mode,self.motion_center_x,self.motion_center_y,self.motion_center_z,self.motion_radius_start,self.motion_radius_end,self.motion_ellipse_x,self.motion_ellipse_y,self.motion_start_angle,self.motion_turns,self.motion_direction,self.motion_phase_spread,self.motion_plane_rotation,self.motion_helix_axis,self.motion_axis_start,self.motion_axis_end,self.motion_radius_easing,self.motion_angle_easing,self.motion_axis_easing,self.motion_perspective}:self._motion_revision+=1
             self.draft_changed.emit(self.emitter_id,self.settings())
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
@@ -151,6 +183,7 @@ class ParticlePropertiesPanel(QScrollArea):
         for widget,suffix in ((self.motion_start_angle,"°"),(self.motion_plane_rotation,"°"),(self.motion_phase_spread,"°")):widget.setSuffix(suffix)
         self.motion_turns.setSuffix(" "+t("particle.motion_turns_unit"))
         self._update_motion_visibility()
+        self._sync_motion_key_state()
         self.random_start_frame.setText("")
         apply_tooltip(self.clip,l,"tooltip.particle.resource",status=False);apply_tooltip(self.output_frame_count,l,"tooltip.particle.output",status=False);apply_tooltip(self.random_start_frame,l,"tooltip.particle.random_start",status=False)
         for widget,key in ((self.randomize,"tooltip.particle.randomize"),(self.refresh,"tooltip.particle.preview"),(self.bake,"tooltip.particle.bake"),(self.export,"tooltip.particle.export"),(self.revert,"tooltip.particle.revert")):apply_tooltip(widget,l,key)

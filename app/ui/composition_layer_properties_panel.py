@@ -19,6 +19,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
     resource_changed = Signal(str, str)
     transform_changed = Signal(str, object)
     transform_keyframe_requested = Signal(str, str, int, float, str)
+    transform_keyframe_delete_requested = Signal(str, str, int)
     transform_gizmo_changed = Signal(str, str)
 
     def __init__(self, parent=None):
@@ -42,6 +43,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.transform_panel=ResourceLayerTransformPanel()
         self.transform_panel.transform_changed.connect(self.transform_changed)
         self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested)
+        self.transform_panel.keyframe_delete_requested.connect(self.transform_keyframe_delete_requested)
         self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
         group = QGroupBox("Path");group.setMinimumWidth(0);group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); self.form = QFormLayout(group);self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.start_x = self._number(); self.start_y = self._number()

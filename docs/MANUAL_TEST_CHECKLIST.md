@@ -1,5 +1,23 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Keyframe Editing Foundation
+
+- [ ] Resource Rotation Z에 Frame 1 = 0°, Frame 11 = 90° Key를 추가하고 Timeline의 첫 칸과 마지막 칸에 `◆`가 정확히 보이는지 확인한다.
+- [ ] Frame 6으로 스크럽해 Inspector와 Canvas가 같은 보간값을 보이고, `◇` Animated/no-current-key 상태에서도 숫자 편집이 가능한지 확인한다.
+- [ ] Frame 6에서 실제 값을 바꾸면 `◆` Key 하나가 자동 생성되고, 값 변화 없이 클릭만 하면 Key가 생기지 않는지 확인한다.
+- [ ] Frame 6의 `◇`를 눌러 평가값 그대로 Explicit Key 하나를 생성할 수도 있고, 같은 Frame에 중복 Key가 생기지 않는지 확인한다.
+- [ ] `◆`를 눌러 현재 Key를 삭제한 뒤 Inspector, Canvas, Timeline marker가 즉시 같이 갱신되는지 확인한다.
+- [ ] 마지막 Key를 삭제해도 값이 0으로 튀지 않고 해당 Key 값이 정적 값으로 남는지 확인한다.
+- [ ] Resource Timeline의 Key를 빈 Frame으로 Drag해 값/이징은 유지되고 Frame만 이동하는지, 기존 Key 위로의 이동은 거부되는지 확인한다.
+- [ ] Key Add, 값 Edit, Move, Delete 각각에서 Undo/Redo가 exact하고, 기즈모 Drag 중 Escape는 Undo를 남기지 않는지 확인한다.
+- [ ] Animated/no-key Frame에서 Gizmo Press만 하면 Key가 없고, 첫 Drag delta에 즉시 Timeline `◆`가 나타나며, Escape하면 Key와 Marker가 함께 제거되는지 확인한다.
+- [ ] SpinBox 직접 입력, Up/Down, Ctrl+Wheel이 같은 Conditional Auto-Key 정책을 사용하고 일반 Wheel은 값 대신 Inspector를 Scroll하는지 확인한다.
+- [ ] SpinBox에 `210`, `-120`, `1.25`를 직접 타이핑하는 동안 Model·Canvas·다이아몬드가 유지되고 Enter 또는 다른 Widget 클릭 시 최종 값이 한 번만 반영되는지 확인한다.
+- [ ] Animated/no-current-key 숫자 입력은 타이핑 중 `◇`를 유지하고 최종 Commit에서만 `◆`와 Undo 1개를 만들며, 기존 키 입력도 중간 숫자 없이 한 번만 갱신되는지 확인한다.
+- [ ] Effect Single/Particle System Transform의 `◇/◆` 상태와 Timeline diamond가 현재 Frame에 맞고, 현재 Key에서 기즈모가 base가 아닌 Key를 바꾸는지 확인한다.
+- [ ] Orbit radius 등 Motion Key를 만든 뒤 Linear → Orbit으로 전환해 Track이 보존되는지 확인한다.
+- [ ] Save, 앱 종료, Reload 후 Key frame/value/easing, 대표 Frame RGBA, Bake, PNG Sequence가 저장 전과 같은지 확인한다.
+
 ## 2.5D Inspector Architecture
 
 - [ ] Resource Editor의 X/Y/Z 회전, 크기, 피벗, 원근이 기본 Sprite 외형 편집 기능으로 이해되는지 확인한다.

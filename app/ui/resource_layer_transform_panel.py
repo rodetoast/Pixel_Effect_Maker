@@ -16,6 +16,7 @@ class ResourceLayerTransformPanel(QGroupBox):
     interactive_transform_changed = Signal(str, object, str)
     transform_edit_finished = Signal(str)
     keyframe_requested = Signal(str, str, int, float, str)
+    keyframe_delete_requested = Signal(str, str, int)
     gizmo_mode_changed = Signal(str, str)
     surface_transform_changed = Signal(str, object)
 
@@ -63,8 +64,10 @@ class ResourceLayerTransformPanel(QGroupBox):
         if layer is not None:
             transform=layer.layer_transform
             for name,spin in self.fields.items():spin.setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
-            for name,button in self.key_buttons.items():button.setChecked(any(key.frame==self.frame for key in transform.tracks.get(name,()).keyframes) if name in transform.tracks else False)
+            for name in self.key_buttons:self._sync_key_state(name,transform)
             for name,spin in self.surface_fields.items():spin.setValue(layer.surface_transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(layer.surface_transform,name))
+            for name,spin in self.surface_fields.items():
+                track=layer.surface_transform.tracks.get(name);spin.setEnabled(not track or not track.keyframes or track.has_keyframe(self.frame))
             self.advanced_status.setVisible(not layer.surface_transform.is_identity())
         self.setEnabled(layer is not None);self._loading=False
 
@@ -76,16 +79,24 @@ class ResourceLayerTransformPanel(QGroupBox):
                 if name not in self.fields:continue
                 self.fields[name].setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
                 if name in self.key_buttons:
-                    track=transform.tracks.get(name);self.key_buttons[name].setChecked(bool(track and any(key.frame==self.frame for key in track.keyframes)))
+                    self._sync_key_state(name,transform)
         finally:self._loading=False
+
+    def _sync_key_state(self,name,transform):
+        track=transform.tracks.get(name);animated=bool(track and track.keyframes);current=bool(track and track.has_keyframe(self.frame));button=self.key_buttons[name];button.setText("◆" if current else "◇");state="current_key" if current else "animated_no_key" if animated else "static";button.setProperty("keyState",state);button.setStyleSheet("font-weight: bold; color: #ffd43b;" if current else "color: #74c0fc;" if animated else "");self.fields[name].setEnabled(True)
+        if self._localization:
+            ko=self._localization.language=="ko";button.setToolTip(("현재 프레임에 키가 있습니다. 클릭하면 이 키를 삭제합니다." if ko else "A keyframe exists at the current frame. Click to delete it.") if current else (("이 속성은 애니메이션 중입니다. 값을 변경하면 현재 프레임에 키프레임이 자동으로 추가됩니다. 클릭하면 현재 값으로 키를 추가합니다." if ko else "This property is animated. Changing the value adds a keyframe at the current frame. Click to add the current value.") if animated else ("클릭하면 현재 값으로 키를 추가합니다." if ko else "Click to add a key with the current value.")))
 
     def _changed(self,*args):
         if self._loading or self.layer is None:return
         transform=deepcopy(self.layer.layer_transform)
         name=next((name for name,field in self.fields.items() if field is self.sender()),"")
         if not name:return
-        spin=self.fields[name];track=transform.tracks.get(name);key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
+        spin=self.fields[name];track=transform.tracks.get(name);current=transform.value(name,self.frame);value=float(spin.value())
+        if current==value:return
+        key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
         if key is not None:key.value=float(spin.value());transform.revision+=1
+        elif track and track.keyframes:transform.set_keyframe(name,self.frame,value,str(self.easings[name].currentData()))
         else:transform.set_property(name,float(spin.value()))
         if name:self.interactive_transform_changed.emit(self.layer.id,transform,name)
         else:self.transform_changed.emit(self.layer.id,transform)
@@ -96,6 +107,7 @@ class ResourceLayerTransformPanel(QGroupBox):
         if not name:return
         transform=deepcopy(self.layer.surface_transform);track=transform.tracks.get(name);key=next((item for item in track.keyframes if item.frame==self.frame),None) if track else None
         if key is not None:key.value=float(self.surface_fields[name].value());transform.revision+=1
+        elif track and track.keyframes:self.set_layer(self.layer,self.frame);return
         else:transform.set_property(name,float(self.surface_fields[name].value()))
         self.surface_transform_changed.emit(self.layer.id,transform)
 
@@ -107,7 +119,10 @@ class ResourceLayerTransformPanel(QGroupBox):
         if not self._loading and self.layer is not None:self.transform_edit_finished.emit(self.layer.id)
 
     def _add_key(self,name):
-        if self.layer is not None:self.keyframe_requested.emit(self.layer.id,name,self.frame,float(self.fields[name].value()),str(self.easings[name].currentData()))
+        if self.layer is None:return
+        track=self.layer.layer_transform.tracks.get(name)
+        if track and track.has_keyframe(self.frame):self.keyframe_delete_requested.emit(self.layer.id,name,self.frame)
+        else:self.keyframe_requested.emit(self.layer.id,name,self.frame,float(self.fields[name].value()),str(self.easings[name].currentData()))
 
     def _reset(self):
         if self.layer is None:return
@@ -129,7 +144,10 @@ class ResourceLayerTransformPanel(QGroupBox):
             label=self.surface_form.labelForField(field);label.setText(t("resource_layer.surface_perspective") if name=="perspective_strength" else t(label_keys[name]));field.setToolTip(t("tooltip.resource_layer.surface_perspective") if name=="perspective_strength" else t("resource_layer.surface_help"))
         mode_keys={"move":"resource_layer.move_xyz","rotate_x":"resource_layer.rotation_x","rotate_y":"resource_layer.rotation_y","rotate_z":"resource_layer.rotation_z","scale":"gizmo.scale","pivot":"composition.pivot"}
         for name,button in self.gizmo_buttons.items():button.setText(t(mode_keys[name]))
-        for name,button in self.key_buttons.items():button.setToolTip(self.fields[name].toolTip()+"\n"+t("resource_layer.add_keyframe"))
+        if self.layer is not None:
+            for name in self.key_buttons:self._sync_key_state(name,self.layer.layer_transform)
+        else:
+            for name,button in self.key_buttons.items():button.setToolTip(self.fields[name].toolTip()+"\n"+t("resource_layer.add_keyframe"))
         for label in self.easing_labels.values():label.setText(t("property.easing"));label.setVisible(True)
         for name,button in self.gizmo_buttons.items():button.setToolTip(t("tooltip.resource_layer.depth_handle") if name=="move" else t(tips.get(name,"resource_layer.transform_help")))
         self.reset.setToolTip(t("resource_layer.transform_reset")+". "+t("resource_layer.transform_help"))

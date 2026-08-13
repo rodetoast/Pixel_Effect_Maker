@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Keyframe Editing Foundation & Reliability
+
+- Numeric SpinBox text entry now stays local until Enter or focus-out, so multi-digit, negative, and decimal input produces one model/Auto-Key/Undo update while arrow buttons, keyboard steps, and Ctrl+Wheel remain immediate.
+- Unified Resource, Effect system-transform and Particle Motion editing around static / animated-no-current-key / current-key states, with conditional Auto-Key only after the first explicit key exists.
+- Animated properties remain editable between keys; the first actual Inspector or Gizmo delta creates one current-frame key, while refresh, scrub, selection and press-without-move remain mutation-free.
+- Grouped conditional Auto-Key and value edits into one Undo step, including transient key removal on Gizmo Escape and immediate Timeline diamond feedback.
+- Added exact current-key Inspector and gizmo edits, filled-diamond delete, last-key static-value preservation, Resource timeline key selection and bounded collision-safe drag movement, plus Effect timeline key markers.
+- Added deterministic duplicate/sort/interpolation/move/delete, Undo/Redo, randomized track and format-v9 Resource/Effect/Motion round-trip coverage and documented the editing contract.
+
 ## Unreleased — Particle Renderer Second Profiling Pass
 
 - Batched frame-invariant Motion/System transform evaluation and particle-center projection instead of rebuilding the same evaluated transforms per particle.

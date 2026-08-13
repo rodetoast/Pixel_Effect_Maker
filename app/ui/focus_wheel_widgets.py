@@ -12,6 +12,13 @@ from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSpinBox
 
 
 class _ScrollSafeWheelMixin:
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Keep text entry local to the line edit until Qt accepts it on Enter
+        # or focus-out. Button, arrow-key, and explicit Ctrl+Wheel steps still
+        # update immediately through QAbstractSpinBox.stepBy().
+        self.setKeyboardTracking(False)
+
     def wheelEvent(self, event) -> None:  # noqa: N802
         if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
             self._wheel_delta = 0

@@ -44,7 +44,7 @@ class TimelineScrubController(QObject):
         self.select(row, column)
 
     def eventFilter(self, watched, event):
-        if watched is not self.viewport:
+        if watched is not getattr(self,"viewport",None):
             return super().eventFilter(watched, event)
         if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
             if self._cell(event.position()) is None:
