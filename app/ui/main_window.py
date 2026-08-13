@@ -104,6 +104,8 @@ from .tooltip_helper import apply_tooltip
 from .interactive_proxy_prewarm import InteractiveProxyPrewarmManager
 from .preview_build_notice_dialog import PreviewBuildNoticeDialog
 from .layer_selection_state import LayerSelectionState
+from .group_inspector import GroupInspector
+from app.models.layer_group import LayerGroup,group_node,layer_node
 
 
 class MainWindow(QMainWindow):
@@ -122,6 +124,7 @@ class MainWindow(QMainWindow):
         self.frame_index = 0
         self.layer_index = 0
         self.effect_layer_selection=LayerSelectionState()
+        self.effect_expanded_group_ids=set();self._effect_collapsed_group_ids=set();self.project.repair_effect_hierarchy()
         self.dirty = False
         self._non_undo_dirty=False
         self._project_edit_revision=0
@@ -211,8 +214,9 @@ class MainWindow(QMainWindow):
         )
         self.particle_properties = ParticlePropertiesPanel()
         self.composition_layer_properties = CompositionLayerPropertiesPanel()
+        self.effect_group_inspector=GroupInspector()
         self.properties_stack = QStackedWidget(); self.properties_stack.setMinimumWidth(280);self.properties_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding)
-        self.properties_stack.addWidget(self.effect_properties); self.properties_stack.addWidget(self.particle_properties); self.properties_stack.addWidget(self.composition_layer_properties)
+        self.properties_stack.addWidget(self.effect_properties); self.properties_stack.addWidget(self.particle_properties); self.properties_stack.addWidget(self.composition_layer_properties);self.properties_stack.addWidget(self.effect_group_inspector)
         self.editor_splitter.addWidget(self.properties_stack)
         self.editor_splitter.setStretchFactor(0, 0)
         self.editor_splitter.setStretchFactor(1, 1)
@@ -417,6 +421,7 @@ class MainWindow(QMainWindow):
         self.effect_properties.retranslate_ui(self.localization)
         self.particle_properties.retranslate_ui(self.localization)
         self.composition_layer_properties.retranslate_ui(self.localization)
+        self.effect_group_inspector.retranslate(self.localization)
         self.resource_editor.retranslate_ui(self.localization)
         self.effect_workspace_button.setText(t("workspace.effect"));self.resource_workspace_button.setText(t("workspace.resource"))
         self.timeline.retranslate_ui(self.localization)
@@ -531,6 +536,7 @@ class MainWindow(QMainWindow):
         self.effect_library.resource_layer_selection_requested.connect(self.select_effect_layers_with_modifiers)
         self.effect_library.select_all_resource_layers_requested.connect(self.select_all_effect_layers)
         self.effect_library.batch_resource_layer_requested.connect(self.batch_effect_layers)
+        self.effect_library.group_expanded_requested.connect(self.toggle_effect_group_expanded)
         self.effect_library.resource_open_requested.connect(self.open_resource_editor)
         self.effect_properties.generate_requested.connect(self.generate_effect)
         self.effect_properties.reset_requested.connect(self.reset_generator_settings)
@@ -576,6 +582,7 @@ class MainWindow(QMainWindow):
             panel.transform_gizmo_changed.connect(self._set_resource_transform_gizmo)
             panel.transform_panel.surface_transform_changed.connect(self.update_resource_surface_transform)
             panel.transform_panel.advanced_enabled_changed.connect(self.set_resource_layer_advanced_enabled)
+        self.effect_group_inspector.rename_requested.connect(self.rename_effect_group);self.effect_group_inspector.state_requested.connect(self.set_effect_group_state)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
         self.particle_preview_manager.preview_failed.connect(self._particle_preview_failed)
         self.resource_editor.import_requested.connect(self.import_resources)
@@ -1185,7 +1192,7 @@ class MainWindow(QMainWindow):
             emitter=ParticleEmitter(name=f"Resource Layer {len(self.project.effect_resource_layers)+1}",settings=ParticleEmitterSettings(identifier,resource_type="source_asset",origin_x=self.project.width/2,origin_y=self.project.height/2))
         if isinstance(emitter,EffectResourceLayer):return emitter
         if emitter:
-            layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
+            layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self.project.repair_effect_hierarchy();self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project,self.effect_expanded_group_ids);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
         return None
 
     def _resource_add_to_effect(self, mode: str, kind: str, identifier: str) -> None:
@@ -1221,7 +1228,7 @@ class MainWindow(QMainWindow):
         layer.particle_settings.origin_x=self.project.width/2;layer.particle_settings.origin_y=self.project.height/2
         layer.particle_settings.line_end_x=self.project.width*.75;layer.particle_settings.line_end_y=self.project.height/2
         generated=apply_effect_resource_layer(self.project,layer)
-        self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters()
+        self.project.effect_resource_layers.append(layer);self.project.repair_effect_hierarchy();self._sync_resource_layer_adapters()
         self.layer_index=self.project.layers.index(generated);self.set_workspace("effect")
         state={"resource_layer":layer,"generated_layer":generated,"resource_index":len(self.project.effect_resource_layers)-1,"layer_index":self.layer_index,"pixels":[frame.layer_pixels[generated.id] for frame in self.project.frames],"initial_redo":True}
         self.application_undo_stack.push(EditorOperationCommand(self,"add_resource_layer",state,"Add Resource Layer"));self.select_resource_layer(layer.id)
@@ -1249,7 +1256,7 @@ class MainWindow(QMainWindow):
 
     def rename_resource_layer(self,identifier,name):
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None);base=str(name).strip()
-        if layer is None or layer.locked or not base or base==layer.name:return False
+        if layer is None or self._effect_layer_locked(layer) or not base or base==layer.name:return False
         existing={item.name for item in self.project.effect_resource_layers if item.id!=identifier};safe=base;number=2
         while safe in existing:safe=f"{base} ({number})";number+=1
         after=deepcopy(layer);after.name=safe;after.single_settings.name=safe
@@ -1269,40 +1276,128 @@ class MainWindow(QMainWindow):
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_solo",layer.solo,solo,"Solo Effect Layer"));return True
 
     def _effect_batch_snapshot(self):
-        return {"resources":deepcopy(self.project.effect_resource_layers),"layers":deepcopy(self.project.layers),"pixels":[{key:value.copy() for key,value in frame.layer_pixels.items()} for frame in self.project.frames],"selection":self.effect_layer_selection.snapshot(),"layer_index":self.layer_index}
+        return {"resources":deepcopy(self.project.effect_resource_layers),"groups":deepcopy(self.project.effect_layer_groups),"root_order":deepcopy(self.project.effect_root_order),"layers":deepcopy(self.project.layers),"pixels":[{key:value.copy() for key,value in frame.layer_pixels.items()} for frame in self.project.frames],"selection":self.effect_layer_selection.snapshot(),"expanded":list(self.effect_expanded_group_ids),"layer_index":self.layer_index}
 
     def _restore_effect_batch_raw(self,value):
-        self.project.effect_resource_layers=deepcopy(value["resources"]);self.project.layers=deepcopy(value["layers"])
+        self.project.effect_resource_layers=deepcopy(value["resources"]);self.project.effect_layer_groups=deepcopy(value.get("groups",[]));self.project.effect_root_order=deepcopy(value.get("root_order",[]));self.project.layers=deepcopy(value["layers"])
         for frame,pixels in zip(self.project.frames,value["pixels"]):frame.layer_pixels={key:part.copy() for key,part in pixels.items()}
-        self._sync_resource_layer_adapters();self.effect_layer_selection.restore(value["selection"],self._effect_ui_ids());self.layer_index=max(0,min(int(value.get("layer_index",0)),len(self.project.layers)-1))
+        self.project.repair_effect_hierarchy();self.effect_expanded_group_ids=set(value.get("expanded",[group.id for group in self.project.effect_layer_groups]));self._sync_resource_layer_adapters();self.effect_layer_selection.restore(value["selection"],self._effect_ui_ids());self.layer_index=max(0,min(int(value.get("layer_index",0)),len(self.project.layers)-1))
 
     def _push_effect_batch(self,before,text):
         after=self._effect_batch_snapshot();self._restore_effect_batch_raw(before);self.application_undo_stack.push(EditorValueCommand(self,"effect_layers","effect_layer_batch",before,after,text));return True
 
+    def _effect_layer_locked(self,layer):return bool(layer and self.project.effect_effective_locked(layer))
+
+    def _effect_node_structurally_locked(self,identifier):
+        group=self.project.effect_group_by_id(identifier)
+        if group:return group.locked or any(self._effect_layer_locked(next((item for item in self.project.effect_resource_layers if item.id==child),None)) for child in group.children)
+        return self._effect_layer_locked(next((item for item in self.project.effect_resource_layers if item.id==identifier),None))
+
+    def create_effect_group_selected(self):
+        selected=set(self.effect_layer_selection.selected_ids);root=self.project.effect_root_order;indices=[i for i,node in enumerate(root) if node["type"]=="layer" and node["id"] in selected]
+        if len(indices)<2 or len(indices)!=len(selected) or indices!=list(range(min(indices),max(indices)+1)) or any(self._effect_node_structurally_locked(root[index]["id"]) for index in indices):return None
+        before=self._effect_batch_snapshot();existing={group.name for group in self.project.effect_layer_groups};name="Group";number=2
+        while name in existing:name=f"Group ({number})";number+=1
+        group=LayerGroup(name=name,children=[root[index]["id"] for index in indices]);start=indices[0];self.project.effect_layer_groups.append(group);self.project.effect_root_order=root[:start]+[group_node(group.id)]+root[indices[-1]+1:];self.project.sync_effect_flat_order();self.effect_expanded_group_ids.add(group.id);self.effect_layer_selection.restore({"selected_ids":[group.id],"primary_id":group.id,"anchor_id":group.id},self._effect_ui_ids(False));self._push_effect_batch(before,"Group Selected Effect Layers");return self.project.effect_group_by_id(group.id)
+
+    def toggle_effect_group_expanded(self,identifier,expanded=None):
+        group=self.project.effect_group_by_id(identifier)
+        if group is None:return False
+        expanded=(identifier not in self.effect_expanded_group_ids) if expanded is None else bool(expanded)
+        if expanded:self.effect_expanded_group_ids.add(identifier);self._effect_collapsed_group_ids.discard(identifier)
+        else:
+            self.effect_expanded_group_ids.discard(identifier);self._effect_collapsed_group_ids.add(identifier)
+            if any(child in self.effect_layer_selection.selected_ids for child in group.children):self.effect_layer_selection.restore({"selected_ids":[identifier],"primary_id":identifier,"anchor_id":identifier},self._effect_ui_ids(False))
+        self._refresh_effect_panels();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count());return True
+
+    def ungroup_effect(self,identifier=None):
+        identifier=identifier or self.effect_layer_selection.primary_id;group=self.project.effect_group_by_id(identifier)
+        if group is None or self._effect_node_structurally_locked(group.id):return False
+        before=self._effect_batch_snapshot();index=next(i for i,node in enumerate(self.project.effect_root_order) if node["id"]==group.id);self.project.effect_root_order[index:index+1]=[layer_node(value) for value in group.children];self.project.effect_layer_groups.remove(group);self.effect_expanded_group_ids.discard(group.id);self.project.sync_effect_flat_order();selected=list(reversed(group.children));primary=selected[0] if selected else (self._effect_ui_root_ids()[0] if self._effect_ui_root_ids() else None);self.effect_layer_selection.restore({"selected_ids":selected or ([primary] if primary else []),"primary_id":primary,"anchor_id":primary},self._effect_ui_ids(False));return self._push_effect_batch(before,"Ungroup Effect Layers")
+
+    def rename_effect_group(self,identifier,name):
+        group=self.project.effect_group_by_id(identifier);base=str(name).strip()
+        if group is None or group.locked or not base or base==group.name:return False
+        existing={item.name for item in self.project.effect_layer_groups if item.id!=identifier};safe=base;number=2
+        while safe in existing:safe=f"{base} ({number})";number+=1
+        before=self._effect_batch_snapshot();group.name=safe;return self._push_effect_batch(before,"Rename Effect Group")
+
+    def set_effect_group_state(self,identifier,field,value):
+        group=self.project.effect_group_by_id(identifier)
+        if group is None or field not in {"visible","locked","solo"} or getattr(group,field)==bool(value):return False
+        before=self._effect_batch_snapshot();setattr(group,field,bool(value));return self._push_effect_batch(before,f"Set Effect Group {field.title()}")
+
+    def duplicate_effect_group(self,identifier=None):
+        identifier=identifier or self.effect_layer_selection.primary_id;group=self.project.effect_group_by_id(identifier)
+        if group is None:return None
+        before=self._effect_batch_snapshot();group_names={item.name for item in self.project.effect_layer_groups};base=re.sub(r" \(\d+\)$","",group.name);number=2;name=f"{base} ({number})"
+        while name in group_names:number+=1;name=f"{base} ({number})"
+        leaf_names={item.name for item in self.project.effect_resource_layers};by_id={item.id:item for item in self.project.effect_resource_layers};children=[]
+        for child in group.children:
+            duplicate=deepcopy(by_id[child]);duplicate.id=uuid4().hex;base_name=re.sub(r" \(\d+\)$","",duplicate.name);number=2;leaf_name=f"{base_name} ({number})"
+            while leaf_name in leaf_names:number+=1;leaf_name=f"{base_name} ({number})"
+            duplicate.name=leaf_name;leaf_names.add(leaf_name);duplicate.generated_layer_id=None;duplicate.single_settings.id=duplicate.id;duplicate.single_settings.name=leaf_name;duplicate.single_settings.generated_layer_id=None;apply_effect_resource_layer(self.project,duplicate);self.project.effect_resource_layers.append(duplicate);children.append(duplicate.id)
+        copy_group=deepcopy(group);copy_group.id=uuid4().hex;copy_group.name=name;copy_group.children=children;self.project.effect_layer_groups.append(copy_group);index=next(i for i,node in enumerate(self.project.effect_root_order) if node["id"]==group.id);self.project.effect_root_order.insert(index+1,group_node(copy_group.id));self.project.sync_effect_flat_order();self.effect_expanded_group_ids.add(copy_group.id);self.effect_layer_selection.restore({"selected_ids":[copy_group.id],"primary_id":copy_group.id,"anchor_id":copy_group.id},self._effect_ui_ids(False));self._sync_resource_layer_adapters();self._push_effect_batch(before,"Duplicate Effect Group");return self.project.effect_group_by_id(copy_group.id)
+
+    def delete_effect_group(self,identifier=None):
+        identifier=identifier or self.effect_layer_selection.primary_id;group=self.project.effect_group_by_id(identifier)
+        if group is None or self._effect_node_structurally_locked(group.id):return False
+        before=self._effect_batch_snapshot();children=set(group.children);targets=[item for item in self.project.effect_resource_layers if item.id in children];generated={item.generated_layer_id for item in targets};self.project.effect_resource_layers=[item for item in self.project.effect_resource_layers if item.id not in children];self.project.effect_layer_groups.remove(group);self.project.effect_root_order=[node for node in self.project.effect_root_order if node["id"]!=group.id];self.project.layers=[item for item in self.project.layers if item.id not in generated]
+        for frame in self.project.frames:
+            for value in generated:frame.layer_pixels.pop(value,None)
+        self.project.sync_effect_flat_order();self._sync_resource_layer_adapters();ui=self._effect_ui_ids(False);primary=ui[0] if ui else None;self.effect_layer_selection.restore({"selected_ids":[primary] if primary else [],"primary_id":primary,"anchor_id":primary},ui);return self._push_effect_batch(before,"Delete Effect Group")
+
+    def move_effect_hierarchy_nodes(self,identifiers,target_parent_id=None,target_ui_index=0):
+        selected=set(identifiers);parents={self._effect_parent_id(value) for value in selected}
+        if len(parents)!=1 or any(self._effect_node_structurally_locked(value) for value in selected):return False
+        source_parent=next(iter(parents));source_group=self.project.effect_group_by_id(source_parent) if source_parent else None;target_group=self.project.effect_group_by_id(target_parent_id) if target_parent_id else None
+        if target_group and (target_group.locked or any(self.project.effect_group_by_id(value) for value in selected)):return False
+        source_ui=list(reversed(source_group.children)) if source_group else self._effect_ui_root_ids();moving=[value for value in source_ui if value in selected];remaining=[value for value in source_ui if value not in selected]
+        if not moving:return False
+        target_ui=(list(reversed(target_group.children)) if target_group else self._effect_ui_root_ids()) if source_parent!=target_parent_id else remaining;target=max(0,min(int(target_ui_index),len(target_ui)));after_ui=target_ui[:target]+moving+target_ui[target:]
+        if source_parent==target_parent_id and after_ui==source_ui:return False
+        before=self._effect_batch_snapshot()
+        if source_group:source_group.children=list(reversed(remaining))
+        else:self.project.effect_root_order=[node for node in self.project.effect_root_order if node["id"] not in selected]
+        if target_group:target_group.children=list(reversed(after_ui))
+        else:
+            kinds={group.id:"group" for group in self.project.effect_layer_groups};self.project.effect_root_order=[{"type":kinds.get(value,"layer"),"id":value} for value in reversed(after_ui)]
+        self.project.sync_effect_flat_order();self._sync_resource_layer_adapters();return self._push_effect_batch(before,"Move Effect Hierarchy Nodes")
+
     def duplicate_selected_effect_layers(self):
-        selected=set(self.effect_layer_selection.selected_ids);originals=[item for item in self.project.effect_resource_layers if item.id in selected]
+        selected={value for value in self.effect_layer_selection.selected_ids if self.project.effect_group_by_id(value) is None};originals=[item for item in self.project.effect_resource_layers if item.id in selected]
         if not originals:return []
         before=self._effect_batch_snapshot();existing={item.name for item in self.project.effect_resource_layers};duplicates=[];primary_duplicate=None
         # Model order is back-to-front; inserting after each original places its
         # duplicate immediately above it in the top=front UI.
         offset=0
+        duplicate_by_original={}
         for original in originals:
             index=self.project.effect_resource_layers.index(original);duplicate=deepcopy(original);duplicate.id=uuid4().hex;base=re.sub(r" \(\d+\)$","",duplicate.name);number=2;name=f"{base} ({number})"
             while name in existing:number+=1;name=f"{base} ({number})"
             duplicate.name=name;existing.add(name);duplicate.generated_layer_id=None;duplicate.single_settings.id=duplicate.id;duplicate.single_settings.name=name;duplicate.single_settings.generated_layer_id=None
-            generated=apply_effect_resource_layer(self.project,duplicate);self.project.effect_resource_layers.insert(index+1,duplicate);original_generated=next(item for item in self.project.layers if item.id==original.generated_layer_id);target=self.project.layers.index(original_generated)+1;self.project.layers.remove(generated);self.project.layers.insert(target,generated);duplicates.append(duplicate)
+            generated=apply_effect_resource_layer(self.project,duplicate);self.project.effect_resource_layers.insert(index+1,duplicate);original_generated=next(item for item in self.project.layers if item.id==original.generated_layer_id);target=self.project.layers.index(original_generated)+1;self.project.layers.remove(generated);self.project.layers.insert(target,generated);duplicates.append(duplicate);duplicate_by_original[original.id]=duplicate.id
             if original.id==self.effect_layer_selection.primary_id:primary_duplicate=duplicate.id
-        self._sync_resource_layer_adapters();duplicate_ids={item.id for item in duplicates};primary_duplicate=primary_duplicate or duplicates[-1].id;self.effect_layer_selection.restore({"selected_ids":list(duplicate_ids),"primary_id":primary_duplicate,"anchor_id":primary_duplicate},self._effect_ui_ids());self.layer_index=self.project.layers.index(next(item for item in self.project.layers if item.id==next(value for value in duplicates if value.id==primary_duplicate).generated_layer_id));self._push_effect_batch(before,"Duplicate Selected Effect Layers")
+        for group in self.project.effect_layer_groups:
+            values=[]
+            for value in group.children:values.extend([value,duplicate_by_original[value]] if value in duplicate_by_original else [value])
+            group.children=values
+        roots=[]
+        for node in self.project.effect_root_order:
+            roots.append(node)
+            if node["type"]=="layer" and node["id"] in duplicate_by_original:roots.append(layer_node(duplicate_by_original[node["id"]]))
+        self.project.effect_root_order=roots;self.project.sync_effect_flat_order();self._sync_resource_layer_adapters();duplicate_ids={item.id for item in duplicates};primary_duplicate=primary_duplicate or duplicates[-1].id;self.effect_layer_selection.restore({"selected_ids":list(duplicate_ids),"primary_id":primary_duplicate,"anchor_id":primary_duplicate},self._effect_ui_ids(False));self.layer_index=self.project.layers.index(next(item for item in self.project.layers if item.id==next(value for value in duplicates if value.id==primary_duplicate).generated_layer_id));self._push_effect_batch(before,"Duplicate Selected Effect Layers")
         return [next(item for item in self.project.effect_resource_layers if item.id==value.id) for value in duplicates]
 
     def delete_selected_effect_layers(self):
         selected=set(self.effect_layer_selection.selected_ids);targets=[item for item in self.project.effect_resource_layers if item.id in selected]
         if not targets:return False
-        if any(item.locked for item in targets):self._report_effect_locked_batch();return False
+        if any(self._effect_layer_locked(item) for item in targets):self._report_effect_locked_batch();return False
         before=self._effect_batch_snapshot();generated_ids={item.generated_layer_id for item in targets};self.project.effect_resource_layers=[item for item in self.project.effect_resource_layers if item.id not in selected];self.project.layers=[item for item in self.project.layers if item.id not in generated_ids]
         for frame in self.project.frames:
             for identifier in generated_ids:frame.layer_pixels.pop(identifier,None)
-        self._sync_resource_layer_adapters();ui=self._effect_ui_ids();primary=ui[0] if ui else None;self.effect_layer_selection.restore({"selected_ids":[primary] if primary else [],"primary_id":primary,"anchor_id":primary},ui);self.layer_index=max(0,min(self.layer_index,len(self.project.layers)-1));return self._push_effect_batch(before,"Delete Selected Effect Layers")
+        for group in self.project.effect_layer_groups:group.children=[value for value in group.children if value not in selected]
+        self.project.effect_root_order=[node for node in self.project.effect_root_order if not (node["type"]=="layer" and node["id"] in selected)];self.project.sync_effect_flat_order();self._sync_resource_layer_adapters();ui=self._effect_ui_ids(False);primary=ui[0] if ui else None;self.effect_layer_selection.restore({"selected_ids":[primary] if primary else [],"primary_id":primary,"anchor_id":primary},ui);self.layer_index=max(0,min(self.layer_index,len(self.project.layers)-1));return self._push_effect_batch(before,"Delete Selected Effect Layers")
 
     def set_selected_effect_state(self,field,value):
         if field not in {"locked","solo","visible"}:return False
@@ -1317,6 +1412,10 @@ class MainWindow(QMainWindow):
         return self._push_effect_batch(before,f"Set Selected Effect Layers {field.title()}")
 
     def reorder_selected_effect_layers(self,identifiers,target_ui_index):
+        if self.project.effect_layer_groups:
+            parents={self._effect_parent_id(value) for value in identifiers}
+            if len(parents)!=1:return False
+            return self.move_effect_hierarchy_nodes(identifiers,next(iter(parents)),target_ui_index)
         selected=set(identifiers or self.effect_layer_selection.selected_ids);ui_ids=self._effect_ui_ids();moving=[value for value in ui_ids if value in selected];resource_by_id={item.id:item for item in self.project.effect_resource_layers}
         if not moving:return False
         if any(resource_by_id[value].locked for value in moving):self._report_effect_locked_batch();return False
@@ -1331,6 +1430,15 @@ class MainWindow(QMainWindow):
     def _report_effect_locked_batch(self):self.statusBar().showMessage(self.localization.text("layer.batch.locked_block"),4000)
 
     def batch_effect_layers(self,command):
+        primary_group=self.project.effect_group_by_id(self.effect_layer_selection.primary_id)
+        if command=="group":return self.create_effect_group_selected()
+        if command=="ungroup":return self.ungroup_effect()
+        if primary_group and command=="duplicate":return self.duplicate_effect_group()
+        if primary_group and command=="delete":return self.delete_effect_group()
+        if primary_group and command in {"lock","unlock","solo","unsolo","show","hide","toggle_lock","toggle_solo"}:
+            field={"lock":"locked","unlock":"locked","toggle_lock":"locked","solo":"solo","unsolo":"solo","toggle_solo":"solo","show":"visible","hide":"visible"}[command];value=(not getattr(primary_group,field)) if command.startswith("toggle") else command in {"lock","solo","show"};return self.set_effect_group_state(primary_group.id,field,value)
+        if command in {"front","back"} and any(self.project.effect_group_by_id(value) for value in self.effect_layer_selection.selected_ids):
+            selected=set(self.effect_layer_selection.selected_ids);parent=next(iter({self._effect_parent_id(value) for value in selected}),None);siblings=self._effect_ui_siblings(next(iter(selected))) if selected else [];return self.move_effect_hierarchy_nodes(selected,parent,0 if command=="front" else len(siblings))
         selected=[item for item in self.project.effect_resource_layers if item.id in self.effect_layer_selection.selected_ids]
         if command=="duplicate":return self.duplicate_selected_effect_layers()
         if command=="delete":return self.delete_selected_effect_layers()
@@ -1411,7 +1519,7 @@ class MainWindow(QMainWindow):
             return None
         self.project.source_assets.append(asset)
         self._mark_dirty()
-        self.effect_library.refresh(self.project)
+        self.effect_library.refresh(self.project,self.effect_expanded_group_ids)
         self.effect_library.select_asset(asset.id)
         self.select_source_asset(asset.id)
         self.statusBar().showMessage(self.localization.text("status.imported").format(name=asset.name), 4000)
@@ -1444,7 +1552,7 @@ class MainWindow(QMainWindow):
         )
         self.project.generators.append(emitter)
         self._mark_dirty()
-        self.effect_library.refresh(self.project)
+        self.effect_library.refresh(self.project,self.effect_expanded_group_ids)
         self.effect_library.select_generator(emitter.id)
         self.select_generator(emitter.id)
         return emitter
@@ -1487,7 +1595,7 @@ class MainWindow(QMainWindow):
         try: clip = create_clip_from_generator(self.project, generator)
         except ValueError as exc:
             QMessageBox.information(self, self.localization.text("effects.create_clip"), str(exc)); return None
-        self._mark_dirty(); self.effect_library.refresh(self.project); self.statusBar().showMessage(self.localization.text("status.created").format(name=clip.name), 4000); return clip
+        self._mark_dirty(); self.effect_library.refresh(self.project,self.effect_expanded_group_ids); self.statusBar().showMessage(self.localization.text("status.created").format(name=clip.name), 4000); return clip
 
     def update_animation_clip(self, clip_id: str, generator_id: str) -> bool:
         clip=next((c for c in self.project.animation_clips if c.id==clip_id),None); generator=next((g for g in self.project.generators if g.id==generator_id),None)
@@ -1515,15 +1623,23 @@ class MainWindow(QMainWindow):
     def update_composition_layer(self, identifier: str, value: EffectCompositionLayer) -> None:
         unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if unified:
-            if unified.locked:return
+            if self._effect_layer_locked(unified):return
             after=deepcopy(unified);after.single_settings=deepcopy(value);after.start_frame=value.start_frame;after.end_frame=value.end_frame
             self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",unified,after,"Resource Layer Settings",701));return
         layer=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
         if layer:self.application_undo_stack.push(EditorValueCommand(self,identifier,"composition_layer_settings",layer,value,"Composition Layer Path",701))
 
-    def _effect_ui_ids(self):
-        generated_index={item.id:index for index,item in enumerate(self.project.layers)}
-        return [item.id for item in sorted(self.project.effect_resource_layers,key=lambda value:generated_index.get(value.generated_layer_id,-1),reverse=True)]
+    def _effect_ui_root_ids(self):return [node["id"] for node in reversed(self.project.effect_root_order)]
+    def _effect_ui_ids(self,visible_only=True):
+        group_by_id={group.id:group for group in self.project.effect_layer_groups};result=[]
+        for node in reversed(self.project.effect_root_order):
+            result.append(node["id"])
+            if node["type"]=="group" and (not visible_only or node["id"] in self.effect_expanded_group_ids):result.extend(reversed(group_by_id[node["id"]].children))
+        return result
+    def _effect_parent_id(self,identifier):
+        group=self.project.effect_parent_group(identifier);return group.id if group else None
+    def _effect_ui_siblings(self,identifier):
+        group=self.project.effect_parent_group(identifier);return list(reversed(group.children)) if group else self._effect_ui_root_ids()
 
     @property
     def selected_effect_layer_ids(self):return set(self.effect_layer_selection.selected_ids)
@@ -1533,31 +1649,45 @@ class MainWindow(QMainWindow):
     def effect_selection_anchor_id(self):return self.effect_layer_selection.anchor_id
 
     def select_effect_layers_with_modifiers(self,identifier,modifiers=Qt.KeyboardModifier.NoModifier):
-        primary=self.effect_layer_selection.click(str(identifier),self._effect_ui_ids(),modifiers);self.select_resource_layer(primary,preserve_selection=True)
+        identifier=str(identifier);shift=bool(modifiers&Qt.KeyboardModifier.ShiftModifier)
+        if shift and self.effect_layer_selection.anchor_id and self._effect_parent_id(identifier)!=self._effect_parent_id(self.effect_layer_selection.anchor_id):modifiers=Qt.KeyboardModifier.NoModifier
+        ids=self._effect_ui_siblings(identifier) if modifiers&Qt.KeyboardModifier.ShiftModifier else self._effect_ui_ids(False);primary=self.effect_layer_selection.click(identifier,ids,modifiers);self._repair_effect_selection_overlap(identifier);self.select_resource_layer(primary,preserve_selection=True)
 
     def select_all_effect_layers(self):
-        primary=self.effect_layer_selection.select_all(self._effect_ui_ids());self.select_resource_layer(primary,preserve_selection=True)
+        primary=self.effect_layer_selection.select_all(self._effect_ui_root_ids());self.select_resource_layer(primary,preserve_selection=True)
+
+    def _repair_effect_selection_overlap(self,clicked=None):
+        for group in self.project.effect_layer_groups:
+            if group.id in self.effect_layer_selection.selected_ids:
+                if clicked in group.children:self.effect_layer_selection.selected_ids.discard(group.id)
+                else:self.effect_layer_selection.selected_ids.difference_update(group.children)
+        self.effect_layer_selection.repair(self._effect_ui_ids(False),self.effect_layer_selection.primary_id)
 
     def select_resource_layer(self, identifier: str, preserve_selection: bool = False) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None:return
+        group=self.project.effect_group_by_id(identifier)
+        if layer is None and group is None:return
         if not preserve_selection:self.effect_layer_selection.click(identifier,self._effect_ui_ids(),Qt.KeyboardModifier.NoModifier)
         else:self.effect_layer_selection.repair(self._effect_ui_ids(),identifier)
         self.effect_library.set_resource_selection(self.effect_layer_selection.selected_ids,self.effect_layer_selection.primary_id)
         self.timeline.set_effect_selection(self.project,self.effect_layer_selection.selected_ids,self.effect_layer_selection.primary_id)
         self._clear_preview();self.canvas.set_gizmo(None);self.project._current_effect_frame=self.frame_index
+        if group is not None:
+            self.properties_stack.setCurrentWidget(self.effect_group_inspector);self.effect_group_inspector.set_group(group);self.canvas.set_effect_guide(None);self.canvas.set_resource_layer_transform(None,None,mode=self.canvas.resource_transform_mode);return
         if layer.placement_mode==PLACEMENT_PARTICLE:
             self.properties_stack.setCurrentWidget(self.particle_properties)
             self.particle_properties.set_resource_layer(layer,self.project)
-            if hasattr(self.particle_properties,"set_locked"):self.particle_properties.set_locked(layer.locked)
+            effective_locked=self._effect_layer_locked(layer)
+            if hasattr(self.particle_properties,"set_locked"):self.particle_properties.set_locked(effective_locked)
             emitter=layer.as_particle_emitter();draft=self.particle_preview_manager.ensure_draft(emitter);self.particle_properties.set_settings(draft.settings)
-            self.canvas.set_effect_guide(layer.id,"particle_system",draft.settings,locked=layer.locked)
+            self.canvas.set_effect_guide(layer.id,"particle_system",draft.settings,locked=effective_locked)
         else:
             self.properties_stack.setCurrentWidget(self.composition_layer_properties)
             self.composition_layer_properties.set_resource_layer(layer,self.project)
-            if hasattr(self.composition_layer_properties,"set_locked"):self.composition_layer_properties.set_locked(layer.locked)
-            self.canvas.set_effect_guide(layer.id,"composition_layer",layer.as_composition_layer(),locked=layer.locked)
-        if layer.advanced_transform_enabled and not layer.locked:self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
+            effective_locked=self._effect_layer_locked(layer)
+            if hasattr(self.composition_layer_properties,"set_locked"):self.composition_layer_properties.set_locked(effective_locked)
+            self.canvas.set_effect_guide(layer.id,"composition_layer",layer.as_composition_layer(),locked=effective_locked)
+        if layer.advanced_transform_enabled and not self._effect_layer_locked(layer):self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
         else:self.canvas.set_resource_layer_transform(None,None,mode=self.canvas.resource_transform_mode)
         generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
         if generated is not None:self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
@@ -1571,36 +1701,36 @@ class MainWindow(QMainWindow):
 
     def set_resource_layer_mode(self, identifier: str, mode: str) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked or mode==layer.placement_mode:return
+        if layer is None or self._effect_layer_locked(layer) or mode==layer.placement_mode:return
         after=deepcopy(layer);after.set_placement_mode(mode)
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Placement Mode",702))
 
     def set_resource_layer_resource(self, identifier: str, resource_id: str) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked or layer.resource_composition_id==resource_id:return
+        if layer is None or self._effect_layer_locked(layer) or layer.resource_composition_id==resource_id:return
         after=deepcopy(layer);after.resource_composition_id=resource_id;after.single_settings.resource_composition_id=resource_id
         after.particle_settings.resource_type="resource_composition";after.particle_settings.clip_asset_id=resource_id
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Resource Layer Resource",703))
 
     def set_resource_layer_advanced_enabled(self, identifier: str, enabled: bool) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None);enabled=bool(enabled)
-        if layer is None or layer.locked or layer.advanced_transform_enabled==enabled:return
+        if layer is None or self._effect_layer_locked(layer) or layer.advanced_transform_enabled==enabled:return
         after=deepcopy(layer);after.advanced_transform_enabled=enabled
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",layer,after,"Advanced Transform"))
 
     def update_resource_layer_transform(self,identifier,transform) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,transform,"Resource Layer 2.5D Transform",704))
 
     def update_resource_layer_transform_property(self,identifier,transform,property_id) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         self.application_undo_stack.push(EditorValueCommand(self,identifier,f"resource_layer_transform:{property_id}",layer.layer_transform,transform,"Resource Layer 2.5D Transform",704))
 
     def update_resource_surface_transform(self,identifier,transform) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_surface_transform",layer.surface_transform,transform,"Resource Layer Surface Transform",705))
 
     def finalize_resource_layer_transform(self,identifier=None) -> None:
@@ -1609,13 +1739,13 @@ class MainWindow(QMainWindow):
 
     def add_resource_layer_transform_keyframe(self,identifier,property_id,frame,value,easing) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         after=deepcopy(layer.layer_transform);after.set_keyframe(property_id,frame,value,easing)
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",layer.layer_transform,after,"Add 2.5D Transform Keyframe"))
 
     def delete_resource_layer_transform_keyframe(self,identifier,property_id,frame) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         before=deepcopy(layer.layer_transform);after=deepcopy(before);track=after.tracks.get(property_id)
         if track is None or not track.delete_keyframe(frame):return
         if not track.keyframes:
@@ -1625,13 +1755,13 @@ class MainWindow(QMainWindow):
 
     def add_particle_motion_keyframe(self,identifier,property_id,value,easing) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked or layer.placement_mode!=PLACEMENT_PARTICLE:return
+        if layer is None or self._effect_layer_locked(layer) or layer.placement_mode!=PLACEMENT_PARTICLE:return
         before=deepcopy(layer);after=deepcopy(layer);after.particle_settings.motion.set_keyframe(property_id,self.frame_index,float(value),str(easing))
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,after,"Add Particle Motion Keyframe"))
 
     def delete_particle_motion_keyframe(self,identifier,property_id,frame) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked or layer.placement_mode!=PLACEMENT_PARTICLE:return
+        if layer is None or self._effect_layer_locked(layer) or layer.placement_mode!=PLACEMENT_PARTICLE:return
         before=deepcopy(layer);after=deepcopy(layer);motion=after.particle_settings.motion;track=motion.tracks.get(property_id)
         if track is None or not track.delete_keyframe(frame):return
         if not track.keyframes:setattr(motion,property_id,float(track.default_value));motion.tracks.pop(property_id,None)
@@ -1640,12 +1770,12 @@ class MainWindow(QMainWindow):
 
     def _set_resource_transform_gizmo(self,identifier,mode) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer and not layer.locked:self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
+        if layer and not self._effect_layer_locked(layer):self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
 
     def _prepare_resource_transform_interaction(self,identifier) -> None:
         self._begin_effect_gizmo_interaction();self.interactive_proxy_prewarm.cancel()
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
         if self.canvas.activate_proxy_prewarm(layer,base_key):
             self.canvas.apply_interactive_transform_proxy(layer);return
@@ -1653,7 +1783,7 @@ class MainWindow(QMainWindow):
 
     def _resource_transform_gizmo_changed(self,identifier,transform,final) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         if not hasattr(self,"_resource_transform_before"):self._resource_transform_before={}
         self._resource_transform_before.setdefault(identifier,deepcopy(layer.layer_transform));transform=deepcopy(transform);transform.revision=max(transform.revision,layer.layer_transform.revision+1);self.project._current_effect_frame=self.frame_index
         panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel
@@ -1686,7 +1816,7 @@ class MainWindow(QMainWindow):
 
     def _effect_guide_started(self,identifier):
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or layer.locked:return
+        if layer is None or self._effect_layer_locked(layer):return
         self._begin_effect_gizmo_interaction()
         base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
         if self.canvas.activate_proxy_prewarm(layer,base_key):return
@@ -1699,7 +1829,7 @@ class MainWindow(QMainWindow):
         clip=next((c for c in self.project.animation_clips if c.id==clip_id),None)
         if clip is None:return None
         emitter=ParticleEmitter(name=f"Resource Layer {len(self.project.effect_resource_layers)+1}",settings=ParticleEmitterSettings(clip_asset_id=clip.id,origin_x=self.project.width/2,origin_y=self.project.height/2,line_end_x=self.project.width*.75,line_end_y=self.project.height/2,radius=min(self.project.width,self.project.height)/4))
-        layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
+        layer=EffectResourceLayer.from_particle_emitter(emitter);self.project.effect_resource_layers.append(layer);self.project.repair_effect_hierarchy();self._sync_resource_layer_adapters();self._mark_dirty();self.effect_library.refresh(self.project,self.effect_expanded_group_ids);self.set_workspace("effect");self.select_resource_layer(layer.id);return layer
 
     def select_particle_emitter(self, emitter_id: str) -> None:
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
@@ -1715,7 +1845,7 @@ class MainWindow(QMainWindow):
     def update_particle_draft(self, emitter_id: str, settings: ParticleEmitterSettings) -> None:
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
         if unified:
-            if unified.locked:return
+            if self._effect_layer_locked(unified):return
             after=deepcopy(unified);after.particle_settings=deepcopy(settings)
             if settings.resource_type=="resource_composition":after.resource_composition_id=settings.resource_id;after.single_settings.resource_composition_id=settings.resource_id
             self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"resource_layer_settings",unified,after,"Resource Layer Particle Settings",700));return
@@ -1727,7 +1857,7 @@ class MainWindow(QMainWindow):
     def _effect_guide_changed(self, identifier: str, settings, final: bool) -> None:
         unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if unified is not None:
-            if unified.locked:return
+            if self._effect_layer_locked(unified):return
             if self._effect_guide_before is None:self._effect_guide_before=deepcopy(unified)
             transient=deepcopy(unified)
             if isinstance(settings,EffectCompositionLayer):transient.single_settings=deepcopy(settings);transient.start_frame=settings.start_frame;transient.end_frame=settings.end_frame
@@ -1900,7 +2030,7 @@ class MainWindow(QMainWindow):
     def _refresh_effect_panels(self) -> None:
         selected_generator = self.effect_library.current_generator_id()
         self.effect_layer_selection.repair(self._effect_ui_ids(),self.effect_layer_selection.primary_id)
-        self.effect_library.refresh(self.project)
+        self.effect_library.refresh(self.project,self.effect_expanded_group_ids)
         self.effect_library.set_resource_selection(self.effect_layer_selection.selected_ids,self.effect_layer_selection.primary_id)
         generator = next(
             (

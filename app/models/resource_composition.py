@@ -4,6 +4,7 @@ from dataclasses import dataclass,field
 from typing import Any
 from math import isfinite
 from uuid import uuid4
+from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 
 EASINGS={"Linear","Ease In","Ease Out","Ease In/Out"}
 PROPERTY_DEFAULTS={
@@ -100,7 +101,7 @@ class CompositionLayer:
 
 @dataclass
 class ResourceComposition:
-    name:str;width:int=64;height:int=64;fps:int=12;frame_count:int=12;loop:bool=True;layers:list[CompositionLayer]=field(default_factory=list);background_mode:str="transparent";pivot_x:float|None=None;pivot_y:float|None=None;revision:int=0;id:str=field(default_factory=lambda:uuid4().hex)
+    name:str;width:int=64;height:int=64;fps:int=12;frame_count:int=12;loop:bool=True;layers:list[CompositionLayer]=field(default_factory=list);background_mode:str="transparent";pivot_x:float|None=None;pivot_y:float|None=None;revision:int=0;id:str=field(default_factory=lambda:uuid4().hex);groups:list[LayerGroup]=field(default_factory=list);root_order:list[dict[str,str]]=field(default_factory=list)
     def __post_init__(self):
         if not 1<=self.width<=1024 or not 1<=self.height<=1024:raise ValueError("composition size must be 1..1024")
         if not 1<=self.fps<=120 or not 1<=self.frame_count<=512:raise ValueError("invalid composition timing")
@@ -109,7 +110,28 @@ class ResourceComposition:
         if self.pivot_y is None:self.pivot_y=self.height/2
         if not isfinite(float(self.pivot_x)) or not isfinite(float(self.pivot_y)):
             raise ValueError("composition pivot must be finite")
+        if len({layer.id for layer in self.layers})!=len(self.layers):raise ValueError("composition layer IDs must be unique")
+        self.repair_hierarchy()
     def touch(self):self.revision+=1
-    def to_dict(self):return {"id":self.id,"name":self.name,"width":self.width,"height":self.height,"fps":self.fps,"frame_count":self.frame_count,"loop":self.loop,"background_mode":self.background_mode,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"revision":self.revision,"layers":[l.to_dict() for l in self.layers]}
+    def repair_hierarchy(self):
+        leaf_ids=[layer.id for layer in self.layers]
+        if not self.groups:self.root_order=[layer_node(identifier) for identifier in leaf_ids]
+        self.groups,self.root_order=repair_hierarchy(leaf_ids,self.groups,self.root_order)
+        self.sync_flat_order()
+    def sync_flat_order(self):
+        by_id={layer.id:layer for layer in self.layers};ordered=flatten_hierarchy(self.groups,self.root_order)
+        self.layers=[by_id[value] for value in ordered if value in by_id]
+    def flatten_layer_ids(self):return flatten_hierarchy(self.groups,self.root_order)
+    def group_by_id(self,identifier):return next((group for group in self.groups if group.id==identifier),None)
+    def parent_group(self,leaf_id):return parent_group(self.groups,leaf_id)
+    def effective_visible(self,leaf):
+        group=self.parent_group(leaf.id);return leaf.visible and (group is None or group.visible)
+    def effective_locked(self,leaf):
+        group=self.parent_group(leaf.id);return leaf.locked or bool(group and group.locked)
+    def preview_solo_active(self):return any(layer.solo for layer in self.layers) or any(group.solo for group in self.groups)
+    def preview_soloed(self,leaf):
+        group=self.parent_group(leaf.id);return leaf.solo or bool(group and group.solo)
+    def to_dict(self):
+        self.repair_hierarchy();return {"id":self.id,"name":self.name,"width":self.width,"height":self.height,"fps":self.fps,"frame_count":self.frame_count,"loop":self.loop,"background_mode":self.background_mode,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"revision":self.revision,"layers":[l.to_dict() for l in self.layers],"groups":[group.to_dict() for group in self.groups],"root_order":self.root_order}
     @classmethod
-    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),width=int(data["width"]),height=int(data["height"]),fps=int(data["fps"]),frame_count=int(data["frame_count"]),loop=bool(data.get("loop",True)),background_mode=str(data.get("background_mode","transparent")),pivot_x=float(data.get("pivot_x",int(data["width"])/2)),pivot_y=float(data.get("pivot_y",int(data["height"])/2)),revision=int(data.get("revision",0)),layers=[CompositionLayer.from_dict(v) for v in data.get("layers",[])])
+    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),width=int(data["width"]),height=int(data["height"]),fps=int(data["fps"]),frame_count=int(data["frame_count"]),loop=bool(data.get("loop",True)),background_mode=str(data.get("background_mode","transparent")),pivot_x=float(data.get("pivot_x",int(data["width"])/2)),pivot_y=float(data.get("pivot_y",int(data["height"])/2)),revision=int(data.get("revision",0)),layers=[CompositionLayer.from_dict(v) for v in data.get("layers",[])],groups=[LayerGroup.from_dict(v) for v in data.get("groups",[])],root_order=list(data.get("root_order",[])) if isinstance(data.get("root_order",[]),list) else [])

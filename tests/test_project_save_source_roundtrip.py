@@ -60,7 +60,7 @@ def test_source_and_effect_reference_ids_round_trip(tmp_path):
 
 def test_new_project_uses_compact_payload_and_no_ui_cache(tmp_path):
     project,_=source_project(tmp_path);data=json.loads(save_project(project,tmp_path/"project").read_text(encoding="utf-8"))
-    assert data["format_version"]==FORMAT_VERSION==10 and isinstance(data["source_assets"][0]["pixels"],dict) and isinstance(data["animation_clips"][0]["frames"][0],dict)
+    assert data["format_version"]==FORMAT_VERSION==11 and isinstance(data["source_assets"][0]["pixels"],dict) and isinstance(data["animation_clips"][0]["frames"][0],dict)
     serialized=json.dumps(data);assert "interactive_transform_proxy" not in serialized and "prewarm" not in serialized and "QPixmap" not in serialized and "preview_frames" not in serialized
 
 
@@ -71,7 +71,7 @@ def test_v6_nested_list_project_loads_and_next_save_uses_v7_compact_payload(tmp_
     data["source_assets"][0]["pixels"]=project.source_assets[0].pixels.tolist()
     for clip_data,clip in zip(data["animation_clips"],project.animation_clips,strict=True):clip_data["frames"]=[frame.tolist() for frame in clip.frames]
     legacy=tmp_path/"legacy-v6.peffect.json";legacy.write_text(json.dumps(data),encoding="utf-8");loaded=load_project(legacy);new_data=json.loads(save_project(loaded,tmp_path/"upgraded").read_text(encoding="utf-8"))
-    assert loaded.format_version==10 and new_data["format_version"]==10 and isinstance(new_data["source_assets"][0]["pixels"],dict);assert_references(loaded)
+    assert loaded.format_version==11 and new_data["format_version"]==11 and isinstance(new_data["source_assets"][0]["pixels"],dict);assert_references(loaded)
 
 
 def test_corrupt_embedded_source_fails_load_instead_of_dropping_pixels(tmp_path):

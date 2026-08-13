@@ -292,6 +292,19 @@ EN.update({
 })
 
 EN.update({
+    "group.group_selected":"Group Selected","group.ungroup":"Ungroup","group.rename":"Rename Group","group.duplicate":"Duplicate Group","group.delete":"Delete Group","group.empty":"Empty Group",
+    "group.inspector":"Layer Group","group.name":"Group Name","group.children":"Children","group.visible":"Visible","group.locked":"Locked","group.solo":"Solo",
+    "group.no_transform_help":"Groups organize layers. Groups do not have transforms or keyframes in this version.",
+    "group.locked_by_group":"Locked by group","group.must_contiguous":"Layers must be contiguous at the same hierarchy level to create a group. Use Shift+Click to select a continuous range.","group.same_parent":"Layers must share the same parent to move them together.",
+    "tooltip.group.create":"Organizes the selected contiguous layers into one group. Groups have no transforms or keyframes and do not change render order.",
+    "tooltip.group.ungroup":"Removes the group and returns its layers to the parent list in their current order.",
+    "tooltip.group.visibility":"Shows or hides all layers in the group without changing each layer's own visibility.",
+    "tooltip.group.solo":"Previews the visible layers in this group on the Canvas. Solo does not affect PNG, Sequence, or Bake output.",
+    "tooltip.group.lock":"Protects the group and its layers from editing. Selection, visibility, Solo, and duplicate remain available.",
+    "tooltip.group.delete":"Deletes the group and all layers inside it. Ungroup first to keep the layers.",
+})
+
+EN.update({
     "layer.selection_count":"{count} layers selected", "layer.primary_summary":"Primary: {name} · {count} layers selected",
     "layer.multiselect_help":"Ctrl+Click: Add or remove a layer from the selection.\nShift+Click: Select a continuous range of layers.",
     "layer.multiselect_primary_help":"Multiple layers are selected. Property edits apply only to the primary layer.",
@@ -362,6 +375,19 @@ KO.update({
     "tooltip.resource.sprite_rotation_y":"리소스 Sprite 평면을 로컬 Y축으로 기울입니다. Particle 이동 경로는 바뀌지 않습니다.",
     "tooltip.resource.sprite_rotation_z":"이미 기울어진 리소스 Sprite 평면 안에서 회전합니다.",
     "tooltip.resource.sprite_perspective":"리소스 Sprite 평면의 2.5D 원근감만 조절합니다. Particle 이동 경로에는 영향을 주지 않습니다.",
+})
+
+KO.update({
+    "group.group_selected":"선택 레이어 그룹 만들기","group.ungroup":"그룹 해제","group.rename":"그룹 이름 변경","group.duplicate":"그룹 복제","group.delete":"그룹 삭제","group.empty":"빈 그룹",
+    "group.inspector":"레이어 그룹","group.name":"그룹 이름","group.children":"하위 레이어","group.visible":"표시","group.locked":"잠금","group.solo":"Solo",
+    "group.no_transform_help":"그룹은 레이어 정리용입니다. 이 버전에서는 Transform과 Keyframe을 가지지 않습니다.",
+    "group.locked_by_group":"상위 그룹에 의해 잠김","group.must_contiguous":"그룹으로 만들 레이어는 같은 위치에서 연속되어 있어야 합니다. Shift+클릭으로 연속된 범위를 선택하세요.","group.same_parent":"여러 레이어를 함께 이동하려면 같은 그룹 위치에 있어야 합니다.",
+    "tooltip.group.create":"선택한 연속 레이어를 하나의 그룹으로 정리합니다. 그룹은 Transform이나 Keyframe을 가지지 않으며 렌더 순서를 변경하지 않습니다.",
+    "tooltip.group.ungroup":"그룹을 제거하고 안의 레이어를 현재 순서 그대로 상위 목록으로 되돌립니다.",
+    "tooltip.group.visibility":"그룹 안의 레이어를 함께 표시하거나 숨깁니다. 각 레이어의 개별 표시 상태는 변경하지 않습니다.",
+    "tooltip.group.solo":"이 그룹의 보이는 레이어만 Canvas에서 함께 미리봅니다. Solo는 PNG, Sequence, Bake 출력에는 영향을 주지 않습니다.",
+    "tooltip.group.lock":"그룹과 그룹 안의 레이어 편집을 보호합니다. 선택, 표시/숨김, Solo, 복제는 계속 사용할 수 있습니다.",
+    "tooltip.group.delete":"그룹과 안의 모든 레이어를 삭제합니다. 레이어를 유지하려면 먼저 그룹 해제를 사용하세요.",
 })
 
 KO.update({

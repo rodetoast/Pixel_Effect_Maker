@@ -142,6 +142,7 @@ class ResourceEditorController(QObject):
         composition = ResourceComposition(safe, width, height, fps, frames, loop)
         layer = CompositionLayer(asset.name, self.state.asset_type, asset.id, 0, frames - 1, pivot_x=asset.pivot_x, pivot_y=asset.pivot_y)
         composition.layers.append(layer)
+        composition.repair_hierarchy()
         self.project.resource_compositions.append(composition)
         self.select_composition(composition.id, layer.id)
         self.composition_changed.emit(composition.id)

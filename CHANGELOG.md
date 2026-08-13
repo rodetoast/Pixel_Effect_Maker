@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.07 - 2026-08-13
+
+- Added one-level, stable-ID Layer Groups to Resource and Effect editors with create, rename, collapse/expand, move, ungroup, duplicate, delete, visibility, inherited lock, preview-only Solo, multi-select, and Undo/Redo workflows.
+- Kept groups render-neutral: leaf objects stay flat, Effect groups create no Generated Layer, and root/group child metadata preserves the existing back-to-front order.
+- Advanced project saves to format v11; v10 loads as a flat hierarchy, while invalid duplicate or missing references are repaired without discarding valid leaf layers.
+- Group visibility participates in Canvas and final output, group Solo remains Canvas-only, and group lock blocks child transforms, keyframes, reorder, and deletion while retaining inspection and safe state controls.
+
 ## v0.0.06 - 2026-08-13
 
 - Added runtime-only stable-ID Layer multi-selection to Resource and Effect editors with Click, Ctrl+Click, Shift+Click, and focus-scoped Ctrl+A.

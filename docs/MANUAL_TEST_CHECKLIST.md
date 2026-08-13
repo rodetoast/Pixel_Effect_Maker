@@ -689,6 +689,17 @@
 - [ ] 다중 선택에서 Inspector, Gizmo, 숫자 입력과 Auto-Key는 Primary 하나만 변경하고 잠긴 Primary는 모두 차단하는지 확인한다.
 - [ ] 다중 선택 전후 PNG, PNG Sequence, Bake 결과가 동일하고 Save/Reload 뒤에는 모델 Batch 결과만 유지되며 선택은 안전한 단일 Primary로 복구되는지 확인한다.
 - [ ] 100 Layer 선택과 비연속 Drag에서 UI가 응답하며 no-op Drop은 Dirty, revision, render 또는 Undo를 만들지 않는지 확인한다.
+
+## v0.0.07 Layer Group / Hierarchy
+
+- [ ] 한국어/English와 Windows 100%/125%/150% DPI에서 Resource/Effect Group disclosure, 이름 변경, child 들여쓰기, 접기 동기화와 Group 안/밖 Drag indicator를 확인한다.
+- [ ] Root Group reorder, Group 내부 reorder, Root↔Group 및 Group A→Group B 이동, same-parent multi-drag, mixed-parent 거부와 Empty Group 유지·복제·삭제를 확인한다.
+- [ ] Group Lock 뒤 child Gizmo/숫자/Auto-Key/Keyframe/Drag/Delete가 차단되고 Select, Visibility, Solo, Duplicate, Unlock, Collapse와 Inspect는 가능한지 확인한다.
+- [ ] Group Visibility가 Canvas, Playback, PNG, PNG Sequence와 Bake에 반영되고 child own Visibility를 바꾸지 않는지 픽셀 비교한다.
+- [ ] Group Solo가 Canvas에만 적용되고 PNG, PNG Sequence와 Bake에는 영향을 주지 않는지 픽셀 비교한다.
+- [ ] Resource Timeline collapse와 Effect logical Group/Generated Timeline mapping이 일치하며 Group 자체 Generated Layer나 Property Track이 생기지 않는지 확인한다.
+- [ ] 실제 v10 프로젝트를 열어 leaf 순서와 출력이 유지되는지 확인하고, v11 Save As/Reload 뒤 Group ID, flags, children, root order와 Empty Group이 유지되는지 확인한다.
+- [ ] Group 생성 전후, Group 해제 전후의 대표 PNG, PNG Sequence와 Bake 결과를 픽셀 비교한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.

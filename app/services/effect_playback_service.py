@@ -157,7 +157,7 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
         else:single_ms+=(perf_counter()-phase)*1000.0
         if layer.generated_layer_id is not None:dynamic[layer.generated_layer_id]=pixels
     resource_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
-    has_solo=solo_preview and any(item.solo for item in project.effect_resource_layers)
+    has_solo=solo_preview and project.effect_preview_solo_active()
     slots=[index for index,layer in enumerate(project.layers) if layer.id in resource_by_generated]
     ordered=list(project.layers);sorted_resources=sorted((project.layers[index] for index in slots),key=lambda layer:resource_by_generated[layer.id].layer_space_transform.value("position_z",frame_index) if resource_by_generated[layer.id].advanced_transform_enabled else 0.0)
     for slot,layer in zip(slots,sorted_resources,strict=True):ordered[slot]=layer
@@ -167,7 +167,8 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
     for layer in ordered:
         if not layer.visible:continue
         logical=resource_by_generated.get(layer.id)
-        if has_solo and (logical is None or not logical.solo):continue
+        if logical is not None and not project.effect_effective_visible(logical):continue
+        if has_solo and (logical is None or not project.effect_preview_soloed(logical)):continue
         if preview is not None and layer.id==preview_layer_id:source=preview;replacement_seen=True
         else:source=dynamic.get(layer.id,None if project_frame is None else project_frame.layer_pixels.get(layer.id))
         _composite(output,source,layer.opacity)

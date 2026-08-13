@@ -66,7 +66,7 @@ def test_format_one_migrates_without_changing_frames_or_layers(tmp_path) -> None
     path = tmp_path / "legacy.peffect.json"
     path.write_text(json.dumps(legacy), encoding="utf-8")
     loaded = load_project(path)
-    assert loaded.format_version == FORMAT_VERSION == 10
+    assert loaded.format_version == FORMAT_VERSION == 11
     assert loaded.source_assets == []
     assert loaded.generators == []
     assert loaded.layers[0].name == "Layer 1"

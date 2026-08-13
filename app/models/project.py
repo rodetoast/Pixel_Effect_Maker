@@ -23,8 +23,9 @@ from .particle_emitter import ParticleEmitter
 from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
+from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 
-FORMAT_VERSION = 10
+FORMAT_VERSION = 11
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -50,10 +51,39 @@ class Project:
     resource_compositions: list[ResourceComposition] = field(default_factory=list)
     effect_composition_layers: list[EffectCompositionLayer] = field(default_factory=list)
     effect_resource_layers: list[EffectResourceLayer] = field(default_factory=list)
+    effect_layer_groups: list[LayerGroup] = field(default_factory=list)
+    effect_root_order: list[dict[str, str]] = field(default_factory=list)
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
         self._validate_dimensions()
+        self.repair_effect_hierarchy()
+
+    def repair_effect_hierarchy(self) -> None:
+        leaf_ids=[item.id for item in self.effect_resource_layers]
+        if not self.effect_layer_groups:self.effect_root_order=[layer_node(value) for value in leaf_ids]
+        self.effect_layer_groups,self.effect_root_order=repair_hierarchy(leaf_ids,self.effect_layer_groups,self.effect_root_order)
+        self.sync_effect_flat_order()
+
+    def sync_effect_flat_order(self) -> None:
+        by_id={item.id:item for item in self.effect_resource_layers};ordered=flatten_hierarchy(self.effect_layer_groups,self.effect_root_order)
+        self.effect_resource_layers=[by_id[value] for value in ordered if value in by_id]
+        generated_ids=[item.generated_layer_id for item in self.effect_resource_layers if item.generated_layer_id]
+        positions=[index for index,item in enumerate(self.layers) if item.id in set(generated_ids)]
+        layer_by_id={item.id:item for item in self.layers}
+        for position,identifier in zip(positions,generated_ids):
+            if identifier in layer_by_id:self.layers[position]=layer_by_id[identifier]
+
+    def effect_flatten_layer_ids(self):return flatten_hierarchy(self.effect_layer_groups,self.effect_root_order)
+    def effect_group_by_id(self,identifier):return next((group for group in self.effect_layer_groups if group.id==identifier),None)
+    def effect_parent_group(self,leaf_id):return parent_group(self.effect_layer_groups,leaf_id)
+    def effect_effective_visible(self,leaf):
+        group=self.effect_parent_group(leaf.id);return leaf.visible and (group is None or group.visible)
+    def effect_effective_locked(self,leaf):
+        group=self.effect_parent_group(leaf.id);return leaf.locked or bool(group and group.locked)
+    def effect_preview_solo_active(self):return any(item.solo for item in self.effect_resource_layers) or any(group.solo for group in self.effect_layer_groups)
+    def effect_preview_soloed(self,leaf):
+        group=self.effect_parent_group(leaf.id);return leaf.solo or bool(group and group.solo)
 
     @classmethod
     def create_default(
@@ -158,7 +188,7 @@ class Project:
         output = np.zeros((self.height, self.width, 4), dtype=np.float32)
         frame = self.frames[index]
         resource_by_generated = {item.generated_layer_id: item for item in self.effect_resource_layers}
-        has_solo = solo_preview and any(item.solo for item in self.effect_resource_layers)
+        has_solo = solo_preview and self.effect_preview_solo_active()
         resource_slots = [i for i, layer in enumerate(self.layers) if layer.id in resource_by_generated]
         ordered_layers = list(self.layers)
         # Stable ascending Z: farther layers first, nearer layers composite later.
@@ -172,7 +202,9 @@ class Project:
             if not layer.visible:
                 continue
             logical = resource_by_generated.get(layer.id)
-            if has_solo and (logical is None or not logical.solo):
+            if logical is not None and not self.effect_effective_visible(logical):
+                continue
+            if has_solo and (logical is None or not self.effect_preview_soloed(logical)):
                 continue
             source = frame.layer_pixels.get(layer.id)
             if source is None:
@@ -190,6 +222,8 @@ class Project:
         return np.clip(output * 255.0, 0, 255).astype(np.uint8)
 
     def to_dict(self) -> dict[str, Any]:
+        for composition in self.resource_compositions:composition.repair_hierarchy()
+        self.repair_effect_hierarchy()
         return {
             "format_version": FORMAT_VERSION,
             "name": self.name,
@@ -202,6 +236,8 @@ class Project:
             "animation_clips": [clip.to_dict() for clip in self.animation_clips],
             "resource_compositions": [composition.to_dict() for composition in self.resource_compositions],
             "effect_resource_layers": [layer.to_dict() for layer in self.effect_resource_layers],
+            "effect_layer_groups": [group.to_dict() for group in self.effect_layer_groups],
+            "effect_root_order": self.effect_root_order,
         }
 
     @classmethod
@@ -213,7 +249,7 @@ class Project:
             raise ProjectError(
                 f"unsupported format_version {version}: project requires a newer application version"
             )
-        if version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, FORMAT_VERSION):
+        if version not in tuple(range(1, FORMAT_VERSION + 1)):
             raise ProjectError(f"unsupported format_version: {version!r}")
         if int(version) >= 7:
             compact_bytes = 0
@@ -271,6 +307,9 @@ class Project:
                 ]
                 project.effect_composition_layers = [item.as_composition_layer() for item in project.effect_resource_layers if item.placement_mode != PLACEMENT_PARTICLE]
                 project.particle_emitters = [item.as_particle_emitter() for item in project.effect_resource_layers if item.placement_mode == PLACEMENT_PARTICLE]
+                if int(version)>=11:
+                    project.effect_layer_groups=[LayerGroup.from_dict(item) for item in data.get("effect_layer_groups",[])]
+                    project.effect_root_order=list(data.get("effect_root_order",[])) if isinstance(data.get("effect_root_order",[]),list) else []
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(f"invalid project data: {exc}") from exc
         if not project.layers or not project.frames:
@@ -374,4 +413,5 @@ class Project:
             by_id={layer.id:layer for layer in project.layers}
             for item in project.effect_resource_layers:
                 if item.generated_layer_id in by_id:by_id[item.generated_layer_id].visible=item.visible
+        project.repair_effect_hierarchy()
         return project

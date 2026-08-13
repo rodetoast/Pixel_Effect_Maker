@@ -64,10 +64,10 @@ def _has_sprite_2_5d(layer:CompositionLayer,frame:int)->bool:
 def render_composition_frame(project:Project,composition:ResourceComposition,frame:int,preview:bool=False)->np.ndarray:
     if not 0<=frame<composition.frame_count:raise ValueError("composition frame out of range")
     output=empty_pixels(composition.width,composition.height)
-    has_solo=preview and any(layer.solo for layer in composition.layers)
+    has_solo=preview and composition.preview_solo_active()
     for layer in composition.layers:
-        if not layer.visible or frame<layer.start_frame or frame>layer.end_frame:continue
-        if has_solo and not layer.solo:continue
+        if not composition.effective_visible(layer) or frame<layer.start_frame or frame>layer.end_frame:continue
+        if has_solo and not composition.preview_soloed(layer):continue
         pixels=_pixels_at(project,composition,layer,frame)
         if pixels is None:continue
         position=layer.value("position",frame);rotation=float(layer.value("rotation",frame));scale=layer.value("scale",frame);opacity=float(layer.value("opacity",frame))

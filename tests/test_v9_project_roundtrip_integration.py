@@ -59,7 +59,7 @@ def test_v8_to_v9_save_as_round_trip_preserves_original_hash_and_rgba(tmp_path):
     item["layer_transform"]=legacy.to_dict();item.pop("layer_space_transform");item.pop("surface_transform")
     original=tmp_path/"legacy-v8.peffect.json";original.write_text(json.dumps(data,separators=(",",":")),encoding="utf-8")
     before=sha256(original.read_bytes()).hexdigest();migrated=load_project(original);layer=migrated.effect_resource_layers[0]
-    assert FORMAT_VERSION==10 and migrated.format_version==10 and layer.layer_space_transform.is_identity()
+    assert FORMAT_VERSION==11 and migrated.format_version==11 and layer.layer_space_transform.is_identity()
     assert layer.surface_transform.to_dict()==legacy.to_dict()
     assert all(np.array_equal(expected[frame],render_effect_resource_layer_current_frame(migrated,layer,frame)) for frame in range(12))
     reloaded=load_project(save_project(migrated,tmp_path/"migrated-v9"));reloaded_layer=reloaded.effect_resource_layers[0]
