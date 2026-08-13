@@ -46,6 +46,7 @@ class ResourceEditorWidget(QWidget):
         self.empty.import_button.clicked.connect(lambda:self.import_requested.emit(None));self.empty.blank_button.clicked.connect(self._create_blank_dialog)
         self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
         self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.layer_selected.connect(self.controller.select_layer);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe);self.composition_timeline.move_keyframe_requested.connect(self._move_keyframe)
+        self.composition_timeline.add_layer_requested.connect(self.add_asset_layer);self.composition_timeline.remove_layer_requested.connect(self.remove_layer);self.composition_timeline.move_layer_requested.connect(self.move_layer)
         self.composition_timeline.scrub_started.connect(self.stop)
         self.composition_canvas.layer_selected.connect(self.controller.select_layer);self.composition_canvas.transform_changed.connect(self._gizmo_change);self.composition_canvas.transform_cancelled.connect(self._gizmo_cancel);self.composition_canvas.drag_started.connect(self.stop)
         self.controller.state_changed.connect(self._apply_state);self.controller.frame_changed.connect(lambda frame:self._apply_state(self.controller.state));self.controller.composition_changed.connect(self.composition_changed);self.controller.clear()
@@ -96,6 +97,7 @@ class ResourceEditorWidget(QWidget):
 
     def refresh(self,project,select=None):
         self.project=project;self.controller.set_project(project)
+        self.composition_timeline.set_available_sources(project)
         if select:self._last_asset=select;self.controller.select_asset(*select)
         asset_selection=(self.controller.state.asset_type,self.controller.state.asset_id) if self.controller.asset else None;self.browser.refresh(project,asset_selection,self.controller.state.composition_id);self._legacy_timeline();self._apply_state(self.controller.state)
 
@@ -112,6 +114,7 @@ class ResourceEditorWidget(QWidget):
         elif mode==ResourceEditorMode.ASSET_INSPECT:
             self.asset_canvas.set_asset(asset,state.frame);self.asset_strip.set_asset(asset,state.frame);self.asset_inspector.set_asset(asset)
         else:
+            self.composition_timeline.set_available_sources(self.project)
             source=self._layer_source(layer);self.composition_canvas.set_context(self.project,composition,layer,state.frame);self.composition_inspector.set_composition(composition);self.layer_inspector.set_layer(layer,source,state.frame);self.layer_inspector.set_mode(state.gizmo_mode);self.composition_canvas.set_mode(state.gizmo_mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[state.gizmo_mode]) if self.localization else state.gizmo_mode);self.composition_timeline.refresh(composition,layer,state.frame)
         self._legacy_timeline()
 
@@ -318,6 +321,13 @@ class ResourceEditorWidget(QWidget):
                 for key,part in value.items():setattr(composition,key,part)
                 composition.touch();invalidate_composition_cache(composition.id);self.controller.changed();self.browser.refresh(self.project,None,composition.id)
             return
+        if field=="layers":
+            composition=next((item for item in self.project.resource_compositions if item.id==target_id),None)
+            if composition:
+                composition.layers=deepcopy(value)
+                if self.controller.state.composition_id==composition.id and self.controller.layer is None:self.controller.state.layer_id=composition.layers[-1].id if composition.layers else None
+                self.controller.changed()
+            return
         layer=next((layer for composition in self.project.resource_compositions for layer in composition.layers if layer.id==target_id),None)
         if layer is None:return
         if field.startswith("track:"):
@@ -336,10 +346,24 @@ class ResourceEditorWidget(QWidget):
         while name in existing:name=f"{base} ({number})";number+=1
         composition=ResourceComposition(name,width,height,fps,frame_count,loop);self.project.resource_compositions.append(composition);self.controller.select_composition(composition.id);self.composition_changed.emit(composition.id);self.browser.refresh(self.project,None,composition.id);return composition
     def add_selected_asset(self):
-        if not self.composition or not self._last_asset:return None
-        kind,identifier=self._last_asset;items=self.project.source_assets if kind=="source_asset" else self.project.animation_clips;asset=next((item for item in items if item.id==identifier),None)
+        return None if not self._last_asset else self.add_asset_layer(*self._last_asset)
+    def add_asset_layer(self,kind,identifier):
+        if not self.composition:return None
+        items=self.project.source_assets if kind=="source_asset" else self.project.animation_clips;asset=next((item for item in items if item.id==identifier),None)
         if asset is None:return None
-        layer=CompositionLayer(asset.name,kind,asset.id,0,self.composition.frame_count-1,pivot_x=asset.pivot_x,pivot_y=asset.pivot_y);self.composition.layers.append(layer);self.controller.select_layer(layer.id);self.controller.changed();return layer
+        existing={item.name for item in self.composition.layers};base=asset.name;name=base;number=2
+        while name in existing:name=f"{base} ({number})";number+=1
+        layer=CompositionLayer(name,kind,asset.id,0,self.composition.frame_count-1,pivot_x=asset.pivot_x,pivot_y=asset.pivot_y);before=deepcopy(self.composition.layers);after=before+[deepcopy(layer)];self._push_value(self.composition.id,"layers",before,after,"Add Resource Layer");self.controller.select_layer(layer.id);return self.selected_layer
+    def remove_layer(self,identifier):
+        if not self.composition:return False
+        index=next((i for i,item in enumerate(self.composition.layers) if item.id==identifier),-1)
+        if index<0:return False
+        before=deepcopy(self.composition.layers);after=before[:index]+before[index+1:];self._push_value(self.composition.id,"layers",before,after,"Remove Resource Layer");return True
+    def move_layer(self,identifier,direction):
+        if not self.composition:return False
+        before=deepcopy(self.composition.layers);index=next((i for i,item in enumerate(before) if item.id==identifier),-1);target=index+int(direction)
+        if index<0 or target<0 or target>=len(before):return False
+        after=deepcopy(before);layer=after.pop(index);after.insert(target,layer);self._push_value(self.composition.id,"layers",before,after,"Reorder Resource Layer");self.controller.select_layer(identifier);return True
     def add_property_to_layer(self,property_id):track=self.selected_layer.add_property(property_id);self.controller.changed();return track
     def set_keyframe(self,property_id,value,easing="Linear"):
         before=deepcopy(self.selected_layer.tracks.get(property_id));after=deepcopy(before) if before else self.selected_layer.add_property(property_id);after=deepcopy(after);after.set_keyframe(self.frame_index,value,easing)

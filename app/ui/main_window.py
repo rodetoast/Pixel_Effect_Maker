@@ -1235,7 +1235,7 @@ class MainWindow(QMainWindow):
         self.update_resource_pivot(kind,new.id,new.pivot_x,new.pivot_y);self.resource_editor.refresh(self.project,(kind,new.id));return True
 
     def delete_resource(self,kind: str,identifier: str) -> bool:
-        used=(kind=="source_asset" and any(g.settings.source_asset_id==identifier for g in self.project.generators)) or any(e.settings.resource_type==kind and e.settings.resource_id==identifier for e in self.project.particle_emitters)
+        used=(kind=="source_asset" and any(g.settings.source_asset_id==identifier for g in self.project.generators)) or any(e.settings.resource_type==kind and e.settings.resource_id==identifier for e in self.project.particle_emitters) or any(layer.source_type==kind and layer.source_id==identifier for composition in self.project.resource_compositions for layer in composition.layers)
         if used:QMessageBox.warning(self,self.localization.text("resource.delete"),self.localization.text("resource.in_use"));return False
         resources=self.project.source_assets if kind=="source_asset" else self.project.animation_clips;resource=next((r for r in resources if r.id==identifier),None)
         if resource is None:return False

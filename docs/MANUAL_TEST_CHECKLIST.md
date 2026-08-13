@@ -1,5 +1,16 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Multi-Image Resource Layer Workflow
+
+- [ ] PNG 에셋 A/B/C를 가져와 하나의 Resource에 세 Layer로 추가하고 각 Layer의 Source 이름과 선택 Highlight가 명확한지 확인한다.
+- [ ] 목록 위가 Canvas Front인지 겹친 이미지로 확인하고 위/아래 버튼 변경이 즉시 반영되며 Undo/Redo 한 번으로 왕복하는지 확인한다.
+- [ ] A Position, B Rotation X/Y/Z, C Scale/Perspective/Opacity/Pivot를 서로 다르게 바꿔 다른 Layer와 원본 Asset에 섞이지 않는지 확인한다.
+- [ ] Layer별 Visibility와 포함형 Start/End 범위를 다르게 두고 Scrub/Playback에서 지정 Frame에만 합성되는지 확인한다.
+- [ ] A Rotation, B Position, C Opacity의 첫 Key와 다른 Frame Conditional Auto-Key가 각 Layer의 Diamond/Timeline row에 독립적으로 표시되는지 확인한다.
+- [ ] Layer Add/Remove/Reorder를 Undo/Redo하고 Remove 후에도 원본 Asset이 남으며 사용 중 Asset 삭제가 거부되는지 확인한다.
+- [ ] Save/Reload 후 Layer 순서, Source, 이름, Transform, Pivot, Visibility, 범위와 Keyframe이 동일한지 확인한다.
+- [ ] 완성된 3-Layer Resource를 Effect Single과 Particle에 추가해 내부 합성이 하나의 Resource appearance로 사용되는지 확인한다.
+
 ## Keyframe Editing Foundation
 
 - [ ] Resource Rotation Z에 Frame 1 = 0°, Frame 11 = 90° Key를 추가하고 Timeline의 첫 칸과 마지막 칸에 `◆`가 정확히 보이는지 확인한다.

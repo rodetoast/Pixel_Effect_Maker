@@ -21,6 +21,14 @@ PNG 기본값은 확장자를 제거한 이름, 원본 크기, 12 FPS, 1초, 12�
 
 Create를 누르면 ResourceComposition 생성, Asset Layer 추가, Asset Pivot 복사, Composition/Layer 선택과 Timeline 갱신이 한 동작으로 완료됩니다. 사용자가 에셋을 다시 선택하거나 별도의 Add 버튼을 누를 필요가 없습니다.
 
+## 여러 이미지 Layer 제작
+
+Composition Timeline의 `+ 이미지 레이어 추가` 메뉴는 프로젝트에 가져온 SourceAsset/AnimationClipAsset을 명시적으로 선택해 현재 Resource의 가장 앞 Layer로 추가합니다. Layer 이름은 Source 이름을 따르며 같은 이름은 `(2)`, `(3)`으로 구분합니다. Source 없는 이미지 Layer는 만들지 않습니다.
+
+Timeline의 Layer 목록은 **위=Canvas Front, 아래=Canvas Back**입니다. 위/아래 버튼은 실제 source-over 합성 순서를 즉시 바꾸며 Add, Remove, Reorder는 각각 Undo 한 단계입니다. Remove는 CompositionLayer만 제거하고 원본 Asset은 유지합니다. 빈 Resource가 이미 지원되므로 마지막 Layer 제거도 허용합니다.
+
+Layer 선택은 Inspector, Gizmo, Selection Box와 Property Timeline row를 함께 전환합니다. 선택 전환 자체는 Composition revision, Render cache, Keyframe 또는 Undo를 변경하지 않습니다.
+
 ## Canvas와 기즈모
 
 Canvas는 체커보드, 최근접 이웃, 정수 Zoom, Middle-button Pan과 Composition 경계를 제공합니다. 보이는 Layer는 최상단부터 변환된 polygon으로 hit-test하며 빈 공간을 누르면 선택을 해제합니다. Canvas와 Timeline의 Layer 선택은 같은 Controller 상태를 사용합니다.
@@ -55,4 +63,4 @@ Asset Frame Strip과 Composition Timeline은 서로 다른 위젯입니다. Comp
 
 ## 알려진 제한
 
-Composition 중첩, Graph Editor, Keyframe Drag·다중 선택, Layer 순서 Drag, Composition 생성 후 안전한 재타이밍은 제공하지 않습니다.
+Composition 중첩, Graph Editor, Keyframe 다중 선택, Layer 순서 Drag & Drop, Layer 다중 선택, Composition 생성 후 안전한 재타이밍은 제공하지 않습니다. Layer 순서는 위/아래 버튼으로 변경합니다.

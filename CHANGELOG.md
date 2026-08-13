@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Multi-Image Resource Layer Workflow
+
+- Added an explicit imported-asset menu for adding multiple image/animation layers to one Resource Composition, with source-derived unique names and no source-less image layers.
+- Defined Resource Timeline list top as Canvas Front, added layer front/back controls, and made Add, Remove, and Reorder exact one-command Undo/Redo operations while preserving source assets.
+- Kept independent per-layer visibility, inclusive start/end ranges, pivots, Sprite 2.5D transforms and keyframe tracks on the existing format-v9 `CompositionLayer` model.
+- Rejected deletion of assets referenced by Resource layers and added deterministic three-image composition, ordering, cache, Effect/Particle, Conditional Auto-Key, and Save/Reload coverage.
+
 ## Unreleased — Keyframe Editing Foundation & Reliability
 
 - Numeric SpinBox text entry now stays local until Enter or focus-out, so multi-digit, negative, and decimal input produces one model/Auto-Key/Undo update while arrow buttons, keyboard steps, and Ctrl+Wheel remain immediate.
