@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QAction, QImage, QPixmap
 from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -35,6 +36,8 @@ class EffectLibraryPanel(QWidget):
     add_composition_requested = Signal(str)
     composition_selected = Signal(str)
     resource_open_requested = Signal(str, str)
+    remove_resource_layer_requested = Signal(str)
+    move_resource_layer_requested = Signal(str, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,7 +87,9 @@ class EffectLibraryPanel(QWidget):
         composition_layout = QVBoxLayout(self.composition_group)
         self.add_composition_button = QPushButton("Add Resource Layer")
         self.composition_list = QListWidget(); self.composition_list.setObjectName("compositionLayerList")
-        composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list)
+        self.composition_add_menu=QMenu(self.add_composition_button);self.add_composition_button.setMenu(self.composition_add_menu)
+        self.remove_composition_button=QPushButton("Remove Layer");self.move_composition_up=QPushButton("↑ Front");self.move_composition_down=QPushButton("↓ Back")
+        composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list);composition_layout.addWidget(self.remove_composition_button);composition_layout.addWidget(self.move_composition_up);composition_layout.addWidget(self.move_composition_down)
         layout.addWidget(self.composition_group, 1)
 
         self.particle_group = QGroupBox("Particle Systems")
@@ -103,7 +108,7 @@ class EffectLibraryPanel(QWidget):
         self.delete_generator_button.clicked.connect(self._request_delete_generator)
         self.create_clip_button.clicked.connect(self._request_create_clip)
         self.add_particle_button.clicked.connect(self._request_add_particle)
-        self.add_composition_button.clicked.connect(self._request_add_composition)
+        self.remove_composition_button.clicked.connect(self._request_remove_composition);self.move_composition_up.clicked.connect(lambda:self._request_move_composition(1));self.move_composition_down.clicked.connect(lambda:self._request_move_composition(-1))
         self.clip_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "clip"))
         self.particle_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "particle"))
         self.composition_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "composition"))
@@ -133,6 +138,7 @@ class EffectLibraryPanel(QWidget):
         self.composition_group.setTitle(t("resource_layer.plural"))
         self.create_clip_button.setText(t("effects.create_clip"))
         self.add_composition_button.setText(t("resource_layer.add"))
+        self.remove_composition_button.setText(t("resource_layer.remove"));self.move_composition_up.setText(t("resource_layer.move_front"));self.move_composition_down.setText(t("resource_layer.move_back"))
         self.import_button.setText(t("effects.import"))
         self.add_emitter_button.setText(t("effects.add_emitter"))
         self.delete_asset_button.setText(t("effects.delete_source"))
@@ -143,6 +149,9 @@ class EffectLibraryPanel(QWidget):
             self.delete_generator_button: "tooltip.effect.delete_generator", self.create_clip_button: "tooltip.effect.create_clip",
             self.add_particle_button: "tooltip.resource_layer.add",
             self.add_composition_button: "tooltip.resource_layer.add",
+            self.remove_composition_button: "tooltip.resource_layer.remove",
+            self.move_composition_up: "tooltip.resource_layer.move_front",
+            self.move_composition_down: "tooltip.resource_layer.move_back",
         }
         for widget,key in help_keys.items():apply_tooltip(widget,localization,key)
         if self.current_asset_id() is None:
@@ -169,7 +178,12 @@ class EffectLibraryPanel(QWidget):
         for generator in project.generators:
             self.generator_list.addItem(self._item(generator.id, generator.name))
         for clip in project.animation_clips: self.clip_list.addItem(self._item(clip.id, clip.name))
-        for layer in project.effect_resource_layers: self.composition_list.addItem(self._item(layer.id, layer.name))
+        resource_names={item.id:item.name for item in project.resource_compositions}
+        generated_by_id={item.id:item for item in project.layers}
+        ordered=sorted(project.effect_resource_layers,key=lambda item:next((index for index,layer in enumerate(project.layers) if layer.id==item.generated_layer_id),-1),reverse=True)
+        for layer in ordered:
+            mode="Particle" if layer.placement_mode=="particle" else "Single";visible=generated_by_id.get(layer.generated_layer_id).visible if layer.generated_layer_id in generated_by_id else layer.visible;resource=resource_names.get(layer.resource_composition_id,"Missing Resource")
+            self.composition_list.addItem(self._item(layer.id,f"{'●' if visible else '○'} {layer.name} — {resource} · {mode}"))
         self._restore_selection(self.asset_list, selected_asset)
         self._restore_selection(self.generator_list, selected_generator)
         self._restore_selection(self.clip_list, selected_clip); self._restore_selection(self.particle_list, selected_particle); self._restore_selection(self.composition_list, selected_composition)
@@ -186,6 +200,9 @@ class EffectLibraryPanel(QWidget):
         self.create_clip_button.setEnabled(self.current_generator_id() is not None)
         self.add_particle_button.setEnabled(False)
         self._resource_composition_ids = [item.id for item in project.resource_compositions]
+        self.composition_add_menu.clear()
+        for composition in project.resource_compositions:
+            action=QAction(composition.name,self.composition_add_menu);action.triggered.connect(lambda checked=False,i=composition.id:self.add_composition_requested.emit(i));self.composition_add_menu.addAction(action)
         self.add_composition_button.setEnabled(bool(project.resource_compositions))
         self.particle_group.setVisible(False)
         self._resource_composition_ids = [item.id for item in project.resource_compositions]
@@ -194,6 +211,7 @@ class EffectLibraryPanel(QWidget):
             None,
         )
         self.show_asset(asset)
+        self._sync_composition_controls()
 
     @staticmethod
     def _restore_selection(widget: QListWidget, identifier: str | None) -> None:
@@ -209,6 +227,12 @@ class EffectLibraryPanel(QWidget):
 
     def select_generator(self, identifier: str) -> None:
         self._restore_selection(self.generator_list, identifier)
+
+    def select_composition(self, identifier: str) -> None:
+        blocked = self.composition_list.blockSignals(True)
+        self._restore_selection(self.composition_list, identifier)
+        self.composition_list.blockSignals(blocked)
+        self._sync_composition_controls()
 
     def current_asset_id(self) -> str | None:
         item = self.asset_list.currentItem()
@@ -234,10 +258,22 @@ class EffectLibraryPanel(QWidget):
             if (kind == "clip" and widget is self.clip_list) or (kind == "particle" and widget is self.particle_list) or (kind == "composition" and widget is self.composition_list): continue
             widget.clearSelection()
         (self.clip_selected if kind == "clip" else self.particle_selected if kind == "particle" else self.composition_selected).emit(identifier)
+        if kind=="composition":self._sync_composition_controls()
 
     def _request_add_composition(self) -> None:
         identifiers = getattr(self, "_resource_composition_ids", [])
         if identifiers: self.add_composition_requested.emit(identifiers[0])
+
+    def _request_remove_composition(self):
+        identifier=self.current_composition_id()
+        if identifier:self.remove_resource_layer_requested.emit(identifier)
+
+    def _request_move_composition(self,direction):
+        identifier=self.current_composition_id()
+        if identifier:self.move_resource_layer_requested.emit(identifier,int(direction))
+
+    def _sync_composition_controls(self):
+        row=self.composition_list.currentRow();enabled=row>=0;self.remove_composition_button.setEnabled(enabled);self.move_composition_up.setEnabled(enabled and row>0);self.move_composition_down.setEnabled(enabled and row<self.composition_list.count()-1)
 
     def _request_create_clip(self) -> None:
         identifier = self.current_generator_id()

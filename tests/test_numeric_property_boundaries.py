@@ -36,8 +36,9 @@ def test_direct_entry_outside_range_is_rejected_or_clamped():
     assert 0<=spin.value()<=1;spin.close()
 
 
-def test_main_window_undo_index_callback_is_registered_qt_slot(tmp_path):
+def test_main_window_undo_index_callback_uses_plain_bound_callable(tmp_path):
     settings=QSettings(str(tmp_path/"settings.ini"),QSettings.Format.IniFormat);window=MainWindow(ShortcutSettingsService(settings))
-    assert window.metaObject().indexOfSlot("_undo_index_changed(int)")>=0
-    window._undo_index_changed(window.application_undo_stack.index())
+    assert window.metaObject().indexOfSlot("_undo_index_changed(int)")==-1
+    before=window._project_edit_revision;window.application_undo_stack.push(__import__("app.ui.undo_commands",fromlist=["EditorValueCommand"]).EditorValueCommand(window,window.project.layers[0].id,"effect_visibility",True,False,"Visibility"))
+    assert window._project_edit_revision==before+1
     window.dirty=False;window.close()

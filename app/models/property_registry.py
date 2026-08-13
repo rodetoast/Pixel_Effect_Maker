@@ -13,6 +13,7 @@ class NumericPropertySpec:
 NUMERIC_PROPERTY_SPECS={
  "normalized.opacity":NumericPropertySpec(0.0,1.0,0.05,3),
  "normalized.perspective":NumericPropertySpec(0.0,1.0,0.05,3),
+ "particle.clip_playback_speed":NumericPropertySpec(0.01,16.0,0.1,3),
  "composition.opacity_percent":NumericPropertySpec(0.0,100.0,5.0,3," %"),
  "composition.perspective":NumericPropertySpec(0.0,1.0,0.05,3),
 }

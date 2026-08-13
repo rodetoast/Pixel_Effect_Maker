@@ -151,6 +151,7 @@ class EffectResourceLayer:
     resource_start_frame: int = 0
     playback_mode: str = "loop"
     playback_speed: float = 1.0
+    advanced_transform_enabled: bool = True
     generated_layer_id: str | None = None
     single_settings: EffectCompositionLayer | None = None
     particle_settings: ParticleEmitterSettings | None = None
@@ -164,6 +165,7 @@ class EffectResourceLayer:
     def __post_init__(self) -> None:
         if self.placement_mode not in PLACEMENT_MODES:
             raise ValueError("unsupported Resource Layer placement mode")
+        self.advanced_transform_enabled = bool(self.advanced_transform_enabled)
         self.playback_speed = float(self.playback_speed)
         if (
             self.start_frame < 0
@@ -258,6 +260,7 @@ class EffectResourceLayer:
             "start_frame": self.start_frame, "end_frame": self.end_frame,
             "resource_start_frame": self.resource_start_frame,
             "playback_mode": self.playback_mode, "playback_speed": self.playback_speed,
+            "advanced_transform_enabled": self.advanced_transform_enabled,
             "placement_mode": self.placement_mode,
             "generated_layer_id": self.generated_layer_id,
             "single_settings": self.single_settings.to_dict(),
@@ -278,6 +281,7 @@ class EffectResourceLayer:
             resource_start_frame=int(data.get("resource_start_frame", 0)),
             playback_mode=str(data.get("playback_mode", "loop")),
             playback_speed=float(data.get("playback_speed", 1.0)),
+            advanced_transform_enabled=bool(data.get("advanced_transform_enabled", True)),
             placement_mode=str(data.get("placement_mode", PLACEMENT_SINGLE)),
             generated_layer_id=None if data.get("generated_layer_id") is None else str(data["generated_layer_id"]),
             single_settings=None if not single_data else (

@@ -14,6 +14,10 @@ Single과 Particle Renderer는 Canvas 크기 RGBA 결과에서 합류한 뒤 공
 
 외부 PNG/GIF/Aseprite는 Imported Asset이 된 뒤 Resource Editor에서 Resource Composition으로 비파괴 애니메이션화됩니다. Effect Editor에는 Resource Layer 하나로 추가하고 Placement Mode에서 Single 또는 Particle Emission을 선택합니다.
 
+Effect Library의 `Add Resource Layer` 메뉴는 추가할 Resource Composition을 명시적으로 선택한다. 같은 Resource를 여러 번 추가할 수 있으며 각 Effect Resource Layer는 독립 ID, 사용자 이름, Visibility, 포함형 Start/End, Placement Mode, Single/Particle 설정, 2.5D Transform, Motion과 Keyframe Track을 가진다. Effect Layer 이름 변경은 Resource 원본 이름을 바꾸지 않는다.
+
+Effect Library 목록의 위쪽은 Canvas Front다. `Move Front`/`Move Back`은 Effect Resource Layer 모델과 생성 출력 슬롯을 함께 이동하며 Undo/Redo 한 번으로 복원된다. Resource Composition을 삭제할 때 이를 참조하는 Effect Layer가 하나라도 있으면 삭제를 거부하고, Effect Layer 삭제는 Resource Composition 원본을 보존한다.
+
 ```text
 Imported Asset
 → Resource Composition
@@ -65,6 +69,8 @@ Canvas는 Preview 활성 Generator의 실제 Generated Layer를 transient Previe
 모든 범위 난수는 Seed 기반 Instance 생성 시 한 번 확정합니다. Burst는 같은 시점, Over Time은 emission duration에 분산합니다. Point/Line/Circle 표면/Box 내부 생성과 Fixed Direction/Spread, Radial Outward를 지원합니다. 위치는 `start + velocity × age`, 회전은 `initial + angular velocity × age`입니다. Once는 Clip 종료 후 숨고 Loop는 순환하며 Hold는 마지막 프레임을 유지합니다.
 
 Resource Composition 재생 시간은 Effect 프레임 번호를 Composition FPS로 직접 해석하지 않습니다. `particle age / Effect Project FPS`로 실제 초를 계산하고 `Composition FPS × Playback Speed`를 적용해 내부 프레임을 선택합니다. 이 규칙은 12↔24 FPS 조합, 0.5×/2× 속도와 Random Start에서도 동일합니다.
+
+Particle의 Clip Speed Min/Max는 인스턴스 생성 시 Seed 기반 재생 배수를 정한다. UI 범위는 중앙 Numeric 정책의 0.01×~16×(0.1 step, 소수 3자리)이며 2×, 3×와 fractional speed를 정상 값으로 취급한다. Min을 Max 위로 올리면 Max가 Min을 따르고, Max를 Min 아래로 내리면 Min이 Max를 따른다. 이 보정은 Draft와 Undo 한 번으로 적용된다. Model 생성·검증·직렬화도 항상 `clip_speed_min <= clip_speed_max`를 보장하며 legacy 역전 값은 Min을 우선해 Max를 맞춘다. 음수는 Reverse 의미로 사용하지 않는다.
 
 ## 후속 확장 지점
 

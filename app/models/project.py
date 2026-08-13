@@ -163,7 +163,7 @@ class Project:
         # Stable ascending Z: farther layers first, nearer layers composite later.
         sorted_resources = sorted(
             (self.layers[i] for i in resource_slots),
-            key=lambda layer: resource_by_generated[layer.id].layer_transform.value("position_z", index),
+            key=lambda layer: resource_by_generated[layer.id].layer_transform.value("position_z", index) if resource_by_generated[layer.id].advanced_transform_enabled else 0.0,
         )
         for slot, layer in zip(resource_slots, sorted_resources, strict=True):
             ordered_layers[slot] = layer

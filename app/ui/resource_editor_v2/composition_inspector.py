@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QGridLayout
 
 from app.models.property_registry import search_properties
 from app.models.property_registry import NUMERIC_PROPERTY_SPECS
-from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
+from app.ui.focus_wheel_widgets import RotationSpinBox, ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 from app.ui.tooltip_helper import apply_tooltip
 
 
@@ -102,13 +102,15 @@ class LayerInspector(QScrollArea):
             values=value if isinstance(value,(list,tuple)) else [value]
             labels=("property.x","property.y") if property_id in {"position","scale"} else ("property.value",)
             for label_key,part in zip(labels,values):
-                editor=ScrollSafeDoubleSpinBox()
+                editor=RotationSpinBox() if property_id in {"rotation","rotation_x","rotation_y"} else ScrollSafeDoubleSpinBox()
                 if property_id=="perspective_strength":spec=NUMERIC_PROPERTY_SPECS["composition.perspective"];editor.setRange(spec.minimum,spec.maximum);editor.setSingleStep(spec.step);editor.setProperty("numericSpec","composition.perspective")
                 elif property_id=="opacity":spec=NUMERIC_PROPERTY_SPECS["composition.opacity_percent"];editor.setRange(spec.minimum,spec.maximum);editor.setSingleStep(spec.step);editor.setProperty("numericSpec","composition.opacity_percent")
+                elif property_id in {"rotation","rotation_x","rotation_y"}:editor.setRange(-36000,36000);editor.setSingleStep(1)
                 else:editor.setRange(-4096,4096)
-                editor.setDecimals(3);editor.setMinimumWidth(0);editor.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);editor.setSuffix(" %" if property_id in {"scale","opacity"} else "°" if property_id in {"rotation","rotation_x","rotation_y"} else "" if property_id=="perspective_strength" else " px");editor.setValue(float(part)*(100 if property_id in {"scale","opacity"} else 1))
+                editor.setDecimals(3);editor.setMinimumWidth(0);editor.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);editor.setSuffix(" %" if property_id in {"scale","opacity"} else "" if property_id in {"rotation","rotation_x","rotation_y","perspective_strength"} else " px");editor.setValue(float(part)*(100 if property_id in {"scale","opacity"} else 1))
                 sprite_tip={"rotation_x":"tooltip.resource.sprite_rotation_x","rotation_y":"tooltip.resource.sprite_rotation_y","rotation":"tooltip.resource.sprite_rotation_z","perspective_strength":"tooltip.resource.sprite_perspective"}.get(property_id)
                 if sprite_tip and self.localization:apply_tooltip(editor,self.localization,sprite_tip,status=False)
+                if property_id in {"rotation","rotation_x","rotation_y"} and self.localization:editor.setToolTip(editor.toolTip()+"\n"+self.localization.text("tooltip.rotation_revolutions"))
                 value_form.addRow(self.localization.text(label_key) if self.localization else label_key,editor);editors.append(editor)
             card_layout.addLayout(value_form)
             easing=QComboBox()

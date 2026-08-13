@@ -67,10 +67,10 @@ def test_effect_editor_system_and_surface_are_inside_advanced(tmp_path):
     panel.close()
 
 
-def test_advanced_section_defaults_collapsed(tmp_path):
+def test_advanced_section_defaults_enabled_and_visible(tmp_path):
     _, _, panel = effect_context(tmp_path)
-    assert not panel.transform_panel.is_advanced_expanded()
-    assert not panel.transform_panel.advanced_body.isVisibleTo(panel)
+    assert panel.transform_panel.is_advanced_expanded()
+    assert panel.transform_panel.advanced_body.isVisibleTo(panel)
     panel.close()
 
 
@@ -119,26 +119,25 @@ def test_internal_transform_names_are_not_exposed_in_korean_ui(tmp_path):
     panel.close()
 
 
-def test_collapsing_advanced_does_not_change_model_or_emit_edits(tmp_path):
+def test_advanced_checkbox_emits_only_enable_state(tmp_path):
     project, layer, panel = effect_context(tmp_path)
-    before = project.to_dict(); events = []
+    before = project.to_dict(); events = []; enabled=[]
     panel.transform_changed.connect(lambda *args: events.append("transform"))
     panel.draft_changed.connect(lambda *args: events.append("draft"))
     panel.transform_panel.surface_transform_changed.connect(lambda *args: events.append("surface"))
-    panel.transform_panel.set_advanced_expanded(True); APP.processEvents()
+    panel.transform_panel.advanced_enabled_changed.connect(lambda _,state:enabled.append(state))
     panel.transform_panel.set_advanced_expanded(False); APP.processEvents()
-    assert events == [] and project.to_dict() == before and FORMAT_VERSION == 9
+    assert events == [] and enabled==[False] and project.to_dict() == before and FORMAT_VERSION == 9
     panel.close()
 
 
-def test_opening_advanced_does_not_dirty_or_invalidate_playback(tmp_path, monkeypatch):
+def test_advanced_without_selected_layer_does_not_dirty_or_invalidate(tmp_path, monkeypatch):
     settings = QSettings(str(tmp_path / "window.ini"), QSettings.Format.IniFormat)
     window = MainWindow(ShortcutSettingsService(settings)); calls = []
     monkeypatch.setattr(window, "_invalidate_playback_cache", lambda *args, **kwargs: calls.append("invalidate"))
     for name in ("render_effect_resource_layer", "apply_effect_resource_layer", "apply_effect_resource_layer_current_frame", "render_particle_frames"):
         monkeypatch.setattr("app.ui.main_window." + name, lambda *args, _name=name, **kwargs: calls.append(_name))
     window.dirty = False; window._non_undo_dirty = False
-    window.composition_layer_properties.transform_panel.set_advanced_expanded(True); APP.processEvents()
     window.composition_layer_properties.transform_panel.set_advanced_expanded(False); APP.processEvents()
     assert not window.dirty and not window._non_undo_dirty and calls == []
     window.close()

@@ -185,7 +185,9 @@ def test_gizmo_updates_only_changed_inspector_field_without_layout(tmp_path,monk
     handle=window.canvas.resource_transform_handle_positions()["rotate_y"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle)
     for value in range(20):QTest.mouseMove(window.canvas,handle+QPoint(value+1,value%5))
     QTest.qWait(40);APP.processEvents()
-    assert records and all(names==("rotation_y",) for names in records) and counter.count<=1
+    # The fixed-width revolution display may issue one bounded geometry request
+    # per axis, but it must not relayout for every pointer move.
+    assert records and all(names==("rotation_y",) for names in records) and counter.count<=3
     QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=handle+QPoint(20,0));close(window)
 
 

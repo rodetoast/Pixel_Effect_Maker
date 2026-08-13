@@ -8,7 +8,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 import numpy as np
-from PySide6.QtCore import QPointF,QSettings
+from PySide6.QtCore import QPointF,QSettings,QThreadPool
 from PySide6.QtWidgets import QApplication,QFileDialog
 
 from app.services import effect_resource_layer_render_service,particle_render_service,resource_composition_render_service
@@ -40,11 +40,11 @@ def select_resource_layer_editor(window,composition,layer):
 
 def test_ui_navigation_state_does_not_dirty_project(tmp_path):
     project,_,composition,resource_layer,effect=production_project(tmp_path,"orbit",animated=True);window=window_for(tmp_path,project)
-    editor=select_resource_layer_editor(window,composition,resource_layer);generation=window.effect_playback.generation
+    editor=select_resource_layer_editor(window,composition,resource_layer);QThreadPool.globalInstance().waitForDone(2500);APP.processEvents();generation=window.effect_playback.generation
     render_stats=dict(particle_render_service.PARTICLE_RENDER_STATS);before=project.to_dict()
     editor.composition_canvas.zoom=2.0;editor.composition_canvas.pan_offset=QPointF(17,-9);editor.controller.set_frame(8);editor._apply_state(editor.controller.state)
     window.select_resource_layer(effect.id);panel=window.particle_properties.transform_panel
-    panel.set_advanced_expanded(True);panel.set_advanced_expanded(False);window.canvas.zoom=1.5;window.canvas.pan_offset=QPointF(-12,7);APP.processEvents()
+    window.canvas.zoom=1.5;window.canvas.pan_offset=QPointF(-12,7);APP.processEvents()
     assert not window.dirty and not window._non_undo_dirty
     assert window.effect_playback.generation==generation and particle_render_service.PARTICLE_RENDER_STATS==render_stats
     assert project.to_dict()==before

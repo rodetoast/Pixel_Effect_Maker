@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — Resource Playback Speed Range & Undo Stability
+
+- Centralized the Particle Resource playback-speed input range at 0.01×–16× with 0.1 steps and three decimals; fractional, 2× and 3× playback remain supported.
+- Made Clip Speed Min/Max an atomic pair: crossing Min raises Max, crossing Max lowers Min, and the paired change produces one Draft and one Undo command.
+- Normalized invalid direct/legacy playback-speed pairs at the model boundary and before validation/save so renderers and v9 payloads never receive `min > max`.
+- Replaced the Windows-fragile decorated Undo relay slot with a retained, weak-owner plain Python callback and covered normal numeric, Effect Add/Reorder and Resource command Undo/Redo paths.
+
+## Unreleased — Rotation Revolutions, Advanced Bypass & Numeric Undo Stability
+
+- Added continuous total-degree Rotation editors that display and parse complete revolutions plus residual degrees, preserving multi-turn keyframes, interpolation, Conditional Auto-Key and v9 round trips.
+- Made Effect Advanced a per-Resource-Layer enable/bypass state: OFF evaluates System Space and Surface Compatibility as identity while preserving their values and tracks, and ON restores the exact result.
+- Removed MainWindow's fragile dynamic named-slot dependency for QUndoStack index changes, added destruction-safe callback handling, and covered repeated Ctrl+Wheel boundaries, no-op Undo/Auto-Key behavior, and Effect commands through the real Qt signal path.
+
+## Unreleased — Effect Multi-Resource Layer Workflow
+
+- Added an explicit Resource Composition menu to Effect Library so each new Effect Resource Layer is created from the resource the user selected; the same Resource may be instanced more than once.
+- Added independent Effect Layer names in both Single and Particle inspectors without renaming the referenced Resource Composition.
+- Defined the Effect Library list top as Canvas Front and added Remove, Move Front, and Move Back operations with exact one-command Undo/Redo and stable layer selection.
+- Expanded Effect entries with visibility, Resource name, and Placement Mode, while preserving independent ranges, 2.5D transforms, motion settings, keyframes, Resource revision invalidation, v9 serialization, Playback/Bake/PNG parity, and in-use Resource deletion protection.
+
 ## Unreleased — Multi-Image Resource Layer Workflow
 
 - Added an explicit imported-asset menu for adding multiple image/animation layers to one Resource Composition, with source-derived unique names and no source-less image layers.

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QComboBox, QFormLayout, QGridLayout, QGroupBox, QH
 
 from app.models.effect_resource_layer import TRANSFORM_TRACK_PROPERTIES
 from app.models.property_registry import NUMERIC_PROPERTY_SPECS
-from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox
+from app.ui.focus_wheel_widgets import RotationSpinBox, ScrollSafeDoubleSpinBox
 
 
 class ResourceLayerTransformPanel(QGroupBox):
@@ -19,13 +19,14 @@ class ResourceLayerTransformPanel(QGroupBox):
     keyframe_delete_requested = Signal(str, str, int)
     gizmo_mode_changed = Signal(str, str)
     surface_transform_changed = Signal(str, object)
+    advanced_enabled_changed = Signal(str, bool)
 
     def __init__(self, parent=None):
         super().__init__("Advanced", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.setCheckable(True);self.setChecked(False)
         outer=QVBoxLayout(self);outer.setContentsMargins(8,6,8,8);self.advanced_status=QLabel("Surface Transform applied");self.advanced_status.setObjectName("surfaceTransformAppliedStatus");self.advanced_status.setWordWrap(True);self.advanced_status.hide();outer.addWidget(self.advanced_status)
-        self.advanced_body=QWidget();root=QVBoxLayout(self.advanced_body);root.setContentsMargins(0,4,0,0);outer.addWidget(self.advanced_body);self.advanced_body.hide();self.toggled.connect(self.advanced_body.setVisible)
+        self.advanced_body=QWidget();root=QVBoxLayout(self.advanced_body);root.setContentsMargins(0,4,0,0);outer.addWidget(self.advanced_body);self.advanced_body.show();self.toggled.connect(self._advanced_toggled)
         self.system_group=QGroupBox("System Space Transform");system_root=QVBoxLayout(self.system_group);system_root.setContentsMargins(8,10,8,8);root.addWidget(self.system_group)
         self.description=QLabel("Transform the whole layer coordinate system, including particle spawn positions and motion paths.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);system_root.addWidget(self.description)
         tools=QGridLayout();tools.setColumnStretch(0,1);tools.setColumnStretch(1,1);self.gizmo_buttons={}
@@ -35,7 +36,7 @@ class ResourceLayerTransformPanel(QGroupBox):
         form=QFormLayout();self.form=form;form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows);form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop);system_root.addLayout(form);self.fields={};self.key_buttons={};self.easings={};self.easing_labels={};self.field_rows={}
         labels={"position_x":"Position X","position_y":"Position Y","position_z":"Position Z","rotation_x":"Rotation X","rotation_y":"Rotation Y","rotation_z":"Rotation Z","scale_x":"Scale X","scale_y":"Scale Y","opacity":"Opacity","pivot_x":"Pivot X","pivot_y":"Pivot Y","perspective_strength":"Perspective Strength"}
         for name in (*TRANSFORM_TRACK_PROPERTIES,"pivot_x","pivot_y"):
-            spin=ScrollSafeDoubleSpinBox();spin.setObjectName(f"resourceLayer_{name}");spin.setDecimals(3);spin.setMinimumWidth(70);spin.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
+            spin=(RotationSpinBox() if name.startswith("rotation_") else ScrollSafeDoubleSpinBox());spin.setObjectName(f"resourceLayer_{name}");spin.setDecimals(3);spin.setMinimumWidth(70);spin.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
             if name.startswith("rotation_"):spin.setRange(-36000,36000);spin.setSingleStep(1)
             elif name in {"scale_x","scale_y"}:spin.setRange(.01,100);spin.setSingleStep(.05)
             elif name in {"opacity","perspective_strength"}:
@@ -50,7 +51,7 @@ class ResourceLayerTransformPanel(QGroupBox):
         self.reset=QPushButton("Reset System Space Transform");self.reset.setObjectName("resetResourceLayerTransform");self.reset.setMinimumWidth(0);self.reset.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.reset.clicked.connect(self._reset);system_root.addWidget(self.reset)
         self.surface_group=QGroupBox("Surface Transform (Compatibility)");self.surface_form=QFormLayout(self.surface_group);surface_form=self.surface_form;self.surface_warning=QLabel("Applied after the layer has been rasterized. Retained for compatibility with migrated projects.");self.surface_warning.setWordWrap(True);surface_form.addRow(self.surface_warning);self.surface_fields={}
         for name in (*TRANSFORM_TRACK_PROPERTIES,"pivot_x","pivot_y"):
-            spin=ScrollSafeDoubleSpinBox();spin.setDecimals(3);spin.setMinimumWidth(70)
+            spin=RotationSpinBox() if name.startswith("rotation_") else ScrollSafeDoubleSpinBox();spin.setDecimals(3);spin.setMinimumWidth(70)
             if name.startswith("rotation_"):spin.setRange(-36000,36000)
             elif name in {"scale_x","scale_y"}:spin.setRange(.01,100);spin.setSingleStep(.05)
             elif name in {"opacity","perspective_strength"}:
@@ -62,14 +63,26 @@ class ResourceLayerTransformPanel(QGroupBox):
     def set_layer(self, layer, frame=0):
         self.layer=layer;self.frame=int(frame);self._loading=True
         if layer is not None:
+            self.setChecked(bool(layer.advanced_transform_enabled))
             transform=layer.layer_transform
             for name,spin in self.fields.items():spin.setValue(transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(transform,name))
             for name in self.key_buttons:self._sync_key_state(name,transform)
             for name,spin in self.surface_fields.items():spin.setValue(layer.surface_transform.value(name,self.frame) if name in TRANSFORM_TRACK_PROPERTIES else getattr(layer.surface_transform,name))
             for name,spin in self.surface_fields.items():
                 track=layer.surface_transform.tracks.get(name);spin.setEnabled(not track or not track.keyframes or track.has_keyframe(self.frame))
-            self.advanced_status.setVisible(not layer.surface_transform.is_identity())
-        self.setEnabled(layer is not None);self._loading=False
+            self.advanced_status.setVisible(not layer.advanced_transform_enabled or not layer.surface_transform.is_identity())
+            self._sync_advanced_status(layer.advanced_transform_enabled)
+        self.setEnabled(layer is not None);self.advanced_body.setVisible(True);self._loading=False
+
+    def _advanced_toggled(self, enabled):
+        self.advanced_body.setVisible(True)
+        self._sync_advanced_status(bool(enabled))
+        if not self._loading and self.layer is not None:
+            self.advanced_enabled_changed.emit(self.layer.id, bool(enabled))
+
+    def _sync_advanced_status(self, enabled):
+        if self._localization:
+            self.advanced_status.setText(self._localization.text("resource_layer.surface_applied" if enabled else "resource_layer.advanced_bypassed"))
 
     def set_transform_fields(self,layer,frame,names):
         self.layer=layer;self.frame=int(frame);self._loading=True
@@ -133,15 +146,15 @@ class ResourceLayerTransformPanel(QGroupBox):
         if self.layer is not None:self.gizmo_mode_changed.emit(self.layer.id,mode)
 
     def retranslate_ui(self, localization):
-        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.advanced"));self.system_group.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"));self.advanced_status.setText(t("resource_layer.surface_applied"))
+        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.advanced"));self.setToolTip(t("resource_layer.advanced_bypassed"));self.system_group.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"));self._sync_advanced_status(self.isChecked())
         self.surface_group.setTitle(t("resource_layer.surface_transform"));self.surface_warning.setText(t("resource_layer.surface_help"));self.surface_reset.setText(t("resource_layer.surface_reset"))
         self.surface_reset.setToolTip(t("resource_layer.surface_reset")+". "+t("resource_layer.surface_help"))
         tips={"rotation_x":"tooltip.resource_layer.rotation_x","rotation_y":"tooltip.resource_layer.rotation_y","rotation_z":"tooltip.resource_layer.rotation_z","position_z":"tooltip.resource_layer.position_z","perspective_strength":"tooltip.resource_layer.perspective"}
-        for name,field in self.fields.items():field.setToolTip(t(tips.get(name,"resource_layer.transform_help")))
+        for name,field in self.fields.items():field.setToolTip(t(tips.get(name,"resource_layer.transform_help"))+("\n"+t("tooltip.rotation_revolutions") if name.startswith("rotation_") else ""))
         label_keys={"position_x":"field.position_x","position_y":"field.position_y","position_z":"resource_layer.position_z","rotation_x":"resource_layer.rotation_x","rotation_y":"resource_layer.rotation_y","rotation_z":"resource_layer.rotation_z","scale_x":"field.scale_x","scale_y":"field.scale_y","opacity":"field.opacity","pivot_x":"resource.pivot_x","pivot_y":"resource.pivot_y","perspective_strength":"resource_layer.perspective"}
         for name,field in self.fields.items():self.form.labelForField(field.parentWidget()).setText(t(label_keys[name]))
         for name,field in self.surface_fields.items():
-            label=self.surface_form.labelForField(field);label.setText(t("resource_layer.surface_perspective") if name=="perspective_strength" else t(label_keys[name]));field.setToolTip(t("tooltip.resource_layer.surface_perspective") if name=="perspective_strength" else t("resource_layer.surface_help"))
+            label=self.surface_form.labelForField(field);label.setText(t("resource_layer.surface_perspective") if name=="perspective_strength" else t(label_keys[name]));field.setToolTip((t("tooltip.resource_layer.surface_perspective") if name=="perspective_strength" else t("resource_layer.surface_help"))+("\n"+t("tooltip.rotation_revolutions") if name.startswith("rotation_") else ""))
         mode_keys={"move":"resource_layer.move_xyz","rotate_x":"resource_layer.rotation_x","rotate_y":"resource_layer.rotation_y","rotate_z":"resource_layer.rotation_z","scale":"gizmo.scale","pivot":"composition.pivot"}
         for name,button in self.gizmo_buttons.items():button.setText(t(mode_keys[name]))
         if self.layer is not None:

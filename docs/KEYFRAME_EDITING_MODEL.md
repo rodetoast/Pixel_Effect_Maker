@@ -68,3 +68,6 @@ Format v9 serializes each non-empty track as `property_id`, `default_value`, and
 - Effect timeline cells did not reveal system or motion keys.
 
 The pass does not add a global Auto-Key toggle/record mode, graph/curve editor, broad dope sheet, or new keyframe-capable properties.
+## Continuous rotation revolutions
+
+Rotation values are stored as continuous total degrees; they are never reduced modulo 360. The UI displays complete revolutions plus the residual angle, for example `720° = 2x + 0°` and `-450° = -1x - 90°`. Consequently, linear interpolation from 0° to 720° produces two real revolutions even though both endpoints have the same visual orientation.

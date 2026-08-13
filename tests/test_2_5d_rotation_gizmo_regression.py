@@ -37,7 +37,7 @@ def context(tmp_path,name="rotation"):
 
 def close(window):
     window.resource_transform_render_timer.stop();window.resource_transform_finalize_timer.stop();window.transform_inspector_timer.stop()
-    window._pending_resource_transforms.clear();window.dirty=False;window._non_undo_dirty=False;window.close();APP.processEvents()
+    window._pending_resource_transforms.clear();window.dirty=False;window._non_undo_dirty=False;window.close();QThreadPool.globalInstance().waitForDone(2500);APP.processEvents()
 
 
 def wait_proxy(window,active=None,timeout=2500):
@@ -57,6 +57,13 @@ def select_mode(window,mode):
 def target_for(window,angle=135):
     center=window.canvas.resource_transform_handle_positions()["center"]
     radians=np.radians(angle);return QPoint(round(center.x()+42*np.cos(radians)),round(center.y()+42*np.sin(radians)))
+
+
+def test_rotation_gizmo_crosses_360_without_wrapping_to_zero(tmp_path):
+    window,layer=context(tmp_path,"multi-turn");layer.layer_transform.rotation_z=350;window.select_resource_layer(layer.id);select_mode(window,"rotate_z")
+    handle=window.canvas.resource_transform_handle_positions()["rotate_z"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle);QTest.mouseMove(window.canvas,target_for(window,10));APP.processEvents()
+    assert window.canvas.resource_transform.rotation_z==pytest.approx(370,abs=3)
+    QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=target_for(window,10));close(window)
 
 
 def test_gizmo_remains_visible_while_delayed_exact_worker_installs(tmp_path,monkeypatch):

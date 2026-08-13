@@ -177,7 +177,16 @@ class ParticleEmitterSettings:
     seed: int = 0
     motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
 
+    def __post_init__(self) -> None:
+        self._normalize_clip_speed_range()
+
+    def _normalize_clip_speed_range(self) -> None:
+        """Keep legacy/direct inputs valid, preferring the supplied minimum."""
+        if self.clip_speed_min > self.clip_speed_max:
+            self.clip_speed_max = self.clip_speed_min
+
     def validate(self) -> None:
+        self._normalize_clip_speed_range()
         if not self.clip_asset_id: raise ValueError("an animation clip is required")
         if self.resource_type not in {"animation_clip", "source_asset", "resource_composition"}: raise ValueError("unsupported particle resource type")
         if not 1 <= self.output_frame_count <= 512: raise ValueError("output frame count must be 1..512")
@@ -196,6 +205,7 @@ class ParticleEmitterSettings:
         self.motion.validate()
 
     def to_dict(self) -> dict[str, Any]:
+        self._normalize_clip_speed_range()
         value=asdict(self); value["motion"]=self.motion.to_dict(); return value
 
     @property

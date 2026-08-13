@@ -69,7 +69,7 @@ class CanvasWidget(QWidget):
         self._guide_before = None
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
-        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self.resource_transform_tooltips={}
+        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self.resource_transform_tooltips={}
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
@@ -233,7 +233,7 @@ class CanvasWidget(QWidget):
         ordered=list(self.project.layers)
         def depth(item):
             resource=resource_by_generated[item.id]
-            value=transform if selected is resource and transform is not None else resource.layer_transform
+            value=transform if selected is resource and transform is not None else resource.layer_transform if resource.advanced_transform_enabled else EffectLayerTransform3D()
             return value.value("position_z",self.frame_index)
         resources=sorted((self.project.layers[index] for index in slots),key=depth)
         for slot,item in zip(slots,resources,strict=True):ordered[slot]=item
@@ -646,6 +646,8 @@ class CanvasWidget(QWidget):
 
     def _start_resource_transform_drag(self,handle,event,event_started):
         self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self._resource_transform_changed=False;self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
+        if handle.startswith("rotate_"):
+            property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=self._resource_transform_before.value(property_name,self.frame_index)
 
     def _set_resource_transform_interactive_value(self,transform,property_id,value):
         numeric=float(value);track=transform.tracks.get(property_id);current=transform.value(property_id,self.frame_index)
@@ -859,7 +861,7 @@ class CanvasWidget(QWidget):
             if handle in {"y","center"}:changed=self._set_resource_transform_interactive_value(t,"position_y",before.value("position_y",self.frame_index)+delta.y()) or changed
             if handle=="z":changed=self._set_resource_transform_interactive_value(t,"position_z",before.value("position_z",self.frame_index)-delta.y()+delta.x()) or changed
             if handle.startswith("rotate_"):
-                center=self.resource_transform_handle_positions()["center"];angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()))
+                center=self.resource_transform_handle_positions()["center"];pointer_angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()));angle=pointer_angle+round((self._resource_rotation_accumulated-pointer_angle)/360.0)*360.0;self._resource_rotation_last_angle=pointer_angle;self._resource_rotation_accumulated=angle
                 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier:angle=round(angle/15)*15
                 property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];changed=self._set_resource_transform_interactive_value(t,property_name,angle) or changed
                 counter=f"{property_name}_updates";calls=self.interaction_stats["calls"];calls[counter]=calls.get(counter,0)+1
@@ -923,7 +925,7 @@ class CanvasWidget(QWidget):
         if self._panning and event.button()==Qt.MouseButton.MiddleButton:
             self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
         if self._resource_transform_drag:
-            started=perf_counter();self._resource_transform_drag=None
+            started=perf_counter();self._resource_transform_drag=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None
             if self._resource_transform_changed:self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True)
             event.accept();self._record_interaction("mouse_release_total",started);return
         if self._guide_handle:
@@ -944,7 +946,7 @@ class CanvasWidget(QWidget):
             self.effect_guide_cancelled.emit(self.effect_guide_id, before)
             self.update(); event.accept(); return
         if event.key()==Qt.Key.Key_Escape and self._resource_transform_drag and self._resource_transform_before is not None:
-            self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));event.accept();return
+            self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));event.accept();return
         if event.key() == Qt.Key.Key_Escape and self._gizmo_drag and self._gizmo_before is not None:
             self.gizmo_settings = self._gizmo_before; self._gizmo_drag = False
             self.gizmo_changed.emit(self.gizmo_generator_id, deepcopy(self.gizmo_settings)); self.update(); event.accept(); return

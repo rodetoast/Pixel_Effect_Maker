@@ -3,7 +3,7 @@
 from __future__ import annotations
 from collections import OrderedDict
 
-from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
+from app.models.effect_resource_layer import EffectLayerTransform3D, EffectResourceLayer, PLACEMENT_PARTICLE
 from app.services.effect_composition_layer_render_service import (
     apply_effect_composition_layer,
     render_effect_composition_layer,
@@ -51,7 +51,16 @@ def _resource_revisions(project) -> tuple:
 
 def _base_key(project, layer: EffectResourceLayer) -> tuple:
     settings = layer.particle_settings.to_dict() if layer.placement_mode == PLACEMENT_PARTICLE else layer.single_settings.to_dict()
-    return (id(project),layer.placement_mode,repr(settings),repr(layer.layer_space_transform.to_dict()),project.width,project.height,project.fps,_resource_revisions(project))
+    transform = layer.layer_space_transform if layer.advanced_transform_enabled else EffectLayerTransform3D()
+    return (id(project),layer.placement_mode,repr(settings),repr(transform.to_dict()),project.width,project.height,project.fps,_resource_revisions(project))
+
+
+def _layer_space_transform(layer: EffectResourceLayer) -> EffectLayerTransform3D:
+    return layer.layer_space_transform if layer.advanced_transform_enabled else EffectLayerTransform3D()
+
+
+def _surface_transform(layer: EffectResourceLayer) -> EffectLayerTransform3D:
+    return layer.surface_transform if layer.advanced_transform_enabled else EffectLayerTransform3D()
 
 
 def effect_resource_layer_base_frame_key(project, layer: EffectResourceLayer, frame: int) -> tuple:
@@ -64,7 +73,7 @@ def effect_resource_layer_base_frame_key(project, layer: EffectResourceLayer, fr
 
 
 def _transform_values(layer: EffectResourceLayer, frame: int) -> tuple:
-    value=layer.surface_transform.evaluated(frame)
+    value=_surface_transform(layer).evaluated(frame)
     return tuple(getattr(value,name) for name in ("position_x","position_y","position_z","rotation_x","rotation_y","rotation_z","scale_x","scale_y","opacity","pivot_x","pivot_y","perspective_strength"))
 
 
@@ -83,11 +92,12 @@ def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
     key=_base_key(project,layer);cached=_BASE_CACHE.get(layer.id)
     if cached is not None and cached[0]==key:
         _BASE_CACHE.move_to_end(layer.id);return cached[1]
+    transform=_layer_space_transform(layer)
     if layer.placement_mode == PLACEMENT_PARTICLE:
-        frames=render_particle_frames(project,layer.as_particle_emitter(),layer_space_transform=layer.layer_space_transform)
+        frames=render_particle_frames(project,layer.as_particle_emitter(),layer_space_transform=transform)
     else:
         local_frames=render_effect_composition_layer(project,layer.as_composition_layer())
-        frames=[transform_layer_space_rgba_frame(frame,layer.layer_space_transform,index) for index,frame in enumerate(local_frames)]
+        frames=[transform_layer_space_rgba_frame(frame,transform,index) for index,frame in enumerate(local_frames)]
     _put_base(layer.id,key,frames)
     for cache_key in list(_TRANSFORM_CACHE):
         if cache_key[0]==layer.id:_TRANSFORM_CACHE_BYTES-=_TRANSFORM_CACHE.pop(cache_key).nbytes
@@ -112,7 +122,7 @@ def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame:
             if cache_key[:3]==key[:3]:
                 global _TRANSFORM_CACHE_BYTES
                 _TRANSFORM_CACHE_BYTES-=_TRANSFORM_CACHE.pop(cache_key).nbytes
-        cached=transform_rgba_frame(base[frame],layer.surface_transform,frame);_put_transform(key,cached)
+        cached=transform_rgba_frame(base[frame],_surface_transform(layer),frame);_put_transform(key,cached)
     else:_TRANSFORM_CACHE.move_to_end(key)
     return cached
 
@@ -120,15 +130,16 @@ def render_effect_resource_layer_frame(project,layer: EffectResourceLayer,frame:
 def render_effect_resource_layer_current_frame(project, layer: EffectResourceLayer, frame: int):
     """Render one exact particle frame without materializing its output sequence."""
     base=render_effect_resource_layer_current_base_frame(project,layer,int(frame))
-    return transform_rgba_frame(base,layer.surface_transform,int(frame))
+    return transform_rgba_frame(base,_surface_transform(layer),int(frame))
 
 
 def render_effect_resource_layer_current_base_frame(project, layer: EffectResourceLayer, frame: int):
     """Render one exact frame after Layer Space but before Surface Transform."""
+    transform=_layer_space_transform(layer)
     if layer.placement_mode == PLACEMENT_PARTICLE:
-        return render_particle_frame(project, layer.as_particle_emitter(), int(frame),layer_space_transform=layer.layer_space_transform)
+        return render_particle_frame(project, layer.as_particle_emitter(), int(frame),layer_space_transform=transform)
     local=render_effect_composition_layer_current_frame(project,layer.as_composition_layer(),int(frame))
-    return transform_layer_space_rgba_frame(local,layer.layer_space_transform,int(frame))
+    return transform_layer_space_rgba_frame(local,transform,int(frame))
 
 
 def render_effect_resource_layer_local_current_frame(project, layer: EffectResourceLayer, frame: int):

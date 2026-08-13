@@ -1,5 +1,29 @@
 # Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
 
+## Rotation Revolutions / Advanced Bypass / Ctrl+Wheel
+
+- [ ] Rotation에 `0x + 0°`, `2x + 0°`, `-1x - 90°`를 입력하고 total degree 0/720/-450로 저장·표시되는지 확인한다.
+- [ ] 0°→720° Key를 Linear로 재생해 실제 두 바퀴 회전하고 중간값이 360°인지 확인한다.
+- [ ] Rotation Gizmo를 359° 경계 너머로 드래그해 361° 이상으로 연속 증가하며 1°로 떨어지지 않는지 확인한다.
+- [ ] Effect Advanced OFF에서 System/Surface만 bypass되고 값·Keyframe은 유지되며 ON에서 이전 RGBA가 복원되는지 확인한다.
+- [ ] Advanced OFF에서 System Gizmo가 사라지고 Particle Motion은 계속 동작하는지 확인한다.
+- [ ] Static/Animated/현재 Key 숫자 입력을 Ctrl+Wheel로 minimum/maximum까지 반복하고 경계 추가 입력에 Undo나 Auto-Key가 생기지 않는지 확인한다.
+- [ ] Effect Add/Remove/Reorder 뒤 Ctrl+Wheel, Undo/Redo를 20회 반복해 Unexpected Error가 발생하지 않는지 확인한다.
+
+## Effect Multi-Resource Layer Workflow
+
+- [ ] Slash, Smoke, Spark, Glow Resource를 Effect Library의 명시적 메뉴로 각각 추가하고 선택한 Resource가 정확히 연결되는지 확인한다.
+- [ ] Smoke를 두 번 추가해 서로 다른 Effect Layer ID와 고유 기본 이름을 가지며 같은 Resource 원본을 공유하는지 확인한다.
+- [ ] Single/Particle Inspector에서 Effect Layer 이름을 바꿔도 Resource 이름은 유지되고 중복 이름이 자동으로 고유해지는지 확인한다.
+- [ ] Effect Library 항목에 Visibility, Effect Layer 이름, Resource 이름, Single/Particle Placement가 함께 보이는지 확인한다.
+- [ ] 목록 위가 Canvas Front인지 반투명 겹침으로 확인하고 Move Front/Back이 출력·선택을 즉시 갱신하며 Undo/Redo 한 번으로 왕복하는지 확인한다.
+- [ ] 1 Single과 Linear/Orbit/Helix Particle 세 Layer를 함께 두고 범위, Visibility, 2.5D Transform, Motion, Keyframe이 서로 섞이지 않는지 확인한다.
+- [ ] 선택과 Timeline Scrub만으로 모델, Undo Stack 또는 렌더 Cache revision이 바뀌지 않는지 확인한다.
+- [ ] Effect Layer 삭제 후 Resource 원본이 남고 Undo가 전체 설정을 복원하며 마지막 Effect Layer도 안전하게 삭제/복원되는지 확인한다.
+- [ ] 사용 중 Resource 삭제가 거부되고 모든 참조 Effect Layer를 제거한 뒤에만 삭제되는지 확인한다.
+- [ ] Save/Reload 후 4개 이상 Effect Layer의 순서, 중복 Resource 참조, 이름, Placement, Transform, Motion, Keyframe이 동일한지 확인한다.
+- [ ] Direct Preview, Playback, Bake, Project Compose, PNG와 PNG Sequence의 같은 Frame 결과가 일치하는지 확인한다.
+
 ## Multi-Image Resource Layer Workflow
 
 - [ ] PNG 에셋 A/B/C를 가져와 하나의 Resource에 세 Layer로 추가하고 각 Layer의 Source 이름과 선택 Highlight가 명확한지 확인한다.
@@ -627,6 +651,14 @@
 - [ ] Play를 Frame N에서 Stop한 직후와 다른 Frame을 클릭했다가 N으로 돌아온 모습이 동일한지 확인한다.
 - [ ] Motion/2.5D Gizmo를 움직이다 즉시 다른 Timeline Frame을 클릭해 이전 Frame의 늦은 Preview가 새 Frame에 나타나지 않는지 확인한다.
 - [ ] Linear/Orbit/Helix 각각 Bake와 PNG Sequence를 만들고 Timeline의 대표 Frame과 육안 비교한다.
+
+## Resource Playback Speed Range & Undo
+
+- [ ] Particle Emission의 최소/최대 리소스 재생 속도를 `1/1`로 두고 Min에 2와 3을 직접 입력해 즉시 `2/2`, `3/3`으로 표시되며 경고창이나 Unexpected Error가 없는지 확인한다.
+- [ ] `2/4`에서 Max를 1.5로 내려 `1.5/1.5`가 되고 Undo 한 번으로 `2/4`, Redo 한 번으로 `1.5/1.5`가 복원되는지 확인한다.
+- [ ] Min/Max 각각 Arrow와 Ctrl+Wheel로 범위를 교차하고 상·하한에서 500회 반복해 invalid pair, 추가 Undo, `_UndoIndexRelay::forward(int)` 오류가 없는지 확인한다.
+- [ ] 고유한 프레임의 Animated Resource를 1×, 2×, 3×와 1×~3× 범위로 재생해 source frame advance, loop/hold/once 정책과 deterministic seed가 유지되는지 확인한다.
+- [ ] 일반 Rotation/Scale/Opacity, Effect Add/Reorder, Resource 이름 변경에서 Undo/Redo를 반복해 indexChanged와 Dirty 표시가 안정적인지 확인한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.
