@@ -25,7 +25,9 @@ Create를 누르면 ResourceComposition 생성, Asset Layer 추가, Asset Pivot 
 
 Composition Timeline의 `+ 이미지 레이어 추가` 메뉴는 프로젝트에 가져온 SourceAsset/AnimationClipAsset을 명시적으로 선택해 현재 Resource의 가장 앞 Layer로 추가합니다. Layer 이름은 Source 이름을 따르며 같은 이름은 `(2)`, `(3)`으로 구분합니다. Source 없는 이미지 Layer는 만들지 않습니다.
 
-Timeline의 Layer 목록은 **위=Canvas Front, 아래=Canvas Back**입니다. 위/아래 버튼은 실제 source-over 합성 순서를 즉시 바꾸며 Add, Remove, Reorder는 각각 Undo 한 단계입니다. Remove는 CompositionLayer만 제거하고 원본 Asset은 유지합니다. 빈 Resource가 이미 지원되므로 마지막 Layer 제거도 허용합니다.
+Timeline의 Layer 목록은 **위=Canvas Front, 아래=Canvas Back**입니다. 위/아래 버튼과 행 Drag & Drop은 실제 source-over 합성 순서를 즉시 바꿉니다. 여러 칸 Drag도 Drop 순간 한 번만 적용되어 Undo 한 단계이며, 같은 위치 Drop이나 취소는 revision·render·Undo를 만들지 않습니다.
+
+`레이어 복제` 또는 Timeline에 포커스가 있을 때 `Ctrl+D`는 선택 CompositionLayer를 원본 바로 앞에 복제합니다. 복제본은 새 stable ID와 `(2)`, `(3)` unique 이름을 얻고 Source Asset ID는 공유하지만 Visibility, 범위, Pivot, Sprite Transform, Track, Keyframe과 Easing은 깊은 복사로 독립됩니다. Add, Duplicate, Remove와 Reorder는 각각 Undo 한 단계이고 Undo/Redo는 같은 복제 ID를 복원합니다. Remove는 CompositionLayer만 제거하고 원본 Asset은 유지하며 마지막 Layer 제거도 허용합니다.
 
 Layer 선택은 Inspector, Gizmo, Selection Box와 Property Timeline row를 함께 전환합니다. 선택 전환 자체는 Composition revision, Render cache, Keyframe 또는 Undo를 변경하지 않습니다.
 
@@ -63,4 +65,4 @@ Asset Frame Strip과 Composition Timeline은 서로 다른 위젯입니다. Comp
 
 ## 알려진 제한
 
-Composition 중첩, Graph Editor, Keyframe 다중 선택, Layer 순서 Drag & Drop, Layer 다중 선택, Composition 생성 후 안전한 재타이밍은 제공하지 않습니다. Layer 순서는 위/아래 버튼으로 변경합니다.
+Composition 중첩, Graph Editor, Keyframe 다중 선택, Layer 다중 선택, Lock/Solo와 Composition 생성 후 안전한 재타이밍은 제공하지 않습니다.

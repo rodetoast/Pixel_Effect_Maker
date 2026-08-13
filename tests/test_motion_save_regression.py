@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication
 from app.frame_payload_codec import DEFAULT_FRAME_PAYLOAD_CODEC
 from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from app.models.particle_emitter import ParticleEmitterSettings, ParticleMotionSettings
-from app.models.project import Project
+from app.models.project import FORMAT_VERSION, Project
 from app.models.resource_composition import ResourceComposition
 from app.models.source_asset import SourceAsset
 from app.services.project_io import SavePerformanceCollector, load_project, save_project
@@ -133,5 +133,5 @@ def test_motion_metadata_round_trip_without_materialization(tmp_path, monkeypatc
     loaded = load_project(target)
     actual = loaded.effect_resource_layers[0].particle_settings.motion
     assert actual == expected and len(calls) == 1
-    assert json.loads(target.read_text(encoding="utf-8"))["format_version"] == 9
+    assert json.loads(target.read_text(encoding="utf-8"))["format_version"] == FORMAT_VERSION
     close_window(window)

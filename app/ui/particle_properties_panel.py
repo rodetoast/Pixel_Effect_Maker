@@ -94,6 +94,8 @@ class ParticlePropertiesPanel(QScrollArea):
     def _mode_changed(self,*args):
         mode=str(self.mode.currentData());self.mode_help.setText(self._localization.text("resource_layer.single_help" if mode=="single" else "resource_layer.particle_help") if self._localization else ("Place one resource directly in the Effect Composition." if mode=="single" else "Emit multiple instances of the same resource with direction, speed, and lifetime."))
         if not self._loading and self.resource_layer_id:self.mode_changed.emit(self.resource_layer_id,mode)
+    def set_locked(self,locked):
+        if self.widget():self.widget().setEnabled(not bool(locked))
     def _name_changed(self):
         if not self._loading and self.resource_layer_id and self.name.text().strip():self.name_changed.emit(self.resource_layer_id,self.name.text().strip())
     def set_settings(self,s):

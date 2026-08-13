@@ -24,7 +24,7 @@ from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 
-FORMAT_VERSION = 9
+FORMAT_VERSION = 10
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -153,11 +153,12 @@ class Project:
             raise ProjectError("a project must contain at least one frame")
         self.frames.pop(index)
 
-    def compose_frame(self, index: int) -> np.ndarray:
+    def compose_frame(self, index: int, *, solo_preview: bool = False) -> np.ndarray:
         """Alpha-composite visible layers and return an RGBA buffer."""
         output = np.zeros((self.height, self.width, 4), dtype=np.float32)
         frame = self.frames[index]
         resource_by_generated = {item.generated_layer_id: item for item in self.effect_resource_layers}
+        has_solo = solo_preview and any(item.solo for item in self.effect_resource_layers)
         resource_slots = [i for i, layer in enumerate(self.layers) if layer.id in resource_by_generated]
         ordered_layers = list(self.layers)
         # Stable ascending Z: farther layers first, nearer layers composite later.
@@ -169,6 +170,9 @@ class Project:
             ordered_layers[slot] = layer
         for layer in ordered_layers:
             if not layer.visible:
+                continue
+            logical = resource_by_generated.get(layer.id)
+            if has_solo and (logical is None or not logical.solo):
                 continue
             source = frame.layer_pixels.get(layer.id)
             if source is None:
@@ -209,7 +213,7 @@ class Project:
             raise ProjectError(
                 f"unsupported format_version {version}: project requires a newer application version"
             )
-        if version not in (1, 2, 3, 4, 5, 6, 7, 8, FORMAT_VERSION):
+        if version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, FORMAT_VERSION):
             raise ProjectError(f"unsupported format_version: {version!r}")
         if int(version) >= 7:
             compact_bytes = 0

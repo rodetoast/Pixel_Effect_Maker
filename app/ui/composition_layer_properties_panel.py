@@ -93,6 +93,9 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.transform_panel.set_layer(layer, getattr(project,"_current_effect_frame",0))
         self.set_layer(None if layer is None else layer.as_composition_layer(), project)
 
+    def set_locked(self,locked: bool) -> None:
+        if self.widget():self.widget().setEnabled(not bool(locked))
+
     def _mode_changed(self, *args) -> None:
         mode = self.mode.currentData()
         localization=getattr(self,"_localization",None);self.mode_help.setText(localization.text("resource_layer.single_help" if mode=="single" else "resource_layer.particle_help") if localization else ("Place one resource directly in the Effect Composition." if mode == "single" else "Emit multiple instances of the same resource with direction, speed, and lifetime."))

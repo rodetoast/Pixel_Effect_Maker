@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -28,6 +28,7 @@ class TimelineWidget(QWidget):
     """Show layers as rows and sequential frame numbers as columns."""
 
     cell_selected = Signal(int, int)
+    cell_selected_with_modifiers=Signal(int,int,object);select_all_layers_requested=Signal()
     add_requested = Signal()
     duplicate_requested = Signal()
     delete_requested = Signal()
@@ -108,6 +109,7 @@ class TimelineWidget(QWidget):
             first_column=self.FRAME_COLUMN_OFFSET,finish=self.scrub_finished.emit,
         )
         self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
 
@@ -255,7 +257,14 @@ class TimelineWidget(QWidget):
             return
         self._current_frame = frame_index
         self._update_selection_label(layer_index, frame_index)
-        self.cell_selected.emit(layer_index, frame_index)
+        from PySide6.QtWidgets import QApplication
+        modifiers=QApplication.keyboardModifiers();self.cell_selected.emit(layer_index,frame_index);self.cell_selected_with_modifiers.emit(layer_index,frame_index,modifiers)
+
+    def eventFilter(self,watched,event):
+        if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            if event.key()==Qt.Key.Key_A and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.select_all_layers_requested.emit();return True
+            if event.key()==Qt.Key.Key_Delete:self.delete_layer_requested.emit();return True
+        return super().eventFilter(watched,event)
 
     def refresh(
         self,
@@ -369,6 +378,14 @@ class TimelineWidget(QWidget):
             item.setText("◆");item.setToolTip(f"{generated.name} · Frame {int(frame_index)+1} · Keys: {', '.join(transform_keys+motion_keys)}")
             return
         frame=project.frames[frame_index] if frame_index<len(project.frames) else None;pixels=None if frame is None else frame.layer_pixels.get(generated.id);item.setText("■" if pixels is not None and pixels[...,3].any() else "·");item.setToolTip(f"{generated.name} · Frame {int(frame_index)+1}")
+
+    def set_effect_selection(self,project,selected_ids,primary_id):
+        selected_ids=set(selected_ids);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
+        for row,generated in enumerate(reversed(project.layers)):
+            logical=logical_by_generated.get(generated.id);selected=logical is not None and logical.id in selected_ids;color=QColor("#315a78" if logical is not None and logical.id==primary_id else "#29465b")
+            for column in range(self.table.columnCount()):
+                item=self.table.item(row,column)
+                if item:item.setBackground(QBrush(color) if selected else QBrush())
 
     def _update_selection_label(self, layer_index: int, frame_index: int) -> None:
         if self._project is None:

@@ -83,7 +83,7 @@ class AnimationTrack:
 
 @dataclass
 class CompositionLayer:
-    name:str;source_type:str;source_id:str;start_frame:int;end_frame:int;source_start_frame:int=0;visible:bool=True;pivot_x:float=0.0;pivot_y:float=0.0;tracks:dict[str,AnimationTrack]=field(default_factory=dict);id:str=field(default_factory=lambda:uuid4().hex)
+    name:str;source_type:str;source_id:str;start_frame:int;end_frame:int;source_start_frame:int=0;visible:bool=True;locked:bool=False;solo:bool=False;pivot_x:float=0.0;pivot_y:float=0.0;tracks:dict[str,AnimationTrack]=field(default_factory=dict);id:str=field(default_factory=lambda:uuid4().hex)
     def __post_init__(self):
         if self.source_type not in {"source_asset","animation_clip"}:raise ValueError("unsupported composition layer source")
         if self.start_frame<0 or self.end_frame<self.start_frame:raise ValueError("invalid composition layer range")
@@ -94,9 +94,9 @@ class CompositionLayer:
         return self.tracks.setdefault(property_id,AnimationTrack(property_id,PROPERTY_DEFAULTS[property_id]))
     def remove_property(self,property_id):self.tracks.pop(property_id,None)
     def value(self,property_id,frame):return self.tracks[property_id].evaluate(frame) if property_id in self.tracks else PROPERTY_DEFAULTS[property_id]
-    def to_dict(self):return {"id":self.id,"name":self.name,"visible":self.visible,"source_type":self.source_type,"source_id":self.source_id,"start_frame":self.start_frame,"end_frame":self.end_frame,"source_start_frame":self.source_start_frame,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"tracks":{k:v.to_dict() for k,v in self.tracks.items()}}
+    def to_dict(self):return {"id":self.id,"name":self.name,"visible":self.visible,"locked":self.locked,"solo":self.solo,"source_type":self.source_type,"source_id":self.source_id,"start_frame":self.start_frame,"end_frame":self.end_frame,"source_start_frame":self.source_start_frame,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"tracks":{k:v.to_dict() for k,v in self.tracks.items()}}
     @classmethod
-    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),visible=bool(data.get("visible",True)),source_type=str(data["source_type"]),source_id=str(data["source_id"]),start_frame=int(data.get("start_frame",0)),end_frame=int(data["end_frame"]),source_start_frame=int(data.get("source_start_frame",0)),pivot_x=float(data.get("pivot_x",0)),pivot_y=float(data.get("pivot_y",0)),tracks={k:AnimationTrack.from_dict(v) for k,v in data.get("tracks",{}).items()})
+    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),visible=bool(data.get("visible",True)),locked=bool(data.get("locked",False)),solo=bool(data.get("solo",False)),source_type=str(data["source_type"]),source_id=str(data["source_id"]),start_frame=int(data.get("start_frame",0)),end_frame=int(data["end_frame"]),source_start_frame=int(data.get("source_start_frame",0)),pivot_x=float(data.get("pivot_x",0)),pivot_y=float(data.get("pivot_y",0)),tracks={k:AnimationTrack.from_dict(v) for k,v in data.get("tracks",{}).items()})
 
 @dataclass
 class ResourceComposition:

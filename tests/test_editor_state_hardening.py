@@ -6,6 +6,7 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from app.services.settings_service import ShortcutSettingsService
+from app.models.project import FORMAT_VERSION
 from app.ui.main_window import MainWindow
 
 
@@ -61,8 +62,8 @@ def test_copy_diagnostics_excludes_current_project_pixels(tmp_path):
     window.project.name = "PRIVATE_PROJECT_SENTINEL"
     window.copy_diagnostic_information()
     text = APP.clipboard().text()
-    assert "Pixel Effect Maker v0.0.04" in text
-    assert "Project Format: 9" in text
+    assert "Pixel Effect Maker v0.0.06" in text
+    assert f"Project Format: {FORMAT_VERSION}" in text
     assert "PRIVATE_PROJECT_SENTINEL" not in text
     assert "layer_pixels" not in text
     finish(window)

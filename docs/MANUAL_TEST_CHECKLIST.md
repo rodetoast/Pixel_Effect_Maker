@@ -1,4 +1,4 @@
-# Pixel Effect Maker v0.0.04 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.06 수동 테스트 체크리스트
 
 ## Rotation Revolutions / Advanced Bypass / Ctrl+Wheel
 
@@ -659,6 +659,36 @@
 - [ ] Min/Max 각각 Arrow와 Ctrl+Wheel로 범위를 교차하고 상·하한에서 500회 반복해 invalid pair, 추가 Undo, `_UndoIndexRelay::forward(int)` 오류가 없는지 확인한다.
 - [ ] 고유한 프레임의 Animated Resource를 1×, 2×, 3×와 1×~3× 범위로 재생해 source frame advance, loop/hold/once 정책과 deterministic seed가 유지되는지 확인한다.
 - [ ] 일반 Rotation/Scale/Opacity, Effect Add/Reorder, Resource 이름 변경에서 Undo/Redo를 반복해 indexChanged와 Dirty 표시가 안정적인지 확인한다.
+
+## Layer Workflow Essentials #1 — Duplicate & Drag Reorder
+
+- [ ] 이미지 3개 Resource에서 Keyframe이 있는 Layer를 버튼과 Timeline 포커스 `Ctrl+D`로 복제해 바로 위에 `(2)`, `(3)` 복제본이 생기고 Inspector/Gizmo가 새 ID를 선택하는지 확인한다.
+- [ ] Resource 복제본의 Pivot, Rotation Revolution, Position과 Keyframe/Easing을 바꿔 원본 Track이 변하지 않으며 Undo/Redo가 같은 복제 ID와 순서를 복원하는지 확인한다.
+- [ ] Resource 5 Layer의 맨 아래 행을 맨 위로 Drag해 Drop indicator, Canvas Front 합성, Timeline Property row와 선택이 즉시 일치하고 Undo 한 번으로 복원되는지 확인한다.
+- [ ] Single/Particle Linear/Orbit/Helix가 섞인 Effect에서 Particle Layer를 복제해 Position, Seed, Radius, Phase를 달리하고 두 결과가 독립인지 확인한다.
+- [ ] Effect 10 Layer를 여러 칸 Drag해 이동 중 렌더가 반복되지 않고 Drop 한 번에 Current Frame 합성·Inspector·Timeline이 갱신되는지 확인한다.
+- [ ] 같은 위치 Drop과 Escape 취소가 Dirty, revision, render, Undo를 만들지 않으며 Save/Reload 후 Resource/Effect 복제 ID·공유 참조·순서가 동일한지 확인한다.
+
+## Layer Lock / Solo
+
+- [ ] Resource Layer를 잠근 뒤 Transform, 숫자 입력, Auto-Key, Keyframe 추가·이동·삭제, Drag, Front/Back, Delete가 막히고 선택·표시·Solo·복제·잠금 해제가 가능한지 확인한다.
+- [ ] 잠긴 Resource Layer를 복제하면 새 ID의 복제본도 Lock/Solo를 유지하고, Undo/Redo가 같은 ID와 선택을 복원하는지 확인한다.
+- [ ] Resource에서 Solo 1개/여러 개와 Visibility 조합을 바꿔 `visible AND (no solo OR solo)` 규칙으로 Canvas가 즉시 갱신되는지 확인한다.
+- [ ] Effect Single/Particle Linear/Orbit/Helix Layer를 잠근 뒤 Layer/Surface Transform, Spawn, Lifetime, Seed, Playback, Advanced, Motion 및 Track 편집과 Drag/Delete가 막히는지 확인한다.
+- [ ] Effect의 잠긴 Layer에서도 Visibility, Solo, Duplicate와 Unlock이 가능하고 Generated Layer ID 관계가 유지되는지 확인한다.
+- [ ] Effect에서 여러 배치 방식을 섞어 Multi-Solo와 Visibility를 전환하고 Save/Reload 및 Undo/Redo 후 동일한지 확인한다.
+- [ ] Solo가 켜진 상태에서 Canvas에는 Solo Layer만 보이지만 PNG, PNG Sequence와 Bake 결과에는 모든 visible Layer가 포함되는지 픽셀 비교한다.
+
+## v0.0.06 Layer Multi-select
+
+- [ ] Resource Layer 목록과 Timeline에서 Click, Ctrl+Click 추가·제거, 정방향/역방향 Shift 범위, 포커스 상태 Ctrl+A가 같은 stable-ID 선택과 Primary를 표시하는지 확인한다.
+- [ ] Resource 연속·비연속 선택에서 Duplicate, Drag, Lock/Unlock, Solo/Unsolo, Show/Hide, Front/Back, Delete가 각각 Undo 하나이며 상대 순서와 선택을 Undo/Redo하는지 확인한다.
+- [ ] Effect Single, Particle Linear/Orbit/Helix를 섞어 같은 선택·Batch 동작을 확인하고 logical Layer 선택이 Generated Timeline 행에 동기화되는지 확인한다.
+- [ ] 잠긴 Layer가 섞이면 Duplicate, Solo, Visibility, Lock/Unlock은 성공하고 Drag, Delete, Front/Back은 부분 변경 없이 거부되는지 확인한다.
+- [ ] 선택되지 않은 행 우클릭은 단일 선택하고, 선택된 행 우클릭은 다중 선택을 유지하며 한국어/영어 Batch 메뉴와 선택 개수 안내가 맞는지 확인한다.
+- [ ] 다중 선택에서 Inspector, Gizmo, 숫자 입력과 Auto-Key는 Primary 하나만 변경하고 잠긴 Primary는 모두 차단하는지 확인한다.
+- [ ] 다중 선택 전후 PNG, PNG Sequence, Bake 결과가 동일하고 Save/Reload 뒤에는 모델 Batch 결과만 유지되며 선택은 안전한 단일 Primary로 복구되는지 확인한다.
+- [ ] 100 Layer 선택과 비연속 Drag에서 UI가 응답하며 no-op Drop은 Dirty, revision, render 또는 Undo를 만들지 않는지 확인한다.
 # Project-wide stabilization manual pass
 
 These are real Windows GUI checks and are not claimed by offscreen automation.

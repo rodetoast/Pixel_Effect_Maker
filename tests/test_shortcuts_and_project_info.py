@@ -15,6 +15,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app.services.settings_service import ShortcutSettingsService
+from app.models.project import FORMAT_VERSION
 from app.shortcuts import (
     DEFAULT_SHORTCUTS,
     ShortcutConfigurationError,
@@ -238,7 +239,7 @@ def test_project_settings_uses_latest_project_state(application, tmp_path) -> No
     assert "File: Not Saved" in first.info_label.text()
     assert "Frames: 1" in first.info_label.text()
     assert "Layers: 1" in first.info_label.text()
-    assert "Format: 9" in first.info_label.text()
+    assert f"Format: {FORMAT_VERSION}" in first.info_label.text()
 
     window.project.name = "Burst"
     window.project.add_frame()

@@ -6,7 +6,11 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v9. v8 `layer_transform` values migrate exactly to the compatibility `surface_transform`, while the new `layer_space_transform` starts at identity. The application remains `Pixel Effect Maker v0.0.04`.
+New saves use project format v10. Format v9 projects load without rewriting the source file and default Layer Lock/Solo to off. The application identifies itself as `Pixel Effect Maker v0.0.06`.
+
+Resource and Effect Layer lists support **Lock** and multi-select **Solo**. Lock protects transforms, properties, keyframes, direct manipulation, reorder, and deletion while preserving selection, visibility, inspection, Solo, unlock, and duplication. Solo isolates visible soloed layers in the editor Canvas only; PNG, PNG Sequence, and Bake keep the normal Visibility-based final output.
+
+Resource and Effect editors support stable-ID Layer multi-select. Use `Ctrl+Click` to add or remove individual layers, `Shift+Click` for a continuous range, and list-focused `Ctrl+A` for all layers. Duplicate, drag reorder, delete, Lock/Unlock, Solo/Unsolo, Show/Hide, Front, and Back operate on the selection as one Undo step. Inspector, gizmo, property, Auto-Key, and keyframe editing remain Primary-layer-only.
 
 New projects start at 600×600, 12 FPS, and 12 frames (one second). Until Frames is edited directly, changing FPS keeps the default duration at one second. Blank Resource Compositions start at 300×300 and inherit the project FPS with the same one-second/manual-unlink policy.
 
@@ -16,7 +20,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.04**이며, Resource Composition을 Effect Editor의 단일 Resource Layer로 배치하고 Single/Particle Emission 방식을 전환할 수 있습니다.
+현재 버전은 **v0.0.06**입니다. `Ctrl+클릭`으로 개별 레이어를 선택에 추가·제거하고 `Shift+클릭`으로 범위를 선택할 수 있으며, 여러 레이어를 한 번에 복제, 재정렬, 잠금, Solo, 표시/숨김 및 삭제할 수 있습니다. 다중 선택 중 속성·기즈모·Auto-Key 편집은 Primary 레이어 하나에만 적용됩니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 

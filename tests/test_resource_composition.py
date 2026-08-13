@@ -19,7 +19,7 @@ def test_track_keyframes_replace_sort_delete_and_evaluate():
 def test_all_easings(easing):
     track=AnimationTrack("opacity",0);track.set_keyframe(0,0,easing);track.set_keyframe(10,1);assert 0<=track.evaluate(5)<=1
 def test_composition_v5_roundtrip_and_v4_migration():
-    project,asset,comp,layer=setup();layer.add_property("rotation").set_keyframe(0,0);data=project.to_dict();loaded=Project.from_dict(data);assert loaded.format_version==FORMAT_VERSION==9 and loaded.resource_compositions[0].layers[0].tracks["rotation"].keyframes[0].value==0
+    project,asset,comp,layer=setup();layer.add_property("rotation").set_keyframe(0,0);data=project.to_dict();loaded=Project.from_dict(data);assert loaded.format_version==FORMAT_VERSION==10 and loaded.resource_compositions[0].layers[0].tracks["rotation"].keyframes[0].value==0
     data["format_version"]=4;data.pop("resource_compositions");migrated=Project.from_dict(data);assert migrated.resource_compositions==[]
 def test_renderer_position_rotation_scale_opacity_visibility_and_source_immutable():
     project,asset,comp,layer=setup();before=asset.pixels.copy();base=render_composition_frame(project,comp,0);assert base[...,3].any()

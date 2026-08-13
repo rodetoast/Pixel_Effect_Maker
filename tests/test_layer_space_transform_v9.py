@@ -31,14 +31,14 @@ def test_v8_layer_transform_migrates_to_surface_with_identity_layer_space():
     data=project.to_dict();data["format_version"]=8;item=data["effect_resource_layers"][0]
     item["layer_transform"]=old.to_dict();item.pop("layer_space_transform");item.pop("surface_transform")
     loaded=Project.from_dict(data);migrated=loaded.effect_resource_layers[0]
-    assert FORMAT_VERSION==9 and migrated.layer_space_transform.is_identity()
+    assert FORMAT_VERSION==10 and migrated.layer_space_transform.is_identity()
     assert migrated.surface_transform.to_dict()==old.to_dict()
 
 
 def test_v9_round_trip_uses_two_explicit_transform_fields():
     project,layer=_particle_project();layer.layer_space_transform.rotation_x=18;layer.surface_transform.position_y=5
     data=project.to_dict();item=data["effect_resource_layers"][0]
-    assert data["format_version"]==9 and "layer_transform" not in item
+    assert data["format_version"]==FORMAT_VERSION and "layer_transform" not in item
     assert set(("layer_space_transform","surface_transform"))<=set(item)
     loaded=Project.from_dict(data).effect_resource_layers[0]
     assert loaded.layer_space_transform.rotation_x==18 and loaded.surface_transform.position_y==5

@@ -18,6 +18,8 @@ Effect Library의 `Add Resource Layer` 메뉴는 추가할 Resource Composition�
 
 Effect Library 목록의 위쪽은 Canvas Front다. `Move Front`/`Move Back`은 Effect Resource Layer 모델과 생성 출력 슬롯을 함께 이동하며 Undo/Redo 한 번으로 복원된다. Resource Composition을 삭제할 때 이를 참조하는 Effect Layer가 하나라도 있으면 삭제를 거부하고, Effect Layer 삭제는 Resource Composition 원본을 보존한다.
 
+`Duplicate Layer` 또는 Effect Layer 목록에 포커스가 있을 때 `Ctrl+D`는 선택 EffectResourceLayer 전체를 원본 바로 앞에 복제한다. 새 Effect/Generated Layer ID와 unique 이름을 만들지만 Resource Composition 참조는 공유한다. Placement, Advanced bypass, System/Surface Transform, Particle 설정과 Seed, Linear/Orbit/Helix Motion, Playback Speed 범위와 모든 Track/Keyframe은 깊은 복사되어 이후 서로 독립이다. 목록 Drag & Drop은 여러 칸 이동도 Drop 한 번·Undo 한 번으로 처리하며 위=Canvas Front 의미와 선택 Layer ID를 유지한다.
+
 ```text
 Imported Asset
 → Resource Composition

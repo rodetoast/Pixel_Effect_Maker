@@ -72,7 +72,13 @@ class LayerInspector(QScrollArea):
         self.layer,self.frame=layer,frame;self._loading=True
         if layer:
             self.name.setText(layer.name);self.source.setText(source.name if source else "");self.start.setValue(layer.start_frame);self.end.setValue(layer.end_frame);self.visible.setChecked(layer.visible);self.pivot_x.setValue(layer.pivot_x);self.pivot_y.setValue(layer.pivot_y)
-        self._loading=False;self._update_visibility_tooltip();self._properties()
+        self._loading=False;self._update_visibility_tooltip();self._properties();self._set_locked(bool(layer and layer.locked))
+
+    def _set_locked(self,locked):
+        for widget in (self.name,self.start,self.end,self.pivot_x,self.pivot_y,self.center,self.add_property,self.full_rotation):widget.setEnabled(not locked)
+        for button in self.mode_buttons.values():button.setEnabled(not locked)
+        for values in self.property_cards.values():
+            for widget in (*values["editors"],values["easing"],values["keyframe"],values["remove"]):widget.setEnabled(not locked)
 
     def _update_visibility_tooltip(self):
         if self.localization:apply_tooltip(self.visible,self.localization,"tooltip.visibility.hide" if self.visible.isChecked() else "tooltip.visibility.show",status=False)

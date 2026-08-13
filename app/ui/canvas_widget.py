@@ -63,6 +63,7 @@ class CanvasWidget(QWidget):
         self.effect_guide_id: str | None = None
         self.effect_guide_kind: str | None = None
         self.effect_guide_settings = None
+        self.effect_guide_locked = False
         self.show_effect_guides = True
         self._guide_handle: str | None = None
         self._guide_hover: str | None = None
@@ -134,10 +135,11 @@ class CanvasWidget(QWidget):
         self.gizmo_locked = locked
         self.update()
 
-    def set_effect_guide(self, identifier: str | None, kind: str | None = None, settings=None) -> None:
+    def set_effect_guide(self, identifier: str | None, kind: str | None = None, settings=None, *, locked: bool = False) -> None:
         self.effect_guide_id = identifier
         self.effect_guide_kind = kind
         self.effect_guide_settings = deepcopy(settings)
+        self.effect_guide_locked = bool(locked)
         self._guide_handle = self._guide_hover = None
         self.update()
 
@@ -800,6 +802,7 @@ class CanvasWidget(QWidget):
         painter.restore()
 
     def _hit_guide_handle(self, position: QPointF) -> str | None:
+        if self.effect_guide_locked:return None
         candidates = self._guide_points()
         if not candidates:
             return None
@@ -1016,26 +1019,25 @@ class CanvasWidget(QWidget):
     def _compose_display_frame(self) -> np.ndarray:
         assert self.project is not None
         if self.preview_frames is None:
-            return self.project.compose_frame(self.frame_index)
+            return self.project.compose_frame(self.frame_index,solo_preview=True)
         if not (0 <= self.frame_index < len(self.preview_frames)):
-            return self.project.compose_frame(
-                min(self.frame_index, len(self.project.frames) - 1)
-            )
+            return self.project.compose_frame(min(self.frame_index, len(self.project.frames) - 1),solo_preview=True)
         output = np.zeros((self.project.height, self.project.width, 4), dtype=np.float32)
         preview = self.preview_frames[self.frame_index]
         if preview.shape[:2] != output.shape[:2]:
-            return self.project.compose_frame(
-                min(self.frame_index, len(self.project.frames) - 1)
-            )
+            return self.project.compose_frame(min(self.frame_index, len(self.project.frames) - 1),solo_preview=True)
         project_frame = (
             self.project.frames[self.frame_index]
             if self.frame_index < len(self.project.frames)
             else None
         )
         replacement_seen = False
+        logical_by_generated={item.generated_layer_id:item for item in self.project.effect_resource_layers};has_solo=any(item.solo for item in self.project.effect_resource_layers)
         for layer in self.project.layers:
             if not layer.visible:
                 continue
+            logical=logical_by_generated.get(layer.id)
+            if has_solo and (logical is None or not logical.solo):continue
             if layer.id == self.preview_layer_id:
                 source = preview
                 replacement_seen = True
@@ -1045,7 +1047,7 @@ class CanvasWidget(QWidget):
                 source = None
             if source is not None:
                 self._composite(output, source, layer.opacity)
-        if not replacement_seen:
+        if not replacement_seen and not has_solo:
             self._composite(output, preview, 1.0)
         return np.clip(output * 255.0, 0, 255).astype(np.uint8)
 

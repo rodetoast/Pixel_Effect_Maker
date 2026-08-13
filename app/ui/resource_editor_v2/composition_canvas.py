@@ -136,8 +136,9 @@ class CompositionCanvas(QWidget):
         return {"uniform":polygon[2],"x":(polygon[1]+polygon[2])/2,"y":(polygon[0]+polygon[1])/2,"uniform0":polygon[0],"uniform1":polygon[1],"uniform3":polygon[3]}
 
     def _hit_layer(self, comp_point):
+        has_solo=any(layer.solo for layer in self.composition.layers)
         for layer in reversed(self.composition.layers):
-            if layer.visible and layer.start_frame <= self.frame <= layer.end_frame and self.selection_polygon_comp(layer).containsPoint(comp_point, Qt.FillRule.OddEvenFill): return layer
+            if layer.visible and (not has_solo or layer.solo) and layer.start_frame <= self.frame <= layer.end_frame and self.selection_polygon_comp(layer).containsPoint(comp_point, Qt.FillRule.OddEvenFill): return layer
         return None
 
     @staticmethod
@@ -149,7 +150,7 @@ class CompositionCanvas(QWidget):
     def paintEvent(self, event):
         painter=QPainter(self); painter.fillRect(self.rect(),QColor("#20242b"))
         if self.composition is None: return
-        pixels=np.ascontiguousarray(render_composition_frame(self.project,self.composition,self.frame)); origin=self.origin(); rect=QRectF(origin.x(),origin.y(),self.composition.width*self.zoom,self.composition.height*self.zoom)
+        pixels=np.ascontiguousarray(render_composition_frame(self.project,self.composition,self.frame,preview=True)); origin=self.origin(); rect=QRectF(origin.x(),origin.y(),self.composition.width*self.zoom,self.composition.height*self.zoom)
         tile=max(4,self.zoom*4)
         for y in range(int(rect.top()),int(rect.bottom())+1,tile):
             for x in range(int(rect.left()),int(rect.right())+1,tile): painter.fillRect(x,y,tile,tile,QColor("#dfe3e8") if ((x-int(rect.left()))//tile+(y-int(rect.top()))//tile)%2 else QColor("#aeb4bc"))
@@ -188,7 +189,7 @@ class CompositionCanvas(QWidget):
                 handle=next((name for name,pos in self.move_handle_positions().items() if name!="free" and self._near(point,pos)),None)
                 if handle:prop="position";self._drag_axis=handle
                 elif polygon.containsPoint(point,Qt.FillRule.OddEvenFill):prop="position";self._drag_axis="free"
-        if prop is not None:
+        if prop is not None and not self.layer.locked:
             self._drag=prop; self._start_point=comp_point; self._start_value=[self.layer.pivot_x,self.layer.pivot_y] if prop=="pivot" else deepcopy(self.layer.value(prop,self.frame)); pivot=self.to_comp(self._pivot_widget(self.layer)); self._start_angle=math.atan2(comp_point.y()-pivot.y(),comp_point.x()-pivot.x()); self.drag_started.emit(); event.accept(); return
         hit=self._hit_layer(comp_point)
         if hit is not self.layer:self.layer_selected.emit(None if hit is None else hit.id)

@@ -146,6 +146,8 @@ class EffectResourceLayer:
     resource_composition_id: str
     placement_mode: str = PLACEMENT_SINGLE
     visible: bool = True
+    locked: bool = False
+    solo: bool = False
     start_frame: int = 0
     end_frame: int = 0
     resource_start_frame: int = 0
@@ -256,6 +258,7 @@ class EffectResourceLayer:
         self.sync_active_adapter()
         return {
             "id": self.id, "name": self.name, "visible": self.visible,
+            "locked": self.locked, "solo": self.solo,
             "resource_composition_id": self.resource_composition_id,
             "start_frame": self.start_frame, "end_frame": self.end_frame,
             "resource_start_frame": self.resource_start_frame,
@@ -276,6 +279,7 @@ class EffectResourceLayer:
         return cls(
             id=str(data["id"]), name=str(data.get("name", "Resource Layer")),
             visible=bool(data.get("visible", True)),
+            locked=bool(data.get("locked", False)), solo=bool(data.get("solo", False)),
             resource_composition_id=str(data.get("resource_composition_id", "")),
             start_frame=int(data.get("start_frame", 0)), end_frame=int(data.get("end_frame", 0)),
             resource_start_frame=int(data.get("resource_start_frame", 0)),

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QImage, QPixmap
+from PySide6.QtCore import QMimeData, Qt, Signal
+from PySide6.QtGui import QAction, QDrag, QImage, QPixmap
 from PySide6.QtWidgets import (
     QGroupBox,
+    QApplication,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -19,6 +20,43 @@ from PySide6.QtWidgets import (
 from app.models.project import Project
 from app.models.source_asset import SourceAsset
 from app.ui.tooltip_helper import apply_tooltip
+
+
+class EffectLayerList(QListWidget):
+    """Effect list whose internal drag is committed by the project owner."""
+    layer_drop_requested=Signal(object,int)
+    duplicate_requested=Signal()
+    delete_requested=Signal();select_all_layers_requested=Signal()
+    MIME="application/x-pixel-effect-effect-layer"
+
+    def __init__(self,parent=None):
+        super().__init__(parent);self.locked_ids=set();self.selected_layer_ids=set();self.setDragEnabled(True);self.setAcceptDrops(True);self.viewport().setAcceptDrops(True);self.setDropIndicatorShown(True);self.setDragDropMode(QListWidget.DragDropMode.DragDrop);self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def startDrag(self,supported_actions):
+        item=self.currentItem()
+        if item is None:return
+        identifier=str(item.data(Qt.ItemDataRole.UserRole));identifiers=[str(self.item(index).data(Qt.ItemDataRole.UserRole)) for index in range(self.count()) if str(self.item(index).data(Qt.ItemDataRole.UserRole)) in self.selected_layer_ids] if identifier in self.selected_layer_ids else [identifier]
+        if any(value in self.locked_ids for value in identifiers):return
+        drag=QDrag(self);mime=self.model().mimeData(self.selectedIndexes()) or QMimeData();mime.setData(self.MIME,",".join(identifiers).encode());drag.setMimeData(mime);drag.exec(Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self,event):
+        if event.mimeData().hasFormat(self.MIME):event.acceptProposedAction()
+        else:super().dragEnterEvent(event)
+
+    def dragMoveEvent(self,event):
+        if event.mimeData().hasFormat(self.MIME):super().dragMoveEvent(event);event.acceptProposedAction();self.viewport().update()
+        else:super().dragMoveEvent(event)
+
+    def dropEvent(self,event):
+        if not event.mimeData().hasFormat(self.MIME):super().dropEvent(event);return
+        identifiers=[value for value in bytes(event.mimeData().data(self.MIME)).decode().split(",") if value];point=event.position().toPoint();row=self.indexAt(point).row();target=self.count() if row<0 else row+(point.y()>self.visualItemRect(self.item(row)).center().y());positions=[index for index in range(self.count()) if str(self.item(index).data(Qt.ItemDataRole.UserRole)) in identifiers];target-=sum(1 for value in positions if value<target)
+        self.layer_drop_requested.emit(identifiers,max(0,min(target,max(0,self.count()-len(identifiers)))));event.setDropAction(Qt.DropAction.MoveAction);event.accept()
+
+    def keyPressEvent(self,event):
+        if event.key()==Qt.Key.Key_D and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.duplicate_requested.emit();event.accept();return
+        if event.key()==Qt.Key.Key_A and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.select_all_layers_requested.emit();event.accept();return
+        if event.key()==Qt.Key.Key_Delete:self.delete_requested.emit();event.accept();return
+        super().keyPressEvent(event)
 
 
 class EffectLibraryPanel(QWidget):
@@ -38,6 +76,13 @@ class EffectLibraryPanel(QWidget):
     resource_open_requested = Signal(str, str)
     remove_resource_layer_requested = Signal(str)
     move_resource_layer_requested = Signal(str, int)
+    reorder_resource_layer_requested = Signal(object, int)
+    duplicate_resource_layer_requested = Signal(str)
+    lock_resource_layer_requested = Signal(str,bool)
+    solo_resource_layer_requested = Signal(str,bool)
+    resource_layer_selection_requested=Signal(str,object)
+    select_all_resource_layers_requested=Signal()
+    batch_resource_layer_requested=Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -86,10 +131,10 @@ class EffectLibraryPanel(QWidget):
         self.composition_group = QGroupBox("Resource Layers")
         composition_layout = QVBoxLayout(self.composition_group)
         self.add_composition_button = QPushButton("Add Resource Layer")
-        self.composition_list = QListWidget(); self.composition_list.setObjectName("compositionLayerList")
+        self.composition_list = EffectLayerList(); self.composition_list.setObjectName("compositionLayerList");self.composition_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.composition_add_menu=QMenu(self.add_composition_button);self.add_composition_button.setMenu(self.composition_add_menu)
-        self.remove_composition_button=QPushButton("Remove Layer");self.move_composition_up=QPushButton("↑ Front");self.move_composition_down=QPushButton("↓ Back")
-        composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list);composition_layout.addWidget(self.remove_composition_button);composition_layout.addWidget(self.move_composition_up);composition_layout.addWidget(self.move_composition_down)
+        self.duplicate_composition_button=QPushButton("Duplicate Layer");self.duplicate_composition_button.setObjectName("duplicateEffectLayerButton");self.remove_composition_button=QPushButton("Remove Layer");self.lock_composition_button=QPushButton("L");self.lock_composition_button.setCheckable(True);self.solo_composition_button=QPushButton("S");self.solo_composition_button.setCheckable(True);self.move_composition_up=QPushButton("↑ Front");self.move_composition_down=QPushButton("↓ Back")
+        self.composition_selection_label=QLabel();composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list);composition_layout.addWidget(self.composition_selection_label);composition_layout.addWidget(self.duplicate_composition_button);composition_layout.addWidget(self.remove_composition_button);composition_layout.addWidget(self.lock_composition_button);composition_layout.addWidget(self.solo_composition_button);composition_layout.addWidget(self.move_composition_up);composition_layout.addWidget(self.move_composition_down)
         layout.addWidget(self.composition_group, 1)
 
         self.particle_group = QGroupBox("Particle Systems")
@@ -108,13 +153,15 @@ class EffectLibraryPanel(QWidget):
         self.delete_generator_button.clicked.connect(self._request_delete_generator)
         self.create_clip_button.clicked.connect(self._request_create_clip)
         self.add_particle_button.clicked.connect(self._request_add_particle)
-        self.remove_composition_button.clicked.connect(self._request_remove_composition);self.move_composition_up.clicked.connect(lambda:self._request_move_composition(1));self.move_composition_down.clicked.connect(lambda:self._request_move_composition(-1))
+        self.duplicate_composition_button.clicked.connect(self._request_duplicate_composition);self.remove_composition_button.clicked.connect(self._request_remove_composition);self.lock_composition_button.clicked.connect(self._request_lock_composition);self.solo_composition_button.clicked.connect(self._request_solo_composition);self.move_composition_up.clicked.connect(lambda:self._request_move_composition(1));self.move_composition_down.clicked.connect(lambda:self._request_move_composition(-1));self.composition_list.layer_drop_requested.connect(self.reorder_resource_layer_requested);self.composition_list.duplicate_requested.connect(self._request_duplicate_composition);self.composition_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.composition_list.customContextMenuRequested.connect(self._composition_context_menu)
         self.clip_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "clip"))
         self.particle_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "particle"))
-        self.composition_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "composition"))
+        self.composition_list.currentItemChanged.connect(lambda item, previous:self._sync_composition_controls())
+        self.composition_list.itemClicked.connect(lambda item:self.resource_layer_selection_requested.emit(str(item.data(Qt.ItemDataRole.UserRole)),QApplication.keyboardModifiers()))
         self.asset_list.itemDoubleClicked.connect(lambda item:self.resource_open_requested.emit("source_asset",str(item.data(Qt.ItemDataRole.UserRole))))
         self.clip_list.itemDoubleClicked.connect(lambda item:self.resource_open_requested.emit("animation_clip",str(item.data(Qt.ItemDataRole.UserRole))))
         self._configure_help()
+        self._selected_resource_ids=set();self._primary_resource_id=None;self.composition_list.select_all_layers_requested.connect(self.select_all_resource_layers_requested);self.composition_list.delete_requested.connect(lambda:self.batch_resource_layer_requested.emit("delete"))
 
     def _configure_help(self) -> None:
         help_text = {
@@ -130,6 +177,7 @@ class EffectLibraryPanel(QWidget):
             widget.setStatusTip(text)
 
     def retranslate_ui(self, localization) -> None:
+        self._localization = localization
         t = localization.text
         self.title_label.setText(t("effects.library.title"))
         self.source_group.setTitle(t("effects.sources"))
@@ -138,7 +186,7 @@ class EffectLibraryPanel(QWidget):
         self.composition_group.setTitle(t("resource_layer.plural"))
         self.create_clip_button.setText(t("effects.create_clip"))
         self.add_composition_button.setText(t("resource_layer.add"))
-        self.remove_composition_button.setText(t("resource_layer.remove"));self.move_composition_up.setText(t("resource_layer.move_front"));self.move_composition_down.setText(t("resource_layer.move_back"))
+        self.duplicate_composition_button.setText(t("resource_layer.duplicate"));self.remove_composition_button.setText(t("resource_layer.remove"));self.move_composition_up.setText(t("resource_layer.move_front"));self.move_composition_down.setText(t("resource_layer.move_back"))
         self.import_button.setText(t("effects.import"))
         self.add_emitter_button.setText(t("effects.add_emitter"))
         self.delete_asset_button.setText(t("effects.delete_source"))
@@ -149,9 +197,11 @@ class EffectLibraryPanel(QWidget):
             self.delete_generator_button: "tooltip.effect.delete_generator", self.create_clip_button: "tooltip.effect.create_clip",
             self.add_particle_button: "tooltip.resource_layer.add",
             self.add_composition_button: "tooltip.resource_layer.add",
+            self.duplicate_composition_button: "tooltip.resource_layer.duplicate",
             self.remove_composition_button: "tooltip.resource_layer.remove",
             self.move_composition_up: "tooltip.resource_layer.move_front",
             self.move_composition_down: "tooltip.resource_layer.move_back",
+            self.lock_composition_button: "tooltip.layer.lock", self.solo_composition_button: "tooltip.layer.solo",
         }
         for widget,key in help_keys.items():apply_tooltip(widget,localization,key)
         if self.current_asset_id() is None:
@@ -181,12 +231,14 @@ class EffectLibraryPanel(QWidget):
         resource_names={item.id:item.name for item in project.resource_compositions}
         generated_by_id={item.id:item for item in project.layers}
         ordered=sorted(project.effect_resource_layers,key=lambda item:next((index for index,layer in enumerate(project.layers) if layer.id==item.generated_layer_id),-1),reverse=True)
+        self._resource_layers={item.id:item for item in project.effect_resource_layers};self.composition_list.locked_ids={item.id for item in project.effect_resource_layers if item.locked}
         for layer in ordered:
             mode="Particle" if layer.placement_mode=="particle" else "Single";visible=generated_by_id.get(layer.generated_layer_id).visible if layer.generated_layer_id in generated_by_id else layer.visible;resource=resource_names.get(layer.resource_composition_id,"Missing Resource")
-            self.composition_list.addItem(self._item(layer.id,f"{'●' if visible else '○'} {layer.name} — {resource} · {mode}"))
+            self.composition_list.addItem(self._item(layer.id,f"{'●' if visible else '○'} {'🔒 ' if layer.locked else ''}{'S ' if layer.solo else ''}{layer.name} — {resource} · {mode}"))
         self._restore_selection(self.asset_list, selected_asset)
         self._restore_selection(self.generator_list, selected_generator)
         self._restore_selection(self.clip_list, selected_clip); self._restore_selection(self.particle_list, selected_particle); self._restore_selection(self.composition_list, selected_composition)
+        self.set_resource_selection(self._selected_resource_ids,self._primary_resource_id)
         self.asset_list.blockSignals(False)
         self.generator_list.blockSignals(False)
         self.clip_list.blockSignals(False); self.particle_list.blockSignals(False); self.composition_list.blockSignals(False)
@@ -229,10 +281,15 @@ class EffectLibraryPanel(QWidget):
         self._restore_selection(self.generator_list, identifier)
 
     def select_composition(self, identifier: str) -> None:
-        blocked = self.composition_list.blockSignals(True)
-        self._restore_selection(self.composition_list, identifier)
-        self.composition_list.blockSignals(blocked)
+        self.set_resource_selection({identifier},identifier)
         self._sync_composition_controls()
+
+    def set_resource_selection(self,identifiers,primary):
+        self._selected_resource_ids=set(identifiers);self._primary_resource_id=primary;self.composition_list.selected_layer_ids=set(identifiers);blocked=self.composition_list.blockSignals(True)
+        for row in range(self.composition_list.count()):
+            item=self.composition_list.item(row);identifier=str(item.data(Qt.ItemDataRole.UserRole));item.setSelected(identifier in self._selected_resource_ids);font=item.font();font.setBold(identifier==primary);item.setFont(font)
+            if identifier==primary:self.composition_list.setCurrentRow(row)
+        self.composition_list.blockSignals(blocked);count=len(self._selected_resource_ids);self.composition_selection_label.setText((self._localization.text("layer.selection_count").format(count=count) if hasattr(self,"_localization") else f"{count} layers selected") if count>1 else "")
 
     def current_asset_id(self) -> str | None:
         item = self.asset_list.currentItem()
@@ -266,14 +323,41 @@ class EffectLibraryPanel(QWidget):
 
     def _request_remove_composition(self):
         identifier=self.current_composition_id()
-        if identifier:self.remove_resource_layer_requested.emit(identifier)
+        if len(self._selected_resource_ids)>1:self.batch_resource_layer_requested.emit("delete")
+        elif identifier:self.remove_resource_layer_requested.emit(identifier)
+
+    def _request_duplicate_composition(self):
+        identifier=self.current_composition_id()
+        if len(self._selected_resource_ids)>1:self.batch_resource_layer_requested.emit("duplicate")
+        elif identifier:self.duplicate_resource_layer_requested.emit(identifier)
 
     def _request_move_composition(self,direction):
         identifier=self.current_composition_id()
-        if identifier:self.move_resource_layer_requested.emit(identifier,int(direction))
+        if len(self._selected_resource_ids)>1:self.batch_resource_layer_requested.emit("front" if direction>0 else "back")
+        elif identifier:self.move_resource_layer_requested.emit(identifier,int(direction))
+
+    def _request_lock_composition(self):
+        layer=getattr(self,"_resource_layers",{}).get(self.current_composition_id())
+        if len(self._selected_resource_ids)>1:self.batch_resource_layer_requested.emit("toggle_lock")
+        elif layer:self.lock_resource_layer_requested.emit(layer.id,not layer.locked)
+
+    def _request_solo_composition(self):
+        layer=getattr(self,"_resource_layers",{}).get(self.current_composition_id())
+        if len(self._selected_resource_ids)>1:self.batch_resource_layer_requested.emit("toggle_solo")
+        elif layer:self.solo_resource_layer_requested.emit(layer.id,not layer.solo)
+
+    def _composition_context_menu(self,pos):
+        item=self.composition_list.itemAt(pos)
+        if item is None:return
+        identifier=str(item.data(Qt.ItemDataRole.UserRole))
+        if identifier not in self._selected_resource_ids:self.resource_layer_selection_requested.emit(identifier,Qt.KeyboardModifier.NoModifier)
+        layer=getattr(self,"_resource_layers",{}).get(identifier)
+        if not layer:return
+        menu=QMenu(self);actions={key:menu.addAction(self._localization.text("layer.batch."+key)) for key in ("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete")};chosen=menu.exec(self.composition_list.viewport().mapToGlobal(pos));command=next((key for key,value in actions.items() if value is chosen),None)
+        if command:self.batch_resource_layer_requested.emit(command)
 
     def _sync_composition_controls(self):
-        row=self.composition_list.currentRow();enabled=row>=0;self.remove_composition_button.setEnabled(enabled);self.move_composition_up.setEnabled(enabled and row>0);self.move_composition_down.setEnabled(enabled and row<self.composition_list.count()-1)
+        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];enabled=bool(selected);any_locked=any(value.locked for value in selected);all_locked=enabled and all(value.locked for value in selected);all_solo=enabled and all(value.solo for value in selected);self.duplicate_composition_button.setEnabled(enabled);self.remove_composition_button.setEnabled(enabled and not any_locked);self.lock_composition_button.setEnabled(enabled);self.solo_composition_button.setEnabled(enabled);self.lock_composition_button.setChecked(all_locked);self.solo_composition_button.setChecked(all_solo);self.move_composition_up.setEnabled(enabled and not any_locked);self.move_composition_down.setEnabled(enabled and not any_locked)
 
     def _request_create_clip(self) -> None:
         identifier = self.current_generator_id()

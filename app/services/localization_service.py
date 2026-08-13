@@ -110,7 +110,7 @@ EN = {
     "resource.start_text":"Import a PNG, GIF, or Aseprite asset, or create an empty resource.", "resource.start_import":"Import Asset", "resource.start_blank":"Create Empty Resource",
     "v2.length":"Length", "v2.frames":"Frames", "v2.seconds":"Seconds", "v2.length_frame_info":"{fps} FPS = {seconds:.4f} seconds", "v2.length_seconds_info":"{fps} FPS = {frames} frames",
     "composition.search":"Search properties", "composition.add":"Add",
-    "composition.start":"Layer Start", "composition.end":"Layer End", "composition.delete_keyframe":"Delete Keyframe", "composition.add_layer":"+ Add Image Layer", "composition.remove_layer":"Remove Layer",
+    "composition.start":"Layer Start", "composition.end":"Layer End", "composition.delete_keyframe":"Delete Keyframe", "composition.add_layer":"+ Add Image Layer", "composition.duplicate_layer":"Duplicate Layer", "composition.remove_layer":"Remove Layer",
     "composition.category.transform":"Transform", "composition.category.appearance":"Appearance",
     "composition.in_use":"This composition is used by an Effect layer.", "composition.delete_confirm":"Delete this Resource Composition?",
     "composition.remove_property_confirm":"Remove this property and all of its keyframes?",
@@ -237,7 +237,7 @@ KO = {
     "resource.start_text":"PNG, GIF 또는 Aseprite 에셋을 가져오거나 빈 리소스를 만들어 시작하세요.", "resource.start_import":"에셋 가져오기", "resource.start_blank":"빈 리소스 만들기",
     "v2.length":"길이", "v2.frames":"프레임", "v2.seconds":"초", "v2.length_frame_info":"{fps} FPS 기준 {seconds:.4f}초", "v2.length_seconds_info":"{fps} FPS 기준 {frames}프레임",
     "composition.search":"속성 검색", "composition.add":"추가",
-    "composition.start":"레이어 시작", "composition.end":"레이어 끝", "composition.delete_keyframe":"키프레임 삭제", "composition.add_layer":"+ 이미지 레이어 추가", "composition.remove_layer":"레이어 삭제",
+    "composition.start":"레이어 시작", "composition.end":"레이어 끝", "composition.delete_keyframe":"키프레임 삭제", "composition.add_layer":"+ 이미지 레이어 추가", "composition.duplicate_layer":"레이어 복제", "composition.remove_layer":"레이어 삭제",
     "composition.category.transform":"변형", "composition.category.appearance":"표시",
     "composition.in_use":"이 컴포지션은 파티클 방출기에서 사용 중입니다.", "composition.delete_confirm":"이 리소스 컴포지션을 삭제할까요?",
     "composition.remove_property_confirm":"이 속성과 모든 키프레임을 삭제할까요?",
@@ -262,12 +262,13 @@ KO = {
 EN.update({
     "resource_layer.title": "Resource Layer", "resource_layer.plural": "Resource Layers",
     "resource_layer.add": "Add Resource Layer", "resource_layer.placement_mode": "Placement Mode",
-    "resource_layer.name": "Layer Name", "resource_layer.remove": "Remove Layer", "resource_layer.move_front": "↑ Move Front", "resource_layer.move_back": "↓ Move Back",
+    "resource_layer.name": "Layer Name", "resource_layer.duplicate": "Duplicate Layer", "resource_layer.remove": "Remove Layer", "resource_layer.move_front": "↑ Move Front", "resource_layer.move_back": "↓ Move Back",
     "resource_layer.single": "Single", "resource_layer.particle": "Particle Emission",
     "resource_layer.single_help": "Place one resource directly in the Effect Composition.",
     "resource_layer.particle_help": "Emit multiple instances of the same resource with direction, speed, and lifetime.",
     "tooltip.resource_layer.add": "Add a Resource Composition as a Resource Layer. Choose Single or Particle Emission in its Inspector.",
     "tooltip.resource_layer.remove": "Remove only the selected Effect Resource Layer. Its Resource Composition remains available.",
+    "tooltip.resource_layer.duplicate": "Duplicate the selected layer with a new identity while sharing its Resource. Ctrl+D works when the layer list is focused.",
     "tooltip.resource_layer.move_front": "Move the selected Resource Layer one step toward the front/top.",
     "tooltip.resource_layer.move_back": "Move the selected Resource Layer one step toward the back/bottom.",
     "tooltip.resource_layer.mode": "Choose whether this Resource Layer places one instance or emits multiple particles. Both configurations are preserved.",
@@ -288,6 +289,16 @@ EN.update({
     "message.unsaved_title":"Unsaved Changes","message.discard_unsaved":"Discard the unsaved changes?","status.new_project":"New project created","status.opened":"Opened {path}","status.saved":"Saved {path}","status.imported":"Imported source asset: {name}","status.created":"Created {name}","status.generated":"Generated {name}","status.playback_test":"Playback test project created",
     "error.load_failed_body":"The project could not be opened. The current project was not changed.\n\nReason: {reason}","error.load_payload":"Embedded source pixels are damaged or unsupported. The project was not opened.\n\nReason: {reason}","error.load_future_format":"This project was saved by a newer Pixel Effect Maker format. It cannot be opened safely in this version.\n\nReason: {reason}",
     "error.open":"Open Failed","error.save":"Save Failed","error.save_failed_body":"The project was not saved. The previous file and path were preserved.\n\nReason: {reason}","error.save_directory":"The project directory could not be created or accessed.\n\nReason: {reason}","error.save_serialize":"Project data could not be encoded. No file was replaced.\n\nReason: {reason}","error.save_temporary":"The temporary project file could not be written or synchronized.\n\nReason: {reason}","error.save_replace":"The completed temporary file could not replace the destination. The previous file was preserved.\n\nReason: {reason}","status.save_in_progress":"A project save is already in progress.","error.export":"Export Failed","error.import":"Import Failed","error.generation":"Generation Failed","error.canvas_resize":"Canvas Resize Failed","error.shortcuts":"Shortcut Settings","error.delete_frame":"Cannot Delete Frame","error.delete_layer":"Cannot Delete Layer",
+})
+
+EN.update({
+    "layer.selection_count":"{count} layers selected", "layer.primary_summary":"Primary: {name} · {count} layers selected",
+    "layer.multiselect_help":"Ctrl+Click: Add or remove a layer from the selection.\nShift+Click: Select a continuous range of layers.",
+    "layer.multiselect_primary_help":"Multiple layers are selected. Property edits apply only to the primary layer.",
+    "layer.batch.duplicate":"Duplicate Selected", "layer.batch.lock":"Lock Selected", "layer.batch.unlock":"Unlock Selected",
+    "layer.batch.solo":"Solo Selected", "layer.batch.unsolo":"Unsolo Selected", "layer.batch.show":"Show Selected", "layer.batch.hide":"Hide Selected",
+    "layer.batch.front":"Move Selected to Front", "layer.batch.back":"Move Selected to Back", "layer.batch.delete":"Delete Selected",
+    "layer.batch.locked_block":"The selection contains a locked layer. Unlock it before reordering or deleting.",
 })
 
 EN.update({
@@ -317,6 +328,14 @@ EN.update({
     "tooltip.resource.sprite_rotation_z":"Rotates inside the already tilted Resource Sprite plane.",
     "tooltip.resource.sprite_perspective":"Adjusts 2.5D perspective for the Resource Sprite plane only. Particle motion paths are unchanged.",
 })
+EN.update({
+    "layer.lock":"Lock Layer", "layer.unlock":"Unlock Layer", "layer.solo":"Solo Layer", "layer.unsolo":"Unsolo Layer",
+    "layer.locked":"Layer is locked", "layer.unlock_before_editing":"Unlock before editing.",
+    "layer.locked_delete":"This layer is locked. Unlock it before deleting.",
+    "tooltip.layer.lock":"Lock Layer\nPrevents transform, keyframe, reorder, and delete edits. Selection, visibility, solo, and duplicate remain available.",
+    "tooltip.layer.solo":"Solo Layer\nPreviews soloed visible layers in the editor. PNG, sequence, and bake output are unchanged.",
+})
+
 KO.update({
     "resource_layer.advanced":"고급",
     "resource_layer.transform":"시스템 공간 변형",
@@ -343,6 +362,16 @@ KO.update({
     "tooltip.resource.sprite_rotation_y":"리소스 Sprite 평면을 로컬 Y축으로 기울입니다. Particle 이동 경로는 바뀌지 않습니다.",
     "tooltip.resource.sprite_rotation_z":"이미 기울어진 리소스 Sprite 평면 안에서 회전합니다.",
     "tooltip.resource.sprite_perspective":"리소스 Sprite 평면의 2.5D 원근감만 조절합니다. Particle 이동 경로에는 영향을 주지 않습니다.",
+})
+
+KO.update({
+    "layer.selection_count":"{count}개 레이어 선택", "layer.primary_summary":"Primary: {name} · {count}개 레이어 선택",
+    "layer.multiselect_help":"Ctrl+클릭: 레이어를 선택에 추가하거나 제거합니다.\nShift+클릭: 연속된 레이어 범위를 선택합니다.",
+    "layer.multiselect_primary_help":"여러 레이어가 선택되어 있습니다. 속성 편집은 Primary 레이어에만 적용됩니다.",
+    "layer.batch.duplicate":"선택 레이어 복제", "layer.batch.lock":"선택 레이어 잠금", "layer.batch.unlock":"선택 레이어 잠금 해제",
+    "layer.batch.solo":"선택 레이어 Solo", "layer.batch.unsolo":"선택 레이어 Solo 해제", "layer.batch.show":"선택 레이어 표시", "layer.batch.hide":"선택 레이어 숨기기",
+    "layer.batch.front":"선택 레이어 맨 앞으로", "layer.batch.back":"선택 레이어 맨 뒤로", "layer.batch.delete":"선택 레이어 삭제",
+    "layer.batch.locked_block":"선택한 레이어 중 잠긴 레이어가 있습니다. 순서 변경이나 삭제 전에 잠금을 해제하세요.",
 })
 
 EN.update({
@@ -488,6 +517,7 @@ EN.update({
     "tooltip.resource.remove_property":"Remove this property and all of its keyframes after confirmation.",
     "tooltip.resource.easing":"Choose how values interpolate from this keyframe to the next.",
     "tooltip.resource.add_layer":"Choose an imported image or animation asset and add it as the frontmost layer of this Resource.",
+    "tooltip.resource.duplicate_layer":"Duplicate the selected layer with a new identity while sharing its Source Asset. Ctrl+D works when the Timeline is focused.",
     "tooltip.resource.remove_layer":"Remove only the selected Resource layer. The source asset remains in the project.",
     "tooltip.resource.layer_up":"Move the selected layer toward the front/top. List top is Canvas Front.",
     "tooltip.resource.layer_down":"Move the selected layer toward the back/bottom. List bottom is Canvas Back.",
@@ -609,6 +639,7 @@ KO.update({
     "tooltip.resource.remove_property":"확인 후 이 속성과 모든 키프레임을 삭제합니다.",
     "tooltip.resource.easing":"이 키프레임에서 다음 키프레임까지의 보간 방식을 선택합니다.",
     "tooltip.resource.add_layer":"가져온 이미지 또는 애니메이션 에셋을 선택해 이 리소스의 가장 앞 레이어로 추가합니다.",
+    "tooltip.resource.duplicate_layer":"선택 레이어를 새 ID로 복제하되 원본 에셋은 공유합니다. 타임라인에 포커스가 있으면 Ctrl+D를 사용할 수 있습니다.",
     "tooltip.resource.remove_layer":"선택한 리소스 레이어만 삭제합니다. 프로젝트의 원본 에셋은 유지됩니다.",
     "tooltip.resource.layer_up":"선택 레이어를 화면 앞/목록 위로 이동합니다. 목록 위가 Canvas Front입니다.",
     "tooltip.resource.layer_down":"선택 레이어를 화면 뒤/목록 아래로 이동합니다. 목록 아래가 Canvas Back입니다.",
@@ -676,12 +707,13 @@ EN.update({
 KO.update({
     "resource_layer.title": "리소스 레이어", "resource_layer.plural": "리소스 레이어",
     "resource_layer.add": "리소스 레이어 추가", "resource_layer.placement_mode": "배치 방식",
-    "resource_layer.name": "레이어 이름", "resource_layer.remove": "레이어 삭제", "resource_layer.move_front": "↑ 앞으로", "resource_layer.move_back": "↓ 뒤로",
+    "resource_layer.name": "레이어 이름", "resource_layer.duplicate": "레이어 복제", "resource_layer.remove": "레이어 삭제", "resource_layer.move_front": "↑ 앞으로", "resource_layer.move_back": "↓ 뒤로",
     "resource_layer.single": "단일 배치", "resource_layer.particle": "파티클 방출",
     "resource_layer.single_help": "리소스 하나를 이펙트 컴포지션에 직접 배치합니다.",
     "resource_layer.particle_help": "같은 리소스를 여러 개 생성해 방향, 속도와 수명에 따라 움직입니다.",
     "tooltip.resource_layer.add": "리소스 컴포지션을 리소스 레이어로 추가합니다. Inspector에서 단일 배치 또는 파티클 방출을 선택하세요.",
     "tooltip.resource_layer.remove": "선택한 이펙트 리소스 레이어만 삭제합니다. 원본 리소스 컴포지션은 유지됩니다.",
+    "tooltip.resource_layer.duplicate": "선택 레이어를 새 ID로 복제하되 원본 리소스는 공유합니다. 레이어 목록에 포커스가 있으면 Ctrl+D를 사용할 수 있습니다.",
     "tooltip.resource_layer.move_front": "선택한 리소스 레이어를 화면 앞/목록 위로 한 단계 이동합니다.",
     "tooltip.resource_layer.move_back": "선택한 리소스 레이어를 화면 뒤/목록 아래로 한 단계 이동합니다.",
     "tooltip.resource_layer.mode": "리소스 하나를 직접 배치할지 여러 파티클로 방출할지 선택합니다. 두 설정은 모두 보존됩니다.",
@@ -732,7 +764,7 @@ EN.update({
     "preview.purpose_heading": "What this project is for",
     "preview.purpose_body": "Pixel Effect Maker is not intended to replace Aseprite as a general-purpose pixel editor.\n\nIt is designed to import PNG, GIF, and Aseprite assets, organize them as reusable Resource Compositions, and combine Resource Layers and Particle Emission to create, preview, bake, and export multi-frame pixel effects.",
     "preview.current_heading": "Currently implemented",
-    "preview.current_items": "PNG, GIF, and Aseprite asset import\nResource Composition authoring and keyframe animation\nSingle and Particle Emission Resource Layers\nLinear, Orbit, and Helix particle motion\nParticle-local perspective and stable depth sorting\nLayer Space and compatibility Surface 2.5D transforms\nCanvas guides and direct-manipulation gizmos\nTimeline playback, scrubbing, and Undo/Redo\nPreview, Bake, PNG, and PNG Sequence export\nCompact Project Format v9 and atomic save\nMigration of earlier project formats\nKorean and English interfaces",
+    "preview.current_items": "PNG, GIF, and Aseprite asset import\nResource Composition authoring and keyframe animation\nSingle and Particle Emission Resource Layers\nLinear, Orbit, and Helix particle motion\nParticle-local perspective and stable depth sorting\nLayer Space and compatibility Surface 2.5D transforms\nCanvas guides and direct-manipulation gizmos\nTimeline playback, scrubbing, and Undo/Redo\nPreview, Bake, PNG, and PNG Sequence export\nCompact Project Format v10 and atomic save\nMigration of earlier project formats\nKorean and English interfaces",
     "preview.future_heading": "Planned development",
     "preview.future_items": "Further stabilization and user-feedback fixes\nLayer duplication, locking, drag reordering, and multi-selection\nKeyframe copy/paste and a Graph Editor\nAdvanced per-particle 3D position, rotation, and depth\nCustom Path, presets, and additional motion/deformation\nBasic pixel-editing tools\nAutosave and recovery\nAdditional export formats and a production distribution pipeline",
     "preview.footer": "Development plans and feature scope may change based on testing results.",
@@ -759,7 +791,7 @@ KO.update({
     "preview.purpose_heading": "프로그램의 목적",
     "preview.purpose_body": "Pixel Effect Maker는 Aseprite를 대체하는 범용 픽셀 편집기가 아닙니다.\n\nPNG, GIF, Aseprite 에셋을 가져와 재사용 가능한 Resource Composition으로 구성하고, Resource Layer와 Particle Emission을 조합하여 여러 프레임의 픽셀 이펙트를 제작·미리보기·굽기·내보내기 위한 도구입니다.",
     "preview.current_heading": "현재 구현 기능",
-    "preview.current_items": "PNG, GIF, Aseprite 에셋 가져오기\nResource Composition 제작과 키프레임 애니메이션\nSingle 및 Particle Emission Resource Layer\nLinear, Orbit, Helix 파티클 이동\nParticle Local Perspective와 안정적 깊이 정렬\nLayer Space 및 호환 Surface 2.5D 변형\nCanvas Guide와 직접 조작 Gizmo\nTimeline 재생, 스크러빙, Undo/Redo\nPreview, Bake, PNG 및 PNG Sequence 내보내기\nCompact Project Format v9과 Atomic Save\n기존 프로젝트 형식 마이그레이션\n한국어와 영어 인터페이스",
+    "preview.current_items": "PNG, GIF, Aseprite 에셋 가져오기\nResource Composition 제작과 키프레임 애니메이션\nSingle 및 Particle Emission Resource Layer\nLinear, Orbit, Helix 파티클 이동\nParticle Local Perspective와 안정적 깊이 정렬\nLayer Space 및 호환 Surface 2.5D 변형\nCanvas Guide와 직접 조작 Gizmo\nTimeline 재생, 스크러빙, Undo/Redo\nPreview, Bake, PNG 및 PNG Sequence 내보내기\nCompact Project Format v10과 Atomic Save\n기존 프로젝트 형식 마이그레이션\n한국어와 영어 인터페이스",
     "preview.future_heading": "앞으로 개발할 기능",
     "preview.future_items": "전체 기능의 추가 안정화와 사용자 피드백 반영\n레이어 복제, 잠금, 드래그 재정렬과 다중 선택\n키프레임 복사·붙여넣기와 Graph Editor\nParticle별 고급 3D 위치·회전과 깊이 표현\nCustom Path, Preset과 추가 Motion/Deformation\n기본 픽셀 편집 도구\n자동 저장과 복구\n추가 Export 형식과 정식 배포 환경",
     "preview.footer": "개발 계획과 기능 범위는 테스트 결과에 따라 변경될 수 있습니다.",
@@ -774,6 +806,14 @@ KO.update({
     "status.diagnostics_copied": "진단 정보를 클립보드에 복사했습니다.",
     "error.unhandled": "예기치 않은 오류",
     "error.unhandled_body": "예기치 않은 오류가 발생했습니다. 자세한 내용은 진단 로그에 기록되었습니다.\n\n프로젝트를 자동 저장하거나 기존 파일을 교체하지 않았습니다. 편집기를 계속 사용할 수 있다면 다른 파일로 저장해 주세요.\n\n원인: {reason}",
+})
+
+KO.update({
+    "layer.lock":"레이어 잠금", "layer.unlock":"레이어 잠금 해제", "layer.solo":"레이어 Solo", "layer.unsolo":"레이어 Solo 해제",
+    "layer.locked":"레이어가 잠겨 있습니다", "layer.unlock_before_editing":"편집하려면 먼저 잠금을 해제하세요.",
+    "layer.locked_delete":"잠긴 레이어는 삭제할 수 없습니다. 먼저 잠금을 해제하세요.",
+    "tooltip.layer.lock":"레이어 잠금\nTransform, Keyframe, 순서 변경과 삭제를 방지합니다. 선택, 표시/숨김, Solo와 복제는 계속 사용할 수 있습니다.",
+    "tooltip.layer.solo":"레이어 Solo\nSolo된 표시 레이어만 편집기에서 미리봅니다. PNG/Sequence/Bake 출력에는 영향을 주지 않습니다.",
 })
 
 

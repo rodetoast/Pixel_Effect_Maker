@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.06 - 2026-08-13
+
+- Added runtime-only stable-ID Layer multi-selection to Resource and Effect editors with Click, Ctrl+Click, Shift+Click, and focus-scoped Ctrl+A.
+- Added one-gesture/one-Undo batch Duplicate, drag reorder, Delete, Lock/Unlock, Solo/Unsolo, Show/Hide, Front, and Back while retaining Primary-only inspector, gizmo, Auto-Key, and keyframe editing.
+- Kept logical Effect Resource Layers as the selection authority and mapped that state onto Generated Timeline rows; selection is not serialized and project format remains v10.
+- Locked layers allow duplicate, visibility, Solo, and lock-state batches, while any locked member atomically rejects drag, delete, Front, or Back.
+
+## v0.0.05 - 2026-08-13
+
+- Added persistent, undoable Resource/Effect Layer Lock and multi-Solo controls with stable-ID Duplicate/Drag integration.
+- Lock now guards property, transform, gizmo, keyframe, reorder, and delete mutation entry points while keeping selection, visibility, inspection, Solo, unlock, and duplicate available.
+- Solo is an editor-preview-only render filter; PNG, PNG Sequence, Bake, and final composition render paths ignore it.
+- Advanced project format to v10; v9 projects load Lock/Solo as disabled and are not rewritten until the user saves.
+
+## Unreleased — Layer Workflow Essentials #1
+
+- Added one-command Duplicate for Resource Composition Layers and Effect Resource Layers, with stable new IDs, unique names, shared Source/Resource references, and independent transforms, particles, motion tracks and keyframes.
+- Added direct drag-and-drop reorder to both layer lists while retaining the existing Front/Back buttons and the `List Top = Canvas Front` convention.
+- Multi-index drops commit once, preserve the moved layer selection, update Timeline/Inspector/Canvas state, and create no revision, render or Undo entry for a no-op drop.
+- Added list-focused `Ctrl+D`, bilingual Duplicate controls and exact Undo/Redo plus v9 Save/Reload regression coverage without introducing Lock, Solo or multi-select.
+
 ## Unreleased — Resource Playback Speed Range & Undo Stability
 
 - Centralized the Particle Resource playback-speed input range at 0.01×–16× with 0.1 steps and three decimals; fractional, 2× and 3× playback remain supported.
