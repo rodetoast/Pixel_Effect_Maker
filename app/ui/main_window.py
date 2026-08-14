@@ -49,6 +49,7 @@ from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE, PLACEMENT_SINGLE
 from app.models.layer_parenting import surviving_parent_dependencies, would_create_parent_cycle
 from app.services.layer_parenting_service import effect_local_affine, set_parent_keep_world
+from app.services.multi_transform_service import apply_effect_multi_transform,build_effect_multi_transform_context,set_effect_local_property,validate_multi_transform_selection
 from app.services.clip_service import create_clip_from_generator, update_clip_from_generator
 from app.services.particle_render_service import apply_particle_frames, render_particle_frames, invalidate_particle_render_caches
 from app.services.particle_preview_service import ParticlePreviewManager
@@ -587,6 +588,7 @@ class MainWindow(QMainWindow):
             panel.transform_gizmo_changed.connect(self._set_resource_transform_gizmo)
             panel.transform_panel.surface_transform_changed.connect(self.update_resource_surface_transform)
             panel.transform_panel.advanced_enabled_changed.connect(self.set_resource_layer_advanced_enabled)
+            panel.transform_panel.batch_transform_changed.connect(self.update_selected_resource_layer_transform_property)
         self.effect_group_inspector.rename_requested.connect(self.rename_effect_group);self.effect_group_inspector.state_requested.connect(self.set_effect_group_state)
         self.particle_preview_manager.preview_ready.connect(self._particle_preview_ready)
         self.particle_preview_manager.preview_failed.connect(self._particle_preview_failed)
@@ -669,7 +671,13 @@ class MainWindow(QMainWindow):
         self.redo_action.setText(t("action.redo") if not self.application_undo_stack.redoText() else t("action.redo_named").format(name=self.application_undo_stack.redoText()))
 
     def apply_undo_value(self,target_id,field,value) -> None:
-        if field=="effect_layer_batch":
+        if field=="effect_multi_transforms":
+            by_id={item.id:item for item in self.project.effect_resource_layers}
+            for identifier,transform in value.items():
+                if identifier in by_id:by_id[identifier].layer_transform=deepcopy(transform)
+            for current in self._effect_transform_affected_layers(value):invalidate_effect_resource_layer_base(current.id);apply_effect_resource_layer_current_frame(self.project,current,self.frame_index)
+            self._sync_resource_layer_adapters();self._refresh_all();self.select_resource_layer(self.effect_layer_selection.primary_id,preserve_selection=True)
+        elif field=="effect_layer_batch":
             self._restore_effect_batch_raw(value);self._refresh_all();self.select_resource_layer(self.effect_layer_selection.primary_id,preserve_selection=True)
         elif field=="effect_layer_order":
             resource_by_id={item.id:item for item in self.project.effect_resource_layers};layer_by_id={item.id:item for item in self.project.layers}
@@ -1716,7 +1724,17 @@ class MainWindow(QMainWindow):
             effective_locked=self._effect_layer_locked(layer)
             if hasattr(self.composition_layer_properties,"set_locked"):self.composition_layer_properties.set_locked(effective_locked)
             self.canvas.set_effect_guide(layer.id,"composition_layer",layer.as_composition_layer(),locked=effective_locked)
-        if layer.advanced_transform_enabled and not self._effect_layer_locked(layer):self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
+        selected_leaves,reason=validate_multi_transform_selection(self.project.effect_resource_layers,self.effect_layer_selection.selected_ids,group_ids=[item.id for item in self.project.effect_layer_groups],effectively_locked=self._effect_layer_locked);multi_context=None
+        if selected_leaves and reason is None:
+            try:multi_context=build_effect_multi_transform_context(self.project,self.effect_layer_selection.selected_ids,self.frame_index)
+            except ValueError:multi_context=None
+        active_transform_panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;active_transform_panel.set_multi_layers(selected_leaves if multi_context else [],self.frame_index)
+        if multi_context:
+            mode=self.canvas.resource_transform_mode if self.canvas.resource_transform_mode in {"move","rotate_z","scale"} else "move";self.canvas.set_multi_resource_layer_transform(multi_context,mode=mode)
+        elif len(self.effect_layer_selection.selected_ids)>1 and reason in {"group","locked"}:
+            try:self.canvas.set_multi_resource_layer_transform(build_effect_multi_transform_context(self.project,self.effect_layer_selection.selected_ids,self.frame_index),mode=self.canvas.resource_transform_mode,gizmo_enabled=False)
+            except ValueError:self.canvas.set_resource_layer_transform(None,None,mode=self.canvas.resource_transform_mode)
+        elif layer.advanced_transform_enabled and not self._effect_layer_locked(layer):self.canvas.set_resource_layer_transform(layer.id,layer.layer_transform,mode=self.canvas.resource_transform_mode)
         else:self.canvas.set_resource_layer_transform(None,None,mode=self.canvas.resource_transform_mode)
         generated=next((item for item in self.project.layers if item.id==layer.generated_layer_id),None)
         if generated is not None:self.layer_index=self.project.layers.index(generated);self.canvas.set_layer(self.layer_index)
@@ -1756,6 +1774,16 @@ class MainWindow(QMainWindow):
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer is None or self._effect_layer_locked(layer):return
         self.application_undo_stack.push(EditorValueCommand(self,identifier,f"resource_layer_transform:{property_id}",layer.layer_transform,transform,"Resource Layer 2.5D Transform",704))
+
+    def update_selected_resource_layer_transform_property(self,property_id,value) -> None:
+        layers,reason=validate_multi_transform_selection(self.project.effect_resource_layers,self.effect_layer_selection.selected_ids,group_ids=[item.id for item in self.project.effect_layer_groups],effectively_locked=self._effect_layer_locked)
+        if reason:self._report_effect_multi_transform_block(reason);return
+        before={layer.id:deepcopy(layer.layer_transform) for layer in layers};changed=False
+        for layer in layers:changed=set_effect_local_property(layer,property_id,self.frame_index,value) or changed
+        if not changed:return
+        after={layer.id:deepcopy(layer.layer_transform) for layer in layers}
+        for layer in layers:layer.layer_transform=deepcopy(before[layer.id])
+        self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_transform","effect_multi_transforms",before,after,"Edit Selected Local Transform"))
 
     def update_resource_surface_transform(self,identifier,transform) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
@@ -1798,6 +1826,14 @@ class MainWindow(QMainWindow):
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_settings",before,after,"Delete Particle Motion Keyframe"))
 
     def _set_resource_transform_gizmo(self,identifier,mode) -> None:
+        layers,reason=validate_multi_transform_selection(self.project.effect_resource_layers,self.effect_layer_selection.selected_ids,group_ids=[item.id for item in self.project.effect_layer_groups],effectively_locked=self._effect_layer_locked)
+        if len(self.effect_layer_selection.selected_ids)>1 and reason:
+            self._report_effect_multi_transform_block(reason);return
+        if layers and reason is None:
+            if mode not in {"move","rotate_z","scale"}:return
+            try:self.canvas.set_multi_resource_layer_transform(build_effect_multi_transform_context(self.project,self.effect_layer_selection.selected_ids,self.frame_index),mode=mode)
+            except ValueError:pass
+            return
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer and not self._effect_layer_locked(layer):self.canvas.set_resource_layer_transform(identifier,layer.layer_transform,mode=mode)
 
@@ -1811,6 +1847,7 @@ class MainWindow(QMainWindow):
         token=self.canvas.proxy_prewarm_token(layer,base_key);self.interactive_proxy_prewarm.schedule(token,0)
 
     def _resource_transform_gizmo_changed(self,identifier,transform,final) -> None:
+        if identifier=="__multi__":return self._effect_multi_gizmo_changed(transform,final)
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if layer is None or self._effect_layer_locked(layer):return
         if not hasattr(self,"_resource_transform_before"):self._resource_transform_before={}
@@ -1830,10 +1867,52 @@ class MainWindow(QMainWindow):
             self.transform_inspector_timer.stop();before=self._resource_transform_before.pop(identifier);self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_transform",before,transform,"2.5D Transform Gizmo"));self.canvas.apply_interactive_transform_proxy(layer);self.finalize_resource_layer_transform(identifier);panel.set_layer(layer,self.frame_index);self._pending_transform_inspector=None
 
     def _resource_transform_gizmo_cancelled(self,identifier,transform) -> None:
+        if identifier=="__multi__":
+            before=getattr(self,"_effect_multi_gizmo_before",None)
+            if before:
+                by_id={item.id:item for item in self.project.effect_resource_layers}
+                for key,value in before.items():by_id[key].layer_transform=deepcopy(value)
+                self._effect_multi_gizmo_before=None;self._effect_multi_gizmo_context=None;self._refresh_all();self.select_resource_layer(self.effect_layer_selection.primary_id,preserve_selection=True)
+            return
         self.transform_inspector_timer.stop();self._pending_transform_inspector=None;before=getattr(self,"_resource_transform_before",{}).pop(identifier,transform);layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         self.interactive_gizmo_renderer.cancel();self.interactive_proxy_prewarm.cancel();self.canvas.clear_interactive_transform_proxy(update=True)
         if layer is not None:
             self.canvas.set_resource_layer_transform(identifier,before,mode=self.canvas.resource_transform_mode);panel=self.particle_properties.transform_panel if layer.placement_mode==PLACEMENT_PARTICLE else self.composition_layer_properties.transform_panel;panel.set_layer(layer,self.frame_index);self.timeline.set_resource_layer_key_marker(self.project,layer,self.frame_index)
+
+    def _effect_multi_gizmo_changed(self,payload,final):
+        if final:
+            before=getattr(self,"_effect_multi_gizmo_before",None)
+            if not before:return False
+            by_id={item.id:item for item in self.project.effect_resource_layers};after={identifier:deepcopy(by_id[identifier].layer_transform) for identifier in before}
+            for identifier,value in before.items():by_id[identifier].layer_transform=deepcopy(value)
+            self._effect_multi_gizmo_before=None;self._effect_multi_gizmo_context=None
+            if before!=after:self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_transform","effect_multi_transforms",before,after,"Transform Selected Effect Layers"))
+            return True
+        layers,reason=validate_multi_transform_selection(self.project.effect_resource_layers,self.effect_layer_selection.selected_ids,group_ids=[item.id for item in self.project.effect_layer_groups],effectively_locked=self._effect_layer_locked)
+        if reason:self._report_effect_multi_transform_block(reason);return False
+        if getattr(self,"_effect_multi_gizmo_context",None) is None:
+            try:self._effect_multi_gizmo_context=build_effect_multi_transform_context(self.project,self.effect_layer_selection.selected_ids,self.frame_index)
+            except ValueError:return False
+            roots=set(self._effect_multi_gizmo_context.transform_root_ids);self._effect_multi_gizmo_before={layer.id:deepcopy(layer.layer_transform) for layer in self.project.effect_resource_layers if layer.id in roots}
+        by_id={item.id:item for item in self.project.effect_resource_layers}
+        for identifier,value in self._effect_multi_gizmo_before.items():by_id[identifier].layer_transform=deepcopy(value)
+        try:changed=apply_effect_multi_transform(self.project,self._effect_multi_gizmo_context,payload["operation"],payload["value"],self.frame_index)
+        except ValueError:return False
+        if changed:
+            for current in self._effect_transform_affected_layers(self._effect_multi_gizmo_before):invalidate_effect_resource_layer_base(current.id);apply_effect_resource_layer_current_frame(self.project,current,self.frame_index)
+            self._sync_resource_layer_adapters();self.canvas.update()
+        return changed
+
+    def _report_effect_multi_transform_block(self,reason):
+        key="multi_transform.group_block" if reason=="group" else "multi_transform.locked_block" if reason=="locked" else "multi_transform.selection_block";self.statusBar().showMessage(self.localization.text(key),4000)
+
+    def _effect_transform_affected_layers(self,root_ids):
+        affected=set(root_ids);changed=True
+        while changed:
+            changed=False
+            for layer in self.project.effect_resource_layers:
+                if layer.parent_id in affected and layer.id not in affected:affected.add(layer.id);changed=True
+        return [layer for layer in self.project.effect_resource_layers if layer.id in affected]
 
     def _flush_transform_inspector_sync(self):
         pending=self._pending_transform_inspector;self._pending_transform_inspector=None

@@ -13,6 +13,7 @@ from app.models.resource_composition import CompositionLayer, ResourceCompositio
 from app.models.layer_group import LayerGroup,group_node,layer_node
 from app.models.layer_parenting import surviving_parent_dependencies, would_create_parent_cycle
 from app.services.layer_parenting_service import resource_local_affine, set_parent_keep_world
+from app.services.multi_transform_service import apply_resource_multi_transform,build_resource_multi_transform_context,set_resource_local_component,validate_multi_transform_selection
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.ui.interface_settings_dialog import timeline_frame_width
 
@@ -42,7 +43,7 @@ class ResourceEditorWidget(QWidget):
     import_requested=Signal(object);pivot_changed=Signal(str,str,float,float);create_emitter_requested=Signal(str,str);add_to_effect_requested=Signal(str,str,str);reimport_requested=Signal(str,str);delete_requested=Signal(str,str);resource_selected=Signal(str,str);composition_changed=Signal(str)
 
     def __init__(self,settings,parent=None):
-        super().__init__(parent);self.setAcceptDrops(True);self.settings=settings;self.localization=None;self.undo_stack=None;self._applying_command=False;self.controller=ResourceEditorController(self);self.layer_selection=LayerSelectionState();self.expanded_group_ids=set();self.project=None;self._playing=False;self._last_asset=None;self._gizmo_before={};root=QVBoxLayout(self);self.vertical_splitter=QSplitter(Qt.Orientation.Vertical);self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False);self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setStretchFactor(2,0)
+        super().__init__(parent);self.setAcceptDrops(True);self.settings=settings;self.localization=None;self.undo_stack=None;self._applying_command=False;self.controller=ResourceEditorController(self);self.layer_selection=LayerSelectionState();self.expanded_group_ids=set();self.project=None;self._playing=False;self._last_asset=None;self._gizmo_before={};self._multi_gizmo_context=None;self._multi_gizmo_before=None;root=QVBoxLayout(self);self.vertical_splitter=QSplitter(Qt.Orientation.Vertical);self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False);self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setStretchFactor(2,0)
         self.browser=AssetBrowserPanel();self.center_stack=QStackedWidget();self.empty=ResourceStartPanel();self.asset_canvas=AssetPreviewCanvas();self.asset_strip=AssetFrameStrip();asset_center=QWidget();asset_layout=QVBoxLayout(asset_center);asset_layout.addWidget(self.asset_canvas,1);asset_tools=QHBoxLayout();self.asset_fit=QPushButton();self.asset_actual=QPushButton();asset_tools.addStretch();asset_tools.addWidget(self.asset_fit);asset_tools.addWidget(self.asset_actual);asset_layout.addLayout(asset_tools);asset_layout.addWidget(self.asset_strip);self.composition_canvas=CompositionCanvas();self.center_stack.addWidget(self.empty);self.center_stack.addWidget(asset_center);self.center_stack.addWidget(self.composition_canvas)
         self.browser.setMinimumWidth(180);self.browser.setMaximumWidth(320);self.browser.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.center_stack.setMinimumWidth(320);self.inspector_stack=QStackedWidget();self.empty_inspector=QWidget();self.asset_inspector=AssetInspectorWidget();self.composition_inspector=CompositionInspector();self.layer_inspector=LayerInspector();self.group_inspector=GroupInspector();[self.inspector_stack.addWidget(widget) for widget in (self.empty_inspector,self.asset_inspector,self.composition_inspector,self.layer_inspector,self.group_inspector)];self.inspector_stack.setMinimumWidth(280);self.inspector_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);[self.splitter.addWidget(widget) for widget in (self.browser,self.center_stack,self.inspector_stack)];self.vertical_splitter.setChildrenCollapsible(False);self.vertical_splitter.setStretchFactor(0,1);self.vertical_splitter.setStretchFactor(1,0);self.vertical_splitter.addWidget(self.splitter)
         self.composition_timeline=CompositionTimeline();self.composition_timeline.set_frame_cell_width(timeline_frame_width(settings));self.composition_timeline.setMinimumHeight(120);self.vertical_splitter.addWidget(self.composition_timeline);root.addWidget(self.vertical_splitter,1);self.timeline=QTableWidget(self);self.timeline.hide();self.splitter.splitterMoved.connect(self._save_horizontal_splitter);self.vertical_splitter.splitterMoved.connect(self._save_vertical_splitter);QTimer.singleShot(0,self._restore_splitters)
@@ -51,7 +52,7 @@ class ResourceEditorWidget(QWidget):
         self.browser.import_requested.connect(lambda:self.import_requested.emit(None));self.browser.asset_selected.connect(self._select_asset);self.browser.composition_selected.connect(lambda identifier:self.controller.select_composition(identifier));self.browser.asset_delete_requested.connect(self.delete_requested);self.browser.composition_delete_requested.connect(self._delete_composition);self.asset_strip.frame_selected.connect(self.set_frame);self.asset_inspector.create_requested.connect(self._create_dialog);self.asset_inspector.reimport_requested.connect(self._reimport);self.asset_inspector.pivot_changed.connect(self._asset_pivot)
         self.asset_fit.clicked.connect(self.asset_canvas.fit_to_view);self.asset_actual.clicked.connect(self.asset_canvas.actual_pixels)
         self.empty.import_button.clicked.connect(lambda:self.import_requested.emit(None));self.empty.blank_button.clicked.connect(self._create_blank_dialog)
-        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.parent_changed.connect(lambda parent_id:self.set_layer_parent(self.selected_layer.id,parent_id) if self.selected_layer else None);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
+        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.parent_changed.connect(lambda parent_id:self.set_layer_parent(self.selected_layer.id,parent_id) if self.selected_layer else None);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.batch_property_value_requested.connect(self._batch_property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
         self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.selection_requested.connect(self.select_layer_with_modifiers);self.composition_timeline.select_all_requested.connect(self.select_all_layers);self.composition_timeline.batch_command_requested.connect(self.batch_command);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe);self.composition_timeline.move_keyframe_requested.connect(self._move_keyframe)
         self.composition_timeline.add_layer_requested.connect(self.add_asset_layer);self.composition_timeline.duplicate_layer_requested.connect(self.duplicate_layer);self.composition_timeline.remove_layer_requested.connect(self.remove_layer);self.composition_timeline.move_layer_requested.connect(self.move_layer);self.composition_timeline.reorder_layer_requested.connect(self.reorder_layers)
         self.composition_timeline.lock_requested.connect(self.set_layer_locked);self.composition_timeline.solo_requested.connect(self.set_layer_solo)
@@ -130,7 +131,11 @@ class ResourceEditorWidget(QWidget):
             if state.layer_id in ui_ids and state.layer_id!=self.layer_selection.primary_id:self.layer_selection.restore({"selected_ids":[state.layer_id],"primary_id":state.layer_id,"anchor_id":state.layer_id},ui_ids)
             preferred=self.layer_selection.primary_id or state.layer_id;primary=self.layer_selection.repair(ui_ids,preferred,allow_empty=state.layer_id is None and not self.layer_selection.selected_ids);state.layer_id=primary if any(item.id==primary for item in composition.layers) else None;layer=self.controller.layer
             self.composition_timeline.set_available_sources(self.project)
-            group=composition.group_by_id(primary);self.inspector_stack.setCurrentWidget(self.group_inspector if group else self.layer_inspector if layer else self.composition_inspector);self.group_inspector.set_group(group);source=self._layer_source(layer);self.composition_canvas.set_context(self.project,composition,layer,state.frame);self.composition_inspector.set_composition(composition);self.layer_inspector.set_layer(layer,source,state.frame);self.layer_inspector.set_parent_candidates(composition.layers);self.layer_inspector.set_mode(state.gizmo_mode);self.composition_canvas.set_mode(state.gizmo_mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[state.gizmo_mode]) if self.localization else state.gizmo_mode);self.composition_timeline.refresh(composition,layer,state.frame,self.layer_selection.selected_ids,self.layer_selection.primary_id,self.expanded_group_ids)
+            group=composition.group_by_id(primary);self.inspector_stack.setCurrentWidget(self.group_inspector if group else self.layer_inspector if layer else self.composition_inspector);self.group_inspector.set_group(group);source=self._layer_source(layer);selected_leaves,reason=validate_multi_transform_selection(composition.layers,self.layer_selection.selected_ids,group_ids=[item.id for item in composition.groups],effectively_locked=composition.effective_locked);multi_context=None
+            if selected_leaves and reason is None:
+                try:multi_context=build_resource_multi_transform_context(composition,self.layer_selection.selected_ids,state.frame)
+                except ValueError:multi_context=None
+            blocked=len(self.layer_selection.selected_ids)>1 and reason in {"group","locked"};display_leaves=[item for item in composition.layers if item.id in self.layer_selection.selected_ids];self.composition_canvas.set_context(self.project,composition,layer,state.frame,selected_leaves if multi_context else (display_leaves or ([layer] if layer else [])),multi_context.pivot if multi_context else None,multi_context is not None,blocked);self.composition_inspector.set_composition(composition);self.layer_inspector.set_layer(layer,source,state.frame);self.layer_inspector.set_multi_layers(selected_leaves if multi_context else [],state.frame);self.layer_inspector.set_parent_candidates(composition.layers);self.layer_inspector.set_mode(state.gizmo_mode);self.composition_canvas.set_mode(state.gizmo_mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[state.gizmo_mode]) if self.localization else state.gizmo_mode);self.composition_timeline.refresh(composition,layer,state.frame,self.layer_selection.selected_ids,self.layer_selection.primary_id,self.expanded_group_ids)
             count=len(self.layer_selection.selected_ids);help_text=self.localization.text("layer.multiselect_primary_help") if self.localization and count>1 else "";self.layer_inspector.title.setToolTip(help_text)
             if self.localization and layer and count>1:self.layer_inspector.title.setText(self.localization.text("layer.primary_summary").format(name=layer.name,count=count))
         self._legacy_timeline()
@@ -303,6 +308,16 @@ class ResourceEditorWidget(QWidget):
         merge_ids={"position":100,"rotation":101,"scale":102,"opacity":103,"rotation_x":104,"rotation_y":105,"perspective_strength":106}
         self._push_value(self.selected_layer.id,"track:"+property_id,before,after,"Change "+property_id.title(),merge_ids.get(property_id,-1))
 
+    def _batch_property_value(self,property_id,component,value):
+        if not self.composition:return False
+        layers,reason=validate_multi_transform_selection(self.composition.layers,self.layer_selection.selected_ids,group_ids=[item.id for item in self.composition.groups],effectively_locked=self.composition.effective_locked)
+        if reason:
+            self._report_multi_transform_block(reason);return False
+        before={layer.id:deepcopy(layer.tracks) for layer in layers};changed=False
+        for layer in layers:changed=set_resource_local_component(layer,property_id,component,self.frame_index,value) or changed
+        if not changed:return False
+        after={layer.id:deepcopy(layer.tracks) for layer in layers};self._apply_multi_tracks(before,touch=False,refresh=False);self._push_value(self.composition.id,"multi_tracks",before,after,"Edit Selected Local Transform");return True
+
     def _confirm(self,title,message,accept_key):
         box=QMessageBox(QMessageBox.Icon.Question,title,message,parent=self);accept=box.addButton(self.localization.text(accept_key),QMessageBox.ButtonRole.AcceptRole);box.addButton(self.localization.text("v2.cancel"),QMessageBox.ButtonRole.RejectRole);box.exec();return box.clickedButton() is accept
 
@@ -310,6 +325,8 @@ class ResourceEditorWidget(QWidget):
         self.controller.set_gizmo(mode);self.layer_inspector.set_mode(mode);self.composition_canvas.set_mode(mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[mode]) if self.localization else mode)
 
     def _gizmo_change(self,property_id,value,final):
+        if self.composition_canvas.multi_transform_enabled and property_id in {"position","rotation","scale"}:
+            return self._multi_gizmo_change(property_id,value,final)
         layer=self.selected_layer
         if layer is None or self._layer_effectively_locked(layer):return
         had_change=property_id in self._gizmo_before
@@ -337,12 +354,47 @@ class ResourceEditorWidget(QWidget):
             self.composition_changed.emit(self.composition.id)
 
     def _gizmo_cancel(self,property_id,value):
+        if self._multi_gizmo_before is not None:
+            self._apply_multi_tracks(self._multi_gizmo_before);self._multi_gizmo_before=None;self._multi_gizmo_context=None;self._apply_state(self.controller.state);return
         before=self._gizmo_before.pop(property_id,None);layer=self.selected_layer
         if layer is None or self._layer_effectively_locked(layer):return
         if property_id=="pivot":layer.pivot_x,layer.pivot_y=before or value
         elif before is None:layer.tracks.pop(property_id,None)
         else:layer.tracks[property_id]=before
         self.composition.touch();invalidate_composition_cache(self.composition.id);self._apply_state(self.controller.state)
+
+    def _multi_gizmo_change(self,property_id,value,final):
+        layers,reason=validate_multi_transform_selection(self.composition.layers,self.layer_selection.selected_ids,group_ids=[item.id for item in self.composition.groups],effectively_locked=self.composition.effective_locked)
+        if reason:
+            self._report_multi_transform_block(reason);return False
+        if self._multi_gizmo_context is None:
+            try:self._multi_gizmo_context=build_resource_multi_transform_context(self.composition,self.layer_selection.selected_ids,self.frame_index)
+            except ValueError:return False
+            roots=set(self._multi_gizmo_context.transform_root_ids);self._multi_gizmo_before={layer.id:deepcopy(layer.tracks) for layer in self.composition.layers if layer.id in roots}
+        self._apply_multi_tracks(self._multi_gizmo_before,touch=False,refresh=False)
+        operation={"position":"move","rotation":"rotate","scale":"scale"}[property_id]
+        try:changed=apply_resource_multi_transform(self.composition,self._multi_gizmo_context,operation,value,self.frame_index)
+        except ValueError:
+            self._apply_multi_tracks(self._multi_gizmo_before);return False
+        if changed:self.composition.touch();invalidate_composition_cache(self.composition.id);self._apply_state(self.controller.state)
+        if final:
+            before=self._multi_gizmo_before;after={identifier:deepcopy(next(layer for layer in self.composition.layers if layer.id==identifier).tracks) for identifier in before};self._apply_multi_tracks(before,touch=False,refresh=False);self._multi_gizmo_before=None;self._multi_gizmo_context=None
+            if before!=after:self._push_value(self.composition.id,"multi_tracks",before,after,"Transform Selected Resource Layers");self.composition_changed.emit(self.composition.id)
+            else:self._apply_state(self.controller.state)
+        return changed
+
+    def _apply_multi_tracks(self,value,touch=True,refresh=True):
+        by_id={layer.id:layer for layer in self.composition.layers}
+        for identifier,tracks in value.items():
+            if identifier in by_id:by_id[identifier].tracks=deepcopy(tracks)
+        if touch:self.composition.touch();invalidate_composition_cache(self.composition.id)
+        if refresh:self._apply_state(self.controller.state)
+
+    def _report_multi_transform_block(self,reason):
+        key="multi_transform.group_block" if reason=="group" else "multi_transform.locked_block" if reason=="locked" else "multi_transform.selection_block"
+        message=self.localization.text(key) if self.localization else ("Groups cannot be transformed." if reason=="group" else "Unlock selected layers before transforming." if reason=="locked" else "Select at least two leaf layers.")
+        self.composition_timeline.selection_status.setToolTip(message);status=getattr(self.window(),"statusBar",None)
+        if callable(status):status().showMessage(message,4000)
 
     def set_frame(self,index):self.stop();self.controller.set_frame(index)
     def previous_frame(self):self.set_frame(self.frame_index-1)
@@ -400,6 +452,14 @@ class ResourceEditorWidget(QWidget):
                 composition.layers=deepcopy(value)
                 if self.controller.state.composition_id==composition.id and self.controller.layer is None:self.controller.state.layer_id=composition.layers[-1].id if composition.layers else None
                 self.controller.changed()
+            return
+        if field=="multi_tracks":
+            composition=next((item for item in self.project.resource_compositions if item.id==target_id),None)
+            if composition:
+                by_id={layer.id:layer for layer in composition.layers}
+                for identifier,tracks in value.items():
+                    if identifier in by_id:by_id[identifier].tracks=deepcopy(tracks)
+                composition.touch();invalidate_composition_cache(composition.id);self.controller.changed()
             return
         if field=="layer_workflow":
             composition=next((item for item in self.project.resource_compositions if item.id==target_id),None)

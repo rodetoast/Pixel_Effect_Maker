@@ -12,7 +12,7 @@ Resource and Effect editors now support one-level Layer Groups. Select contiguou
 
 Resource and Effect Layer lists support **Lock** and multi-select **Solo**. Lock protects transforms, properties, keyframes, direct manipulation, reorder, and deletion while preserving selection, visibility, inspection, Solo, unlock, and duplication. Solo isolates visible soloed layers in the editor Canvas only; PNG, PNG Sequence, and Bake keep the normal Visibility-based final output.
 
-Resource and Effect editors support stable-ID Layer multi-select. Use `Ctrl+Click` to add or remove individual layers, `Shift+Click` for a continuous range, and list-focused `Ctrl+A` for all layers. Duplicate, drag reorder, delete, Lock/Unlock, Solo/Unsolo, Show/Hide, Front, and Back operate on the selection as one Undo step. Inspector, gizmo, property, Auto-Key, and keyframe editing remain Primary-layer-only.
+Resource and Effect editors support stable-ID Layer multi-select. Use `Ctrl+Click` to add or remove individual layers, `Shift+Click` for a continuous range, and list-focused `Ctrl+A` for all layers. Duplicate, drag reorder, delete, Lock/Unlock, Solo/Unsolo, Show/Hide, Front, and Back operate on the selection as one Undo step. Position X/Y, Rotation Z, and Scale X/Y support the v0.0.09 multi-transform workflow; other Inspector properties, direct keyframe controls, and unsupported gizmos remain Primary-layer-only.
 
 New projects start at 600×600, 12 FPS, and 12 frames (one second). Until Frames is edited directly, changing FPS keeps the default duration at one second. Blank Resource Compositions start at 300×300 and inherit the project FPS with the same one-second/manual-unlink policy.
 
@@ -173,6 +173,12 @@ Asset 내용은 기록하지 않습니다. 손상 프로젝트와 더 새로운 
 ## Parenting
 
 Resource 및 Effect의 Leaf Layer를 같은 Composition 안의 다른 Leaf에 연결하면 부모의 Position X/Y, Rotation Z, Scale X/Y를 따라갑니다. 부모를 설정·해제·변경해도 현재 재생 프레임의 화면상 Transform은 유지되며 기존 Local Keyframe은 다시 쓰지 않습니다. Rotation X/Y, Position Z와 Perspective는 각 Leaf의 Local visual deformation으로 유지됩니다. Group은 목록 정리용이며 Parenting 및 Transform과 독립적입니다.
+
+## Multi-Transform
+
+Resource Editor와 Effect Editor에서 Leaf Layer를 여러 개 선택하면 하나의 Selection Pivot을 기준으로 Canvas에서 함께 이동하고 Rotation Z를 회전하거나 Scale X/Y를 조절할 수 있습니다. Canvas 조작은 World 공간에서 계산되며, Parenting된 레이어는 각 Parent 공간의 Local Position으로 정확히 역변환됩니다. 선택된 Parent와 Child는 Canvas에서 중복 변형되지 않습니다.
+
+Inspector의 Position X/Y, Rotation Z, Scale X/Y는 각 선택 Layer의 Local Transform을 절대값으로 일괄 편집합니다. 서로 다른 값은 `—`로 표시되고, 애니메이션 중인 각 Track에는 기존 conditional Auto-Key 규칙이 적용됩니다. Group Transform과 Position Z, Rotation X/Y, Perspective, Opacity의 다중 편집은 지원하지 않습니다.
 
 ## 현재 지원하지 않는 기능
 

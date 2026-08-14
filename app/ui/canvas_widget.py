@@ -71,7 +71,7 @@ class CanvasWidget(QWidget):
         self._guide_before = None
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
-        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self._resource_parent_prefix=None;self.resource_transform_tooltips={}
+        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self._resource_parent_prefix=None;self.resource_transform_tooltips={};self.multi_resource_transform_context=None;self._resource_multi_start_angle=0.0
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
@@ -151,7 +151,7 @@ class CanvasWidget(QWidget):
     def set_resource_layer_transform(self, identifier=None, transform=None, *, mode="move") -> None:
         if self.interactive_transform_proxy is not None and self.interactive_transform_proxy.resource_layer_id!=identifier:
             self.clear_interactive_transform_proxy(update=False)
-        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None;self._resource_parent_prefix=None
+        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None;self._resource_parent_prefix=None;self.multi_resource_transform_context=None
         if identifier and self.project is not None:
             layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
             if layer is not None and layer.parent_id is not None:
@@ -160,6 +160,13 @@ class CanvasWidget(QWidget):
                 except np.linalg.LinAlgError:self._resource_parent_prefix=None
         for key in list(self._ghost_cache):
             if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
+        self.update()
+
+    def set_multi_resource_layer_transform(self,context,*,mode="move",gizmo_enabled=True):
+        self.clear_interactive_transform_proxy(update=False);self.multi_resource_transform_context=context;self.resource_transform_mode=mode;self.resource_transform_id="__multi__" if context and gizmo_enabled else None;self._resource_transform_drag=None;self._resource_parent_prefix=None
+        if context and self.project is not None:
+            self.resource_transform=EffectLayerTransform3D(position_x=context.pivot[0]-self.project.width/2,position_y=context.pivot[1]-self.project.height/2)
+        else:self.resource_transform=None
         self.update()
 
     def set_resource_transform_tooltips(self,values) -> None:
@@ -586,6 +593,9 @@ class CanvasWidget(QWidget):
         # frame installation must never hide them during direct manipulation.
         if not self.playback_mode and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
+        if not self.playback_mode and self.multi_resource_transform_context is not None:
+            painter.setPen(QPen(QColor("#74c0fc"),2));painter.setBrush(Qt.BrushStyle.NoBrush)
+            for _identifier,origin_point in self.multi_resource_transform_context.origins:painter.drawEllipse(self.canvas_to_widget(*origin_point),6,6)
         if not self.playback_mode and self.resource_transform_id and self.resource_transform is not None:
             self._paint_resource_transform_gizmo(painter)
         if hasattr(event,"rect") and event.rect()!=self.rect():self.interaction_stats["partial_paints"]+=1
@@ -635,6 +645,7 @@ class CanvasWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing,True);mode=self.resource_transform_mode
         if mode=="move":
             for name,color in (("x","#ff6b6b"),("y","#51cf66"),("z","#4dabf7")):
+                if self.multi_resource_transform_context is not None and name=="z":continue
                 axis_point=p.get("projected_z") if name=="z" else p[name];painter.setPen(QPen(QColor(color),3));painter.drawLine(center,axis_point)
                 if name=="z" and p[name]!=axis_point:painter.setPen(QPen(QColor(color),2,Qt.PenStyle.DashLine));painter.drawLine(axis_point,p[name])
                 painter.drawEllipse(p[name],5,5);painter.drawText(p[name]+QPointF(7,-5),name.upper())
@@ -650,13 +661,14 @@ class CanvasWidget(QWidget):
 
     def _hit_resource_transform(self,position):
         points=self.resource_transform_handle_positions();mode=self.resource_transform_mode
-        names=("x","y","z","center") if mode=="move" else (mode,) if mode.startswith("rotate_") else (mode,)
+        names=(("x","y","center") if self.multi_resource_transform_context is not None else ("x","y","z","center")) if mode=="move" else (("rotate_z",) if self.multi_resource_transform_context is not None and mode.startswith("rotate_") else (mode,)) if mode.startswith("rotate_") else (mode,)
         return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=12),None)
 
     def _start_resource_transform_drag(self,handle,event,event_started):
         self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self._resource_transform_changed=False;self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
         if handle.startswith("rotate_"):
             property_name=RESOURCE_TRANSFORM_HANDLE_PROPERTIES[handle][0];self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=self._resource_transform_before.value(property_name,self.frame_index)
+            center=self.resource_transform_handle_positions().get("center",event.position());self._resource_multi_start_angle=math.atan2(event.position().y()-center.y(),event.position().x()-center.x())
 
     def _set_resource_transform_interactive_value(self,transform,property_id,value):
         numeric=float(value);track=transform.tracks.get(property_id);current=transform.value(property_id,self.frame_index)
@@ -820,14 +832,14 @@ class CanvasWidget(QWidget):
         if event.button() == Qt.MouseButton.MiddleButton:
             self._panning = True; self._pan_last = event.position(); self.setCursor(Qt.CursorShape.ClosedHandCursor); event.accept(); return
         active_transform_layer = next((item for item in self.project.effect_resource_layers if item.id==self.resource_transform_id),None) if self.project is not None else None
-        transform_is_selected = active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id
+        transform_is_selected = self.multi_resource_transform_context is not None or (active_transform_layer is not None and 0<=self.layer_index<len(self.project.layers) and active_transform_layer.generated_layer_id==self.project.layers[self.layer_index].id)
         transform_handle=None
         if event.button()==Qt.MouseButton.LeftButton and transform_is_selected and self.resource_transform is not None:
             hit_started=perf_counter();handle=self._hit_resource_transform(event.position());self._record_interaction("transform_hit_test",hit_started)
             transform_handle=handle
             # Explicit axis handles must win over an overlapping Motion Guide;
             # the central free-move affordance yields to semantic Guide points.
-            if handle and handle!="center":self._start_resource_transform_drag(handle,event,event_started);return
+            if handle and (handle!="center" or self.multi_resource_transform_context is not None):self._start_resource_transform_drag(handle,event,event_started);return
         if event.button() == Qt.MouseButton.LeftButton and self.show_effect_guides and self.effect_guide_id:
             hit_started=perf_counter();handle = self._hit_guide_handle(event.position());self._record_interaction("guide_hit_test",hit_started)
             if handle:
@@ -867,6 +879,15 @@ class CanvasWidget(QWidget):
             delta=event.position()-self._pan_last;self._pan_last=event.position();self.pan_offset+=delta;self.update();event.accept();return
         if self._resource_transform_drag:
             event_started=perf_counter();old_gizmo=self._resource_transform_gizmo_bounds();value_started=perf_counter();t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag;changed=False
+            if self.multi_resource_transform_context is not None:
+                if handle in {"x","center"} or handle=="y":
+                    value=(delta.x() if handle in {"x","center"} else 0.0,delta.y() if handle in {"y","center"} else 0.0);operation="move"
+                elif handle=="rotate_z":
+                    center=self.resource_transform_handle_positions()["center"];angle=math.atan2(event.position().y()-center.y(),event.position().x()-center.x());value=math.degrees(angle-self._resource_multi_start_angle);value=round(value/15)*15 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier else value;operation="rotate"
+                elif handle=="scale":
+                    value=(max(.01,1+delta.x()/32),max(.01,1+delta.y()/32));operation="scale"
+                else:event.accept();return
+                payload={"operation":operation,"value":value};self.resource_transform_changed.emit("__multi__",payload,False);event.accept();self._record_interaction("mouse_move_total",event_started);return
             local_delta=np.array((delta.x(),delta.y()),dtype=np.float64)
             if self._resource_parent_prefix is not None:
                 try:local_delta=np.linalg.inv(self._resource_parent_prefix[:2,:2])@local_delta
@@ -940,7 +961,8 @@ class CanvasWidget(QWidget):
             self._panning=False;self.setCursor(Qt.CursorShape.ArrowCursor);event.accept();return
         if self._resource_transform_drag:
             started=perf_counter();self._resource_transform_drag=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None
-            if self._resource_transform_changed:self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True)
+            if self.multi_resource_transform_context is not None:self.resource_transform_changed.emit("__multi__",{"operation":"final","value":None},True)
+            elif self._resource_transform_changed:self.resource_transform_changed.emit(self.resource_transform_id,deepcopy(self.resource_transform),True)
             event.accept();self._record_interaction("mouse_release_total",started);return
         if self._guide_handle:
             started=perf_counter()

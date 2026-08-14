@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.09 - 2026-08-14
+
+- Added world-space Multi-Transform Move, Rotation Z, and Scale X/Y for Resource and Effect Leaf selections.
+- Added frozen world-origin AABB Selection Pivot, parent-aware world-to-local conversion, and selected Parent/Child direct-root filtering.
+- Added mixed-value Local Transform Inspector editing with atomic conditional Auto-Key and one-step Undo/Redo.
+- Kept project format v12; selection, mixed state, and Selection Pivot remain runtime-only.
+
 ## v0.0.08 - 2026-08-13
 
 - Added stable-ID leaf-to-leaf Parenting for Resource and logical Effect Resource Layers. Parent position X/Y, rotation Z, and scale X/Y are inherited without changing Group membership or render order.

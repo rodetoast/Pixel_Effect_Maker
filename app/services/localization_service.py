@@ -292,6 +292,24 @@ EN.update({
 })
 
 EN.update({
+    "multi_transform.multiple_selected":"Multiple layers selected",
+    "multi_transform.selection_pivot":"Selection Pivot",
+    "multi_transform.mixed":"Mixed",
+    "multi_transform.local_transform":"Local Transform",
+    "multi_transform.move_selected":"Move Selected",
+    "multi_transform.rotate_selected":"Rotate Selected",
+    "multi_transform.scale_selected":"Scale Selected",
+    "multi_transform.group_block":"Groups cannot be transformed. Select leaf layers only.",
+    "multi_transform.locked_block":"The selection contains a locked layer. Unlock selected layers before transforming.",
+    "multi_transform.selection_block":"Select at least two leaf layers to transform together.",
+    "multi_transform.inspector_local_help":"Multiple layers selected\nProperty edits apply to each layer's local transform.",
+    "multi_transform.inspector_tooltip":"Edit local Position X/Y, Rotation Z, and Scale X/Y for all selected layers. Different values are shown as —.",
+    "multi_transform.canvas_tooltip":"Transforms selected layers together in world space. Parented layers are converted back into each parent space.",
+    "multi_transform.parent_child_help":"Selected parent and child are not transformed twice on the Canvas.",
+    "multi_transform.primary_only":"Primary only",
+})
+
+EN.update({
     "group.group_selected":"Group Selected","group.ungroup":"Ungroup","group.rename":"Rename Group","group.duplicate":"Duplicate Group","group.delete":"Delete Group","group.empty":"Empty Group",
     "group.inspector":"Layer Group","group.name":"Group Name","group.children":"Children","group.visible":"Visible","group.locked":"Locked","group.solo":"Solo",
     "group.no_transform_help":"Groups organize layers. Groups do not have transforms or keyframes in this version.",
@@ -375,6 +393,24 @@ KO.update({
     "tooltip.resource.sprite_rotation_y":"리소스 Sprite 평면을 로컬 Y축으로 기울입니다. Particle 이동 경로는 바뀌지 않습니다.",
     "tooltip.resource.sprite_rotation_z":"이미 기울어진 리소스 Sprite 평면 안에서 회전합니다.",
     "tooltip.resource.sprite_perspective":"리소스 Sprite 평면의 2.5D 원근감만 조절합니다. Particle 이동 경로에는 영향을 주지 않습니다.",
+})
+
+KO.update({
+    "multi_transform.multiple_selected":"여러 레이어 선택",
+    "multi_transform.selection_pivot":"선택 중심점",
+    "multi_transform.mixed":"혼합 값",
+    "multi_transform.local_transform":"로컬 변형",
+    "multi_transform.move_selected":"선택 레이어 이동",
+    "multi_transform.rotate_selected":"선택 레이어 회전",
+    "multi_transform.scale_selected":"선택 레이어 크기 조절",
+    "multi_transform.group_block":"그룹은 Transform을 가지지 않습니다. 여러 레이어를 변형하려면 Leaf 레이어만 선택하세요.",
+    "multi_transform.locked_block":"선택한 레이어 중 잠긴 레이어가 있습니다. 변형하려면 먼저 잠금을 해제하세요.",
+    "multi_transform.selection_block":"함께 변형할 Leaf 레이어를 두 개 이상 선택하세요.",
+    "multi_transform.inspector_local_help":"여러 레이어 선택\n속성 입력은 각 레이어의 Local Transform에 적용됩니다.",
+    "multi_transform.inspector_tooltip":"여러 레이어의 Local Position X/Y, Rotation Z, Scale X/Y 값을 한 번에 편집합니다. 서로 다른 값은 '—'로 표시됩니다.",
+    "multi_transform.canvas_tooltip":"선택한 레이어를 World 공간에서 함께 변형합니다. Parenting된 레이어는 각 Parent 공간에 맞는 Local Transform으로 변환됩니다.",
+    "multi_transform.parent_child_help":"부모와 자식이 함께 선택되어 있어도 Canvas 변형을 중복 적용하지 않습니다.",
+    "multi_transform.primary_only":"Primary 전용",
 })
 
 KO.update({

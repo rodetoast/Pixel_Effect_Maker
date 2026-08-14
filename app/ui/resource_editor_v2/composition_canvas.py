@@ -30,17 +30,20 @@ class CompositionCanvas(QWidget):
         super().__init__(parent)
         self.setObjectName("resourceV2CompositionCanvas")
         self.setMinimumSize(320, 240); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.project = self.composition = self.layer = None; self.frame = 0; self.mode = "move"; self.mode_text = "";self._parent_prefix=None
+        self.project = self.composition = self.layer = None; self.frame = 0; self.mode = "move"; self.mode_text = "";self._parent_prefix=None;self.selected_layers=[];self.selection_pivot=None;self.multi_transform_enabled=False;self.transform_blocked=False;self._parent_prefixes={};self._multi_drag_value=None
         self.zoom = 8; self.pan = QPointF(); self._panning = False; self._drag = None; self._drag_axis = None; self._hover_handle=None; self._start_point = QPointF(); self._start_value = None; self._start_angle = 0.0;self._alpha_bounds_cache={}
         self.setMouseTracking(True)
 
-    def set_context(self, project, composition, layer, frame):
+    def set_context(self, project, composition, layer, frame, selected_layers=None, selection_pivot=None, multi_transform_enabled=False, transform_blocked=False):
         if project is not self.project:self._alpha_bounds_cache.clear()
-        self.project, self.composition, self.layer, self.frame = project, composition, layer, frame;self._parent_prefix=None
-        if composition is not None and layer is not None and (layer.parent_id is not None or not np.allclose(offset_matrix(layer.parent_offset),np.eye(3))):
-            worlds=resolve_world_affines(composition.layers,frame,lambda item,value:resource_local_affine(item,value,composition));local=resource_local_affine(layer,frame,composition)
-            try:self._parent_prefix=worlds[layer.id]@np.linalg.inv(local)
-            except np.linalg.LinAlgError:self._parent_prefix=None
+        self.project, self.composition, self.layer, self.frame = project, composition, layer, frame;self._parent_prefix=None;self.selected_layers=list(selected_layers or ([layer] if layer else []));self.selection_pivot=selection_pivot;self.multi_transform_enabled=bool(multi_transform_enabled);self.transform_blocked=bool(transform_blocked);self._parent_prefixes={}
+        if composition is not None and self.selected_layers:
+            worlds=resolve_world_affines(composition.layers,frame,lambda item,value:resource_local_affine(item,value,composition))
+            for item in self.selected_layers:
+                local=resource_local_affine(item,frame,composition)
+                try:self._parent_prefixes[item.id]=worlds[item.id]@np.linalg.inv(local)
+                except np.linalg.LinAlgError:self._parent_prefixes[item.id]=None
+            self._parent_prefix=self._parent_prefixes.get(layer.id) if layer else None
         self.update()
 
     def set_mode(self, mode, text=""):
@@ -76,15 +79,18 @@ class CompositionCanvas(QWidget):
         if source is None: return QPolygonF()
         x0,y0,x1,y1=self._source_alpha_bounds(source);cx=self.composition.width/2;cy=self.composition.height/2
         bounds=(cx+x0-layer.pivot_x,cy+y0-layer.pivot_y,cx+x1-layer.pivot_x,cy+y1-layer.pivot_y)
-        projected,valid=projected_layer_quad(bounds,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
+        projected,valid=projected_layer_quad(bounds,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefixes.get(layer.id))
         return QPolygonF([QPointF(float(x),float(y)) for (x,y),ok in zip(projected,valid) if ok])
 
     def _polygon_widget(self, layer):
         return QPolygonF([self.to_widget(point) for point in self.selection_polygon_comp(layer)])
 
     def _pivot_widget(self, layer):
-        point=project_local_point(self.composition.width/2,self.composition.height/2,0,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
+        point=project_local_point(self.composition.width/2,self.composition.height/2,0,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefixes.get(layer.id))
         return self.to_widget(QPointF(point.x,point.y))
+
+    def _gizmo_pivot_widget(self):
+        return self.to_widget(QPointF(*self.selection_pivot)) if self.multi_transform_enabled and self.selection_pivot is not None else self._pivot_widget(self.layer)
 
     def pivot_marker_position(self,layer=None):
         """Projected screen position of the selected layer's local pivot."""
@@ -109,6 +115,7 @@ class CompositionCanvas(QWidget):
         return {"center":center,"x":x_axis,"y":y_axis,"z":z_axis}
 
     def rotation_handle_position(self,axis,layer=None):
+        if self.multi_transform_enabled and layer is None and axis=="z":return self._gizmo_pivot_widget()+QPointF(0,-52)
         axes=self.projected_axis_positions(layer)
         if not axes:return QPointF()
         if axis=="x":return axes["y"]
@@ -134,9 +141,11 @@ class CompositionCanvas(QWidget):
         return self.rotation_handle_position("z",layer)
 
     def move_handle_positions(self,layer=None):
-        pivot=self._pivot_widget(layer or self.layer);return {"free":pivot,"x":pivot+QPointF(38,0),"y":pivot+QPointF(0,-38)}
+        pivot=self._gizmo_pivot_widget() if layer is None else self._pivot_widget(layer);return {"free":pivot,"x":pivot+QPointF(38,0),"y":pivot+QPointF(0,-38)}
 
     def scale_handle_positions(self,layer=None):
+        if self.multi_transform_enabled and layer is None:
+            pivot=self._gizmo_pivot_widget();return {"uniform":pivot+QPointF(38,38),"x":pivot+QPointF(38,0),"y":pivot+QPointF(0,38)}
         polygon=self._polygon_widget(layer or self.layer)
         if len(polygon)<4:return {}
         return {"uniform":polygon[2],"x":(polygon[1]+polygon[2])/2,"y":(polygon[0]+polygon[1])/2,"uniform0":polygon[0],"uniform1":polygon[1],"uniform3":polygon[3]}
@@ -162,11 +171,18 @@ class CompositionCanvas(QWidget):
             for x in range(int(rect.left()),int(rect.right())+1,tile): painter.fillRect(x,y,tile,tile,QColor("#dfe3e8") if ((x-int(rect.left()))//tile+(y-int(rect.top()))//tile)%2 else QColor("#aeb4bc"))
         image=QImage(pixels.data,self.composition.width,self.composition.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy(); painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False); painter.drawPixmap(rect,QPixmap.fromImage(image),QRectF(0,0,self.composition.width,self.composition.height)); painter.setPen(QPen(QColor("#6ea8fe"),1)); painter.drawRect(rect)
         if self.layer is None: return
-        polygon=self._polygon_widget(self.layer); painter.setPen(QPen(QColor("#51cf66"),2)); painter.drawPolygon(polygon)
-        pivot=self._pivot_widget(self.layer);self._paint_pivot_marker(painter,self.layer)
+        for selected in self.selected_layers:
+            polygon=self._polygon_widget(selected);painter.setPen(QPen(QColor("#74c0fc") if selected is not self.layer else QColor("#51cf66"),2));painter.drawPolygon(polygon)
+        pivot=self._gizmo_pivot_widget()
+        if self.multi_transform_enabled:
+            painter.setPen(QPen(QColor("#ffffff"),2));painter.setBrush(QColor(32,36,43,210));painter.drawEllipse(pivot,6,6);painter.drawText(pivot+QPointF(9,-8),"Selection Pivot")
+        else:self._paint_pivot_marker(painter,self.layer)
+        if self.transform_blocked:return
         if self.mode in {"rotate_x","rotate_y","rotate"}:
+            if self.multi_transform_enabled and self.mode!="rotate":return
             axis={"rotate_x":"x","rotate_y":"y","rotate":"z"}[self.mode];colors={"x":"#ff6b6b","y":"#51cf66","z":"#4dabf7"};handle=self.rotation_handle_position(axis);ring=self._rotation_ring(axis);painter.setPen(QPen(QColor(colors[axis]),2))
-            if len(ring)>1:painter.drawPolyline(ring)
+            if self.multi_transform_enabled:painter.drawEllipse(pivot,42,42)
+            elif len(ring)>1:painter.drawPolyline(ring)
             painter.drawLine(pivot,handle);painter.setBrush(QColor(colors[axis]));painter.drawEllipse(handle,6,6);painter.drawText(handle+QPointF(7,-5),axis.upper())
         elif self.mode=="scale":
             handles=self.scale_handle_positions();painter.setBrush(QColor("#74c0fc"));
@@ -184,9 +200,11 @@ class CompositionCanvas(QWidget):
             self._panning=True; self._start_point=event.position()-self.pan; event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.composition is None: return super().mousePressEvent(event)
         point=event.position(); comp_point=self.to_comp(point); prop=None
-        if self.layer is not None:
+        if self.layer is not None and not self.transform_blocked:
             polygon=self._polygon_widget(self.layer)
-            if self.mode=="pivot" and self._near(point,self._pivot_widget(self.layer)): prop="pivot"
+            if self.multi_transform_enabled and self.mode=="rotate" and self._near(point,self.rotation_handle_position("z")):prop="rotation"
+            elif self.multi_transform_enabled and self.mode in {"rotate_x","rotate_y","pivot"}:prop=None
+            elif self.mode=="pivot" and self._near(point,self._pivot_widget(self.layer)): prop="pivot"
             elif self.mode in {"rotate_x","rotate_y","rotate"} and self._near(point,self.rotation_handle_position({"rotate_x":"x","rotate_y":"y","rotate":"z"}[self.mode])): prop={"rotate_x":"rotation_x","rotate_y":"rotation_y","rotate":"rotation"}[self.mode]
             elif self.mode=="scale":
                 handle=next((name for name,pos in self.scale_handle_positions().items() if self._near(point,pos)),None)
@@ -194,9 +212,9 @@ class CompositionCanvas(QWidget):
             elif self.mode=="move":
                 handle=next((name for name,pos in self.move_handle_positions().items() if name!="free" and self._near(point,pos)),None)
                 if handle:prop="position";self._drag_axis=handle
-                elif polygon.containsPoint(point,Qt.FillRule.OddEvenFill):prop="position";self._drag_axis="free"
+                elif (any(self._polygon_widget(item).containsPoint(point,Qt.FillRule.OddEvenFill) for item in self.selected_layers) if self.multi_transform_enabled else polygon.containsPoint(point,Qt.FillRule.OddEvenFill)):prop="position";self._drag_axis="free"
         if prop is not None and not self.layer.locked:
-            self._drag=prop; self._start_point=comp_point; self._start_value=[self.layer.pivot_x,self.layer.pivot_y] if prop=="pivot" else deepcopy(self.layer.value(prop,self.frame)); pivot=self.to_comp(self._pivot_widget(self.layer)); self._start_angle=math.atan2(comp_point.y()-pivot.y(),comp_point.x()-pivot.x()); self.drag_started.emit(); event.accept(); return
+            self._drag=prop; self._start_point=comp_point; self._start_value=[self.layer.pivot_x,self.layer.pivot_y] if prop=="pivot" else deepcopy(self.layer.value(prop,self.frame)); pivot=self.to_comp(self._gizmo_pivot_widget()); self._start_angle=math.atan2(comp_point.y()-pivot.y(),comp_point.x()-pivot.x());self._multi_drag_value={"position":(0.0,0.0),"rotation":0.0,"scale":(1.0,1.0)}.get(prop); self.drag_started.emit(); event.accept(); return
         hit=self._hit_layer(comp_point)
         if hit is not self.layer:self.layer_selected.emit(None if hit is None else hit.id)
         event.accept()
@@ -205,14 +223,16 @@ class CompositionCanvas(QWidget):
         if self._panning: self.pan=event.position()-self._start_point; self.update(); event.accept(); return
         if not self._drag:
             old=self._hover_handle;self._hover_handle=None
-            if self.layer is not None:
+            if self.layer is not None and not self.transform_blocked:
                 handles=self.move_handle_positions() if self.mode=="move" else self.scale_handle_positions() if self.mode=="scale" else {self.mode:self.rotation_handle_position({"rotate_x":"x","rotate_y":"y","rotate":"z"}[self.mode])} if self.mode in {"rotate_x","rotate_y","rotate"} else {}
                 self._hover_handle=next((name for name,pos in handles.items() if self._near(event.position(),pos)),None)
             if old!=self._hover_handle:self.update()
             self.setCursor(Qt.CursorShape.SizeHorCursor if self._hover_handle=="x" else Qt.CursorShape.SizeVerCursor if self._hover_handle=="y" else Qt.CursorShape.CrossCursor if self._hover_handle else Qt.CursorShape.ArrowCursor)
             return super().mouseMoveEvent(event)
         point=self.to_comp(event.position()); delta=point-self._start_point
-        if self._drag in {"position","pivot"}:
+        if self.multi_transform_enabled and self._drag=="position":
+            dx=0 if self._drag_axis=="y" else delta.x();dy=0 if self._drag_axis=="x" else delta.y();value=(float(dx),float(dy))
+        elif self._drag in {"position","pivot"}:
             dx=0 if self._drag_axis=="y" else delta.x();dy=0 if self._drag_axis=="x" else delta.y();value=[round(self._start_value[0]+dx),round(self._start_value[1]+dy)]
             if self._drag=="position" and self._parent_prefix is not None:
                 try:
@@ -222,17 +242,18 @@ class CompositionCanvas(QWidget):
                     value=[round(self._start_value[0]+local_delta[0]),round(self._start_value[1]+local_delta[1])]
                 except np.linalg.LinAlgError:pass
         elif self._drag in {"rotation","rotation_x","rotation_y"}:
-            pivot=self.to_comp(self._pivot_widget(self.layer)); angle=math.atan2(point.y()-pivot.y(),point.x()-pivot.x()); value=self._start_value+math.degrees(angle-self._start_angle); value=round(value/15)*15 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier else value
+            pivot=self.to_comp(self._gizmo_pivot_widget()); angle=math.atan2(point.y()-pivot.y(),point.x()-pivot.x());delta_angle=math.degrees(angle-self._start_angle);value=delta_angle if self.multi_transform_enabled else self._start_value+delta_angle; value=round(value/15)*15 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier else value
         else:
-            pivot=self.to_comp(self._pivot_widget(self.layer)); start=max(.001,math.hypot(self._start_point.x()-pivot.x(),self._start_point.y()-pivot.y())); ratio=max(.01,math.hypot(point.x()-pivot.x(),point.y()-pivot.y())/start); value=[max(.01,self._start_value[0]*ratio),max(.01,self._start_value[1]*ratio)]
-            if self._drag_axis=="x":value[1]=self._start_value[1]
-            elif self._drag_axis=="y":value[0]=self._start_value[0]
+            pivot=self.to_comp(self._gizmo_pivot_widget()); start=max(.001,math.hypot(self._start_point.x()-pivot.x(),self._start_point.y()-pivot.y())); ratio=max(.01,math.hypot(point.x()-pivot.x(),point.y()-pivot.y())/start); value=[ratio,ratio] if self.multi_transform_enabled else [max(.01,self._start_value[0]*ratio),max(.01,self._start_value[1]*ratio)]
+            if self._drag_axis=="x":value[1]=1.0 if self.multi_transform_enabled else self._start_value[1]
+            elif self._drag_axis=="y":value[0]=1.0 if self.multi_transform_enabled else self._start_value[0]
+        if self.multi_transform_enabled:self._multi_drag_value=value
         self.transform_changed.emit(self._drag,value,False); event.accept()
 
     def mouseReleaseEvent(self, event):
         if self._panning and event.button()==Qt.MouseButton.MiddleButton: self._panning=False; event.accept(); return
         if self._drag:
-            prop=self._drag; self._drag=None; self._drag_axis=None; value=[self.layer.pivot_x,self.layer.pivot_y] if prop=="pivot" else deepcopy(self.layer.value(prop,self.frame)); self.transform_changed.emit(prop,value,True); event.accept(); return
+            prop=self._drag; self._drag=None; self._drag_axis=None; value=self._multi_drag_value if self.multi_transform_enabled else [self.layer.pivot_x,self.layer.pivot_y] if prop=="pivot" else deepcopy(self.layer.value(prop,self.frame)); self.transform_changed.emit(prop,value,True); event.accept(); return
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):

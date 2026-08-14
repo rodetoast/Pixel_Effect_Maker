@@ -3,6 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QFormLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 from app.models.layer_parenting import would_create_parent_cycle
+from app.models.resource_composition import AnimationTrack, PROPERTY_DEFAULTS
+from app.services.multi_transform_service import mixed_numeric_value
 
 from app.models.property_registry import search_properties
 from app.models.property_registry import NUMERIC_PROPERTY_SPECS
@@ -58,23 +60,31 @@ class CompositionInspector(QWidget):
 
 
 class LayerInspector(QScrollArea):
-    changed=Signal(object,object); parent_changed=Signal(object); mode_changed=Signal(str); add_property_requested=Signal(); full_rotation_requested=Signal(); center_pivot_requested=Signal(); use_requested=Signal(); keyframe_requested=Signal(str,object,str); keyframe_delete_requested=Signal(str); property_value_requested=Signal(str,object); remove_property_requested=Signal(str)
+    changed=Signal(object,object); parent_changed=Signal(object); mode_changed=Signal(str); add_property_requested=Signal(); full_rotation_requested=Signal(); center_pivot_requested=Signal(); use_requested=Signal(); keyframe_requested=Signal(str,object,str); keyframe_delete_requested=Signal(str); property_value_requested=Signal(str,object); batch_property_value_requested=Signal(str,int,float); remove_property_requested=Signal(str)
 
     def __init__(self,parent=None):
         super().__init__(parent); self.setWidgetResizable(True); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); body=QWidget(); body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding); self.layout=QVBoxLayout(body); self.title=QLabel(); self.name=QLineEdit(); self.source=QLabel(); self.source.setWordWrap(True); self.source.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.start=ScrollSafeSpinBox(); self.end=ScrollSafeSpinBox(); self.visible=QCheckBox(); self.pivot_x=ScrollSafeDoubleSpinBox(); self.pivot_y=ScrollSafeDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.start.setRange(0,511);self.end.setRange(0,511); self.form=QFormLayout(); self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.parent_layer=QComboBox()
         for widget in (self.name,self.source,self.parent_layer,self.start,self.end,self.visible,self.pivot_x,self.pivot_y): self.form.addRow(" ",widget)
-        self.layout.addWidget(self.title); self.layout.addLayout(self.form); self.center=QPushButton(); self.layout.addWidget(self.center); modes=QGridLayout(); self.mode_buttons={}
+        self.multi_help=QLabel();self.multi_help.setWordWrap(True);self.multi_help.hide();self.layout.addWidget(self.title);self.layout.addWidget(self.multi_help); self.layout.addLayout(self.form); self.center=QPushButton(); self.layout.addWidget(self.center); modes=QGridLayout(); self.mode_buttons={}
         for index,mode in enumerate(("move","rotate_x","rotate_y","rotate","scale","pivot")):
             button=QPushButton();button.setCheckable(True);button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);button.clicked.connect(lambda checked=False,value=mode:self.mode_changed.emit(value));self.mode_buttons[mode]=button;modes.addWidget(button,index//2,index%2)
-        self.mode_buttons["move"].setChecked(True);self.layout.addLayout(modes);self.add_property=QPushButton();self.full_rotation=QPushButton();self.full_rotation.setObjectName("fullRotationButton");self.use=QPushButton();self.use.setObjectName("useResourceInEffectFromLayerButton");self.use.setDefault(True);self.use.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);self.use.setMinimumHeight(36);self.layout.addWidget(self.add_property);self.layout.addWidget(self.full_rotation);self.property_body=QWidget();self.property_body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding);self.property_layout=QVBoxLayout(self.property_body);self.property_layout.setContentsMargins(0,4,0,4);self.layout.addWidget(self.property_body);self.layout.addWidget(self.use);self.layout.addStretch();self.setWidget(body);self.layer=None;self.frame=0;self._loading=False;self.localization=None;self.property_cards={}
+        self.mode_buttons["move"].setChecked(True);self.layout.addLayout(modes);self.add_property=QPushButton();self.full_rotation=QPushButton();self.full_rotation.setObjectName("fullRotationButton");self.use=QPushButton();self.use.setObjectName("useResourceInEffectFromLayerButton");self.use.setDefault(True);self.use.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);self.use.setMinimumHeight(36);self.layout.addWidget(self.add_property);self.layout.addWidget(self.full_rotation);self.property_body=QWidget();self.property_body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding);self.property_layout=QVBoxLayout(self.property_body);self.property_layout.setContentsMargins(0,4,0,4);self.layout.addWidget(self.property_body);self.layout.addWidget(self.use);self.layout.addStretch();self.setWidget(body);self.layer=None;self.multi_layers=[];self.frame=0;self._loading=False;self.localization=None;self.property_cards={}
         self.name.editingFinished.connect(self._apply);self.parent_layer.currentIndexChanged.connect(lambda:self.parent_changed.emit(self.parent_layer.currentData()) if not self._loading else None);self.start.valueChanged.connect(self._apply);self.end.valueChanged.connect(self._apply);self.visible.toggled.connect(self._apply);self.pivot_x.valueChanged.connect(self._apply);self.pivot_y.valueChanged.connect(self._apply);self.center.clicked.connect(self.center_pivot_requested);self.add_property.clicked.connect(self.add_property_requested);self.full_rotation.clicked.connect(self.full_rotation_requested);self.use.clicked.connect(self.use_requested)
 
     def set_layer(self,layer,source,frame):
-        self.layer,self.frame=layer,frame;self._loading=True
+        self.layer,self.multi_layers,self.frame=layer,[],frame;self._loading=True
         if layer:
             self.name.setText(layer.name);self.source.setText(source.name if source else "");self.start.setValue(layer.start_frame);self.end.setValue(layer.end_frame);self.visible.setChecked(layer.visible);self.pivot_x.setValue(layer.pivot_x);self.pivot_y.setValue(layer.pivot_y)
         self._loading=False;self._update_visibility_tooltip();self._properties();self._set_locked(bool(layer and layer.locked))
+
+    def set_multi_layers(self,layers,frame):
+        self.multi_layers=list(layers or []);self.frame=int(frame);multi=len(self.multi_layers)>1;self.multi_help.setVisible(multi)
+        if multi:
+            self.multi_help.setText(self.localization.text("multi_transform.inspector_local_help") if self.localization else "Multiple layers selected\nProperty edits apply to each layer's local transform.")
+            self.multi_help.setToolTip(self.localization.text("multi_transform.inspector_tooltip") if self.localization else "Different values are shown as —.")
+        for mode in ("rotate_x","rotate_y","pivot"):self.mode_buttons[mode].setEnabled(not multi and not bool(self.layer and self.layer.locked))
+        self._loading=True;self._properties();self._loading=False
 
     def set_parent_candidates(self,layers):
         self._loading=True;current=self.layer.parent_id if self.layer else None;self.parent_layer.clear();self.parent_layer.addItem("None",None)
@@ -113,11 +123,18 @@ class LayerInspector(QScrollArea):
             item=self.property_layout.takeAt(0);widget=item.widget()
             if widget:widget.deleteLater()
         if not self.layer:return
-        for property_id,track in self.layer.tracks.items():
-            card=QFrame();card.setObjectName("propertyCard_"+property_id);card.setFrameShape(QFrame.Shape.StyledPanel);card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred);card_layout=QVBoxLayout(card);card_layout.setContentsMargins(8,6,8,8);header=QHBoxLayout();title=QLabel(self.localization.text("property."+property_id) if self.localization else property_id.title());title.setWordWrap(True);remove=QPushButton("×");remove.setObjectName("removePropertyButton");remove.setFixedSize(28,28);apply_tooltip(remove,self.localization,"tooltip.resource.remove_property");header.addWidget(title,1);header.addWidget(remove);card_layout.addLayout(header);value=track.evaluate(self.frame);editors=[];value_form=QFormLayout();value_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);value_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        property_ids=list(self.layer.tracks)
+        if len(self.multi_layers)>1:
+            for property_id in ("position","rotation","scale"):
+                if property_id not in property_ids:property_ids.append(property_id)
+        for property_id in property_ids:
+            track=self.layer.tracks.get(property_id,AnimationTrack(property_id,PROPERTY_DEFAULTS[property_id]))
+            card=QFrame();card.setObjectName("propertyCard_"+property_id);card.setFrameShape(QFrame.Shape.StyledPanel);card.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred);card_layout=QVBoxLayout(card);card_layout.setContentsMargins(8,6,8,8);header=QHBoxLayout();title=QLabel(self.localization.text("property."+property_id) if self.localization else property_id.title());title.setWordWrap(True);remove=QPushButton("×");remove.setObjectName("removePropertyButton");remove.setFixedSize(28,28)
+            if self.localization:apply_tooltip(remove,self.localization,"tooltip.resource.remove_property")
+            header.addWidget(title,1);header.addWidget(remove);card_layout.addLayout(header);value=track.evaluate(self.frame);editors=[];value_form=QFormLayout();value_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);value_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
             values=value if isinstance(value,(list,tuple)) else [value]
             labels=("property.x","property.y") if property_id in {"position","scale"} else ("property.value",)
-            for label_key,part in zip(labels,values):
+            for component,(label_key,part) in enumerate(zip(labels,values)):
                 editor=RotationSpinBox() if property_id in {"rotation","rotation_x","rotation_y"} else ScrollSafeDoubleSpinBox()
                 if property_id=="perspective_strength":spec=NUMERIC_PROPERTY_SPECS["composition.perspective"];editor.setRange(spec.minimum,spec.maximum);editor.setSingleStep(spec.step);editor.setProperty("numericSpec","composition.perspective")
                 elif property_id=="opacity":spec=NUMERIC_PROPERTY_SPECS["composition.opacity_percent"];editor.setRange(spec.minimum,spec.maximum);editor.setSingleStep(spec.step);editor.setProperty("numericSpec","composition.opacity_percent")
@@ -128,11 +145,28 @@ class LayerInspector(QScrollArea):
                 if sprite_tip and self.localization:apply_tooltip(editor,self.localization,sprite_tip,status=False)
                 if property_id in {"rotation","rotation_x","rotation_y"} and self.localization:editor.setToolTip(editor.toolTip()+"\n"+self.localization.text("tooltip.rotation_revolutions"))
                 value_form.addRow(self.localization.text(label_key) if self.localization else label_key,editor);editors.append(editor)
+            if len(self.multi_layers)>1 and property_id in {"position","rotation","scale"}:
+                for component,editor in enumerate(editors):
+                    parts=[]
+                    for item in self.multi_layers:
+                        current=item.value(property_id,self.frame);parts.append(current[component] if isinstance(current,(list,tuple)) else current)
+                    mixed=mixed_numeric_value(parts)
+                    if mixed is None:editor.lineEdit().setText("—");editor.setProperty("mixedValue",True)
+                    else:editor.setValue(float(mixed)*(100 if property_id=="scale" else 1));editor.setProperty("mixedValue",False)
             card_layout.addLayout(value_form)
             easing=QComboBox()
             for name in ("Linear","Ease In","Ease Out","Ease In/Out"):easing.addItem(self.localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if self.localization else name,name)
             existing=track.keyframe_at(self.frame);animated=bool(track.keyframes);easing.setCurrentIndex(max(0,easing.findData(existing.easing if existing else "Linear")))
-            easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);apply_tooltip(easing,self.localization,"tooltip.resource.easing",status=False);key=QPushButton("◆" if existing else "◇");key.setObjectName("addKeyframeButton");key.setFixedSize(34,28);state="current_key" if existing else "animated_no_key" if animated else "static";key.setProperty("keyState",state);key.setStyleSheet("font-weight: bold; color: #ffd43b;" if existing else "color: #74c0fc;" if animated else "");tip=("현재 프레임에 키가 있습니다. 클릭하면 이 키를 삭제합니다." if existing else "현재 프레임에는 키가 없습니다. 값을 변경하면 키가 자동으로 추가됩니다. 클릭하면 현재 값으로 키를 추가합니다." if animated else "정적 속성. 클릭하면 현재 값으로 키프레임을 추가합니다.") if self.localization and self.localization.language=="ko" else ("A keyframe exists at the current frame. Click to delete it." if existing else "This property is animated. Changing the value adds a keyframe at the current frame. Click to add the current value." if animated else "Static property. Click to add a keyframe with the current value.");key.setToolTip(tip);footer=QHBoxLayout();footer.addWidget(QLabel(self.localization.text("property.easing") if self.localization else "Easing"));footer.addWidget(easing,1);footer.addWidget(key);card_layout.addLayout(footer);key.clicked.connect(lambda checked=False,p=property_id,e=editors,c=easing,has=existing is not None:self._key_clicked(p,e,c,has));remove.clicked.connect(lambda checked=False,p=property_id:self.remove_property_requested.emit(p));[editor.valueChanged.connect(lambda value,p=property_id,e=editors:self.property_value_requested.emit(p,self._value(p,e))) for editor in editors];self.property_layout.addWidget(card);self.property_cards[property_id]={"card":card,"editors":editors,"easing":easing,"keyframe":key,"remove":remove,"key_state":state}
+            easing.setMinimumWidth(0);easing.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+            if self.localization:apply_tooltip(easing,self.localization,"tooltip.resource.easing",status=False)
+            key=QPushButton("◆" if existing else "◇");key.setObjectName("addKeyframeButton");key.setFixedSize(34,28);state="current_key" if existing else "animated_no_key" if animated else "static";key.setProperty("keyState",state);key.setStyleSheet("font-weight: bold; color: #ffd43b;" if existing else "color: #74c0fc;" if animated else "");tip=("현재 프레임에 키가 있습니다. 클릭하면 이 키를 삭제합니다." if existing else "현재 프레임에는 키가 없습니다. 값을 변경하면 키가 자동으로 추가됩니다. 클릭하면 현재 값으로 키를 추가합니다." if animated else "정적 속성. 클릭하면 현재 값으로 키프레임을 추가합니다.") if self.localization and self.localization.language=="ko" else ("A keyframe exists at the current frame. Click to delete it." if existing else "This property is animated. Changing the value adds a keyframe at the current frame. Click to add the current value." if animated else "Static property. Click to add a keyframe with the current value.");key.setToolTip(tip);footer=QHBoxLayout();footer.addWidget(QLabel(self.localization.text("property.easing") if self.localization else "Easing"));footer.addWidget(easing,1);footer.addWidget(key);card_layout.addLayout(footer);key.clicked.connect(lambda checked=False,p=property_id,e=editors,c=easing,has=existing is not None:self._key_clicked(p,e,c,has));remove.clicked.connect(lambda checked=False,p=property_id:self.remove_property_requested.emit(p));[editor.valueChanged.connect(lambda value,p=property_id,e=editors,i=index:self._editor_value_changed(p,e,i)) for index,editor in enumerate(editors)];self.property_layout.addWidget(card);self.property_cards[property_id]={"card":card,"editors":editors,"easing":easing,"keyframe":key,"remove":remove,"key_state":state}
+            if len(self.multi_layers)>1 and property_id in {"position","rotation","scale"}:key.setEnabled(False);remove.setEnabled(False);easing.setEnabled(False)
+
+    def _editor_value_changed(self,property_id,editors,component):
+        if self._loading:return
+        if len(self.multi_layers)>1 and property_id in {"position","rotation","scale"}:
+            value=float(editors[component].value())/(100 if property_id=="scale" else 1);self.batch_property_value_requested.emit(property_id,int(component),value)
+        else:self.property_value_requested.emit(property_id,self._value(property_id,editors))
 
     def _key_clicked(self,property_id,editors,easing,has_current_key):
         if has_current_key:self.keyframe_delete_requested.emit(property_id)

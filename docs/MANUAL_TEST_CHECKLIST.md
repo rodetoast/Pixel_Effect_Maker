@@ -731,3 +731,14 @@ The deterministic model/service and offscreen QTest paths are automated. The fol
 - [ ] Exercise New/Open/Close dirty-project dialogs with Save, Discard and Cancel; repeat A/B project opening while watching for stale guides, pixels or transforms.
 - [ ] Open an actual v8 project from an external copy, Save As v9, compare representative frames, and independently confirm the original file hash is unchanged.
 - [ ] Repeat the workflow on Windows 100/125/150% DPI and Korean/English UI; confirm Advanced status, four distinct Perspective tooltips and narrow Inspector layout.
+
+## v0.0.09 Multi-Transform
+
+- [ ] Selection: select 2 and 3+ Leaf layers, including hidden, parented/free, Parent+Child, locked mixed and Group mixed selections in both editors.
+- [ ] Gizmo: verify one World-space Selection Pivot and Move, Rotation Z, Scale X/Y; confirm no-op creates no Undo and each completed drag creates exactly one Undo.
+- [ ] Parenting: repeat World Move under rotated/scaled/different parents and a depth-20 chain; confirm Parent+Child is not transformed twice and `parent_offset` is unchanged.
+- [ ] Inspector: verify `—` mixed display, absolute Local Position X/Y, Rotation Z and Scale X/Y edits, conditional batch Auto-Key and one-step Undo/Redo.
+- [ ] Primary-only isolation: verify Position Z, Rotation X/Y, Perspective, Opacity, Surface Transform, Particle/Motion and Playback Speed only edit the Primary layer.
+- [ ] Effect modes: repeat with Single, Particle Linear, Orbit and Helix; confirm generated IDs, Surface Transform and playback settings do not change.
+- [ ] Output: compare Canvas, PNG, PNG Sequence and Bake after Multi Move/Rotate/Scale; confirm Selection Pivot and highlights are editor overlays only.
+- [ ] UI: verify handle hit targets, mixed fields, help text and Ctrl+A text selection in Korean/English at Windows 100/125/150% DPI.

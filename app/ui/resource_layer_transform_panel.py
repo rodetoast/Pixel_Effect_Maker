@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QComboBox, QFormLayout, QGridLayout, QGroupBox, QH
 from app.models.effect_resource_layer import TRANSFORM_TRACK_PROPERTIES
 from app.models.property_registry import NUMERIC_PROPERTY_SPECS
 from app.ui.focus_wheel_widgets import RotationSpinBox, ScrollSafeDoubleSpinBox
+from app.services.multi_transform_service import mixed_numeric_value, SUPPORTED_EFFECT_PROPERTIES
 
 
 class ResourceLayerTransformPanel(QGroupBox):
@@ -20,15 +21,16 @@ class ResourceLayerTransformPanel(QGroupBox):
     gizmo_mode_changed = Signal(str, str)
     surface_transform_changed = Signal(str, object)
     advanced_enabled_changed = Signal(str, bool)
+    batch_transform_changed = Signal(str, float)
 
     def __init__(self, parent=None):
-        super().__init__("Advanced", parent); self.layer=None;self.frame=0;self._loading=False;self._localization=None
+        super().__init__("Advanced", parent); self.layer=None;self.multi_layers=[];self.frame=0;self._loading=False;self._localization=None
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.setCheckable(True);self.setChecked(False)
         outer=QVBoxLayout(self);outer.setContentsMargins(8,6,8,8);self.advanced_status=QLabel("Surface Transform applied");self.advanced_status.setObjectName("surfaceTransformAppliedStatus");self.advanced_status.setWordWrap(True);self.advanced_status.hide();outer.addWidget(self.advanced_status)
         self.advanced_body=QWidget();root=QVBoxLayout(self.advanced_body);root.setContentsMargins(0,4,0,0);outer.addWidget(self.advanced_body);self.advanced_body.show();self.toggled.connect(self._advanced_toggled)
         self.system_group=QGroupBox("System Space Transform");system_root=QVBoxLayout(self.system_group);system_root.setContentsMargins(8,10,8,8);root.addWidget(self.system_group)
-        self.description=QLabel("Transform the whole layer coordinate system, including particle spawn positions and motion paths.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);system_root.addWidget(self.description)
+        self.description=QLabel("Transform the whole layer coordinate system, including particle spawn positions and motion paths.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);system_root.addWidget(self.description);self.multi_help=QLabel();self.multi_help.setWordWrap(True);self.multi_help.hide();system_root.addWidget(self.multi_help)
         tools=QGridLayout();tools.setColumnStretch(0,1);tools.setColumnStretch(1,1);self.gizmo_buttons={}
         for mode,label in (("move","Move XYZ"),("rotate_x","Rotate X"),("rotate_y","Rotate Y"),("rotate_z","Rotate Z"),("scale","Scale"),("pivot","Pivot")):
             button=QPushButton(label);button.setCheckable(True);button.setObjectName(f"resourceLayerGizmo_{mode}");button.setMinimumWidth(0);button.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);button.clicked.connect(lambda checked=False,m=mode:self._select_mode(m));self.gizmo_buttons[mode]=button;index=len(self.gizmo_buttons)-1;tools.addWidget(button,index//2,index%2)
@@ -61,7 +63,7 @@ class ResourceLayerTransformPanel(QGroupBox):
         self.surface_reset=QPushButton("Reset Surface Transform");self.surface_reset.setToolTip("Reset the compatibility Surface Transform to identity.");self.surface_reset.clicked.connect(self._reset_surface);surface_form.addRow(self.surface_reset);root.addWidget(self.surface_group)
 
     def set_layer(self, layer, frame=0):
-        self.layer=layer;self.frame=int(frame);self._loading=True
+        self.layer=layer;self.multi_layers=[];self.frame=int(frame);self._loading=True
         if layer is not None:
             self.setChecked(bool(layer.advanced_transform_enabled))
             transform=layer.layer_transform
@@ -73,6 +75,19 @@ class ResourceLayerTransformPanel(QGroupBox):
             self.advanced_status.setVisible(not layer.advanced_transform_enabled or not layer.surface_transform.is_identity())
             self._sync_advanced_status(layer.advanced_transform_enabled)
         self.setEnabled(layer is not None);self.advanced_body.setVisible(True);self._loading=False
+
+    def set_multi_layers(self,layers,frame=0):
+        self.multi_layers=list(layers or []);self.frame=int(frame);multi=len(self.multi_layers)>1;self.multi_help.setVisible(multi);self._loading=True
+        if multi:
+            self.multi_help.setText(self._localization.text("multi_transform.inspector_local_help") if self._localization else "Multiple layers selected. Property edits apply to each layer's local transform.")
+            for name,spin in self.fields.items():
+                if name in SUPPORTED_EFFECT_PROPERTIES:
+                    mixed=mixed_numeric_value(layer.layer_transform.value(name,self.frame) for layer in self.multi_layers)
+                    if mixed is None:spin.lineEdit().setText("—");spin.setProperty("mixedValue",True)
+                    else:spin.setValue(mixed);spin.setProperty("mixedValue",False)
+                else:spin.setToolTip((spin.toolTip()+"\nPrimary only").strip())
+        for mode in ("rotate_x","rotate_y","pivot"):self.gizmo_buttons[mode].setEnabled(not multi)
+        self._loading=False
 
     def _advanced_toggled(self, enabled):
         self.advanced_body.setVisible(True)
@@ -102,9 +117,11 @@ class ResourceLayerTransformPanel(QGroupBox):
 
     def _changed(self,*args):
         if self._loading or self.layer is None:return
-        transform=deepcopy(self.layer.layer_transform)
         name=next((name for name,field in self.fields.items() if field is self.sender()),"")
         if not name:return
+        if len(self.multi_layers)>1 and name in SUPPORTED_EFFECT_PROPERTIES:
+            self.batch_transform_changed.emit(name,float(self.fields[name].value()));return
+        transform=deepcopy(self.layer.layer_transform)
         spin=self.fields[name];track=transform.tracks.get(name);current=transform.value(name,self.frame);value=float(spin.value())
         if current==value:return
         key=next((key for key in track.keyframes if key.frame==self.frame),None) if track else None
