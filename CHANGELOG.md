@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.08 - 2026-08-13
+
+- Added stable-ID leaf-to-leaf Parenting for Resource and logical Effect Resource Layers. Parent position X/Y, rotation Z, and scale X/Y are inherited without changing Group membership or render order.
+- Parent set, clear, and reparent preserve the current playhead's world transform through a serialized maintain-world affine offset; existing local keyframes are not rewritten.
+- Added cycle/missing-parent repair, duplicate reference remapping, dependent-delete rejection, memoized parent-chain evaluation, Inspector selectors, context actions, and row relationship labels.
+- Advanced project saves to format v12. Rotation X/Y, position Z, perspective, opacity, visibility, Solo, lock, playback, Surface Transform, and particle motion remain local/non-inherited.
+
 ## v0.0.07 - 2026-08-13
 
 - Added one-level, stable-ID Layer Groups to Resource and Effect editors with create, rename, collapse/expand, move, ungroup, duplicate, delete, visibility, inherited lock, preview-only Solo, multi-select, and Undo/Redo workflows.

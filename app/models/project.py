@@ -24,8 +24,9 @@ from .resource_composition import ResourceComposition
 from .effect_composition_layer import EffectCompositionLayer
 from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
+from .layer_parenting import repair_parent_links
 
-FORMAT_VERSION = 11
+FORMAT_VERSION = 12
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -63,6 +64,7 @@ class Project:
         leaf_ids=[item.id for item in self.effect_resource_layers]
         if not self.effect_layer_groups:self.effect_root_order=[layer_node(value) for value in leaf_ids]
         self.effect_layer_groups,self.effect_root_order=repair_hierarchy(leaf_ids,self.effect_layer_groups,self.effect_root_order)
+        repair_parent_links(self.effect_resource_layers)
         self.sync_effect_flat_order()
 
     def sync_effect_flat_order(self) -> None:

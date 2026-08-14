@@ -12,6 +12,8 @@ from app.services.effect_composition_layer_render_service import (
 from app.services.particle_render_service import apply_particle_frames, render_particle_frame, render_particle_frames
 from app.services.effect_layer_transform_3d_render_service import transform_rgba_frame
 from app.services.layer_space_transform_service import transform_layer_space_rgba_frame
+from app.services.layer_parenting_service import effect_local_affine,resolve_world_affines,local_only_transform
+from app.models.layer_parenting import parent_offset_is_identity
 
 _BASE_CACHE: OrderedDict[str, tuple[tuple, list]] = OrderedDict()
 _TRANSFORM_CACHE: OrderedDict[tuple, object] = OrderedDict()
@@ -52,7 +54,12 @@ def _resource_revisions(project) -> tuple:
 def _base_key(project, layer: EffectResourceLayer) -> tuple:
     settings = layer.particle_settings.to_dict() if layer.placement_mode == PLACEMENT_PARTICLE else layer.single_settings.to_dict()
     transform = layer.layer_space_transform if layer.advanced_transform_enabled else EffectLayerTransform3D()
-    return (id(project),layer.placement_mode,repr(settings),repr(transform.to_dict()),project.width,project.height,project.fps,_resource_revisions(project))
+    by_id={item.id:item for item in project.effect_resource_layers};parenting=[];current=layer;visited=set()
+    if current.parent_id is not None or not parent_offset_is_identity(current.parent_offset):parenting.append((current.id,current.parent_id,current.parent_offset))
+    while current.parent_id in by_id and current.parent_id not in visited:
+        visited.add(current.parent_id);current=by_id[current.parent_id];value=current.layer_space_transform if current.advanced_transform_enabled else EffectLayerTransform3D();parenting.append((current.id,current.parent_id,current.parent_offset,current.advanced_transform_enabled,repr(value.to_dict())))
+    parenting=tuple(parenting)
+    return (id(project),layer.placement_mode,repr(settings),repr(transform.to_dict()),parenting,project.width,project.height,project.fps,_resource_revisions(project))
 
 
 def _layer_space_transform(layer: EffectResourceLayer) -> EffectLayerTransform3D:
@@ -92,12 +99,20 @@ def render_effect_resource_layer_base(project, layer: EffectResourceLayer):
     key=_base_key(project,layer);cached=_BASE_CACHE.get(layer.id)
     if cached is not None and cached[0]==key:
         _BASE_CACHE.move_to_end(layer.id);return cached[1]
-    transform=_layer_space_transform(layer)
+    transform=_layer_space_transform(layer);parented=layer.parent_id is not None or not parent_offset_is_identity(layer.parent_offset)
     if layer.placement_mode == PLACEMENT_PARTICLE:
-        frames=render_particle_frames(project,layer.as_particle_emitter(),layer_space_transform=transform)
+        if parented:
+            count=layer.particle_settings.output_frame_count;frames=[]
+            for index in range(count):
+                worlds=resolve_world_affines(project.effect_resource_layers,index,lambda item,value:effect_local_affine(item,value,project));frames.append(render_particle_frame(project,layer.as_particle_emitter(),index,layer_space_transform=local_only_transform(transform,index),layer_space_affine=worlds[layer.id]))
+        else:frames=render_particle_frames(project,layer.as_particle_emitter(),layer_space_transform=transform)
     else:
         local_frames=render_effect_composition_layer(project,layer.as_composition_layer())
-        frames=[transform_layer_space_rgba_frame(frame,transform,index) for index,frame in enumerate(local_frames)]
+        if parented:
+            frames=[]
+            for index,frame in enumerate(local_frames):
+                worlds=resolve_world_affines(project.effect_resource_layers,index,lambda item,value:effect_local_affine(item,value,project));frames.append(transform_layer_space_rgba_frame(frame,local_only_transform(transform,index),index,post_affine=worlds[layer.id]))
+        else:frames=[transform_layer_space_rgba_frame(frame,transform,index) for index,frame in enumerate(local_frames)]
     _put_base(layer.id,key,frames)
     for cache_key in list(_TRANSFORM_CACHE):
         if cache_key[0]==layer.id:_TRANSFORM_CACHE_BYTES-=_TRANSFORM_CACHE.pop(cache_key).nbytes
@@ -135,11 +150,11 @@ def render_effect_resource_layer_current_frame(project, layer: EffectResourceLay
 
 def render_effect_resource_layer_current_base_frame(project, layer: EffectResourceLayer, frame: int):
     """Render one exact frame after Layer Space but before Surface Transform."""
-    transform=_layer_space_transform(layer)
+    transform=_layer_space_transform(layer);parented=layer.parent_id is not None or not parent_offset_is_identity(layer.parent_offset);worlds=resolve_world_affines(project.effect_resource_layers,int(frame),lambda item,value:effect_local_affine(item,value,project)) if parented else None
     if layer.placement_mode == PLACEMENT_PARTICLE:
-        return render_particle_frame(project, layer.as_particle_emitter(), int(frame),layer_space_transform=transform)
+        return render_particle_frame(project, layer.as_particle_emitter(), int(frame),layer_space_transform=local_only_transform(transform,int(frame)) if parented else transform,layer_space_affine=worlds[layer.id] if parented else None)
     local=render_effect_composition_layer_current_frame(project,layer.as_composition_layer(),int(frame))
-    return transform_layer_space_rgba_frame(local,transform,int(frame))
+    return transform_layer_space_rgba_frame(local,local_only_transform(transform,int(frame)) if parented else transform,int(frame),post_affine=worlds[layer.id] if parented else None)
 
 
 def render_effect_resource_layer_local_current_frame(project, layer: EffectResourceLayer, frame: int):

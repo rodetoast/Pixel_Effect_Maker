@@ -11,6 +11,7 @@ from uuid import uuid4
 from .effect_composition_layer import EffectCompositionLayer
 from .particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from .resource_composition import AnimationTrack
+from .layer_parenting import IDENTITY_PARENT_OFFSET,normalize_parent_offset
 
 PLACEMENT_SINGLE = "single"
 PLACEMENT_PARTICLE = "particle"
@@ -163,11 +164,14 @@ class EffectResourceLayer:
     layer_transform: EffectLayerTransform3D = field(default_factory=EffectLayerTransform3D)
     surface_transform: EffectLayerTransform3D = field(default_factory=EffectLayerTransform3D)
     id: str = field(default_factory=lambda: uuid4().hex)
+    parent_id: str | None = None
+    parent_offset: tuple[float,...] = field(default_factory=lambda:IDENTITY_PARENT_OFFSET)
 
     def __post_init__(self) -> None:
         if self.placement_mode not in PLACEMENT_MODES:
             raise ValueError("unsupported Resource Layer placement mode")
         self.advanced_transform_enabled = bool(self.advanced_transform_enabled)
+        self.parent_id=None if self.parent_id is None else str(self.parent_id);self.parent_offset=normalize_parent_offset(self.parent_offset)
         self.playback_speed = float(self.playback_speed)
         if (
             self.start_frame < 0
@@ -270,6 +274,7 @@ class EffectResourceLayer:
             "particle_settings": self.particle_settings.to_dict(),
             "layer_space_transform": self.layer_space_transform.to_dict(),
             "surface_transform": self.surface_transform.to_dict(),
+            "parent_id":self.parent_id,"parent_offset":list(self.parent_offset),
         }
 
     @classmethod
@@ -302,6 +307,8 @@ class EffectResourceLayer:
             surface_transform=EffectLayerTransform3D.from_dict(
                 data.get("surface_transform") if source_version >= 9 else data.get("layer_transform")
             ),
+            parent_id=None if data.get("parent_id") is None else str(data.get("parent_id")),
+            parent_offset=normalize_parent_offset(data.get("parent_offset")),
         )
 
     @classmethod

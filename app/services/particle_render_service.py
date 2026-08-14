@@ -249,7 +249,7 @@ def particle_spawn_states(settings: ParticleEmitterSettings, clip_length: int) -
     return cached
 
 
-def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None, diagnostic_collector: list[ParticleFrameDiagnostic] | None = None, layer_space_transform: EffectLayerTransform3D | None = None) -> np.ndarray:
+def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_index: int, *, clip: AnimationClipAsset | None = None, instances=None, diagnostic_collector: list[ParticleFrameDiagnostic] | None = None, layer_space_transform: EffectLayerTransform3D | None = None, layer_space_affine=None) -> np.ndarray:
     """Render one exact frame while reusing deterministic spawn/resource state."""
     settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
@@ -273,12 +273,17 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     if candidates:
         projected_xy,depths,perspective_scales,valid_points=project_local_points(
             np.asarray(local_points,dtype=np.float64),layer_value,project.width,project.height,
+            post_affine=layer_space_affine,
         )
+        if layer_space_affine is not None:
+            from app.services.layer_parenting_service import affine_axis_scales
+            inherited_scale_x,inherited_scale_y=affine_axis_scales(layer_space_affine)
+        else:inherited_scale_x,inherited_scale_y=abs(layer_value.scale_x),abs(layer_value.scale_y)
     for index,(order,instance,pixels,amount,motion_scale,age,normalized,position) in enumerate(candidates):
             if not valid_points[index]:continue
             x,y=map(float,projected_xy[index]);view_z=float(depths[index]);perspective_scale=float(perspective_scales[index])
-            scale_x=instance.scale*motion_scale*perspective_scale*abs(layer_value.scale_x)
-            scale_y=instance.scale*motion_scale*perspective_scale*abs(layer_value.scale_y)
+            scale_x=instance.scale*motion_scale*perspective_scale*inherited_scale_x
+            scale_y=instance.scale*motion_scale*perspective_scale*inherited_scale_y
             if diagnostic_collector is not None:
                 source_frame=particle_clip_frame_index(clip,instance,age,project.fps)
                 diagnostic_collector.append(ParticleFrameDiagnostic(
@@ -304,10 +309,10 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     return output
 
 
-def render_particle_frames(project: Project, emitter: ParticleEmitter, *, layer_space_transform: EffectLayerTransform3D | None = None) -> list[np.ndarray]:
+def render_particle_frames(project: Project, emitter: ParticleEmitter, *, layer_space_transform: EffectLayerTransform3D | None = None, layer_space_affine=None) -> list[np.ndarray]:
     settings = emitter.settings; settings.validate();clip=_resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames));PARTICLE_RENDER_STATS["full_sequence_renders"]+=1
-    outputs=[render_particle_frame(project,emitter,index,clip=clip,instances=instances,layer_space_transform=layer_space_transform) for index in range(settings.output_frame_count)]
+    outputs=[render_particle_frame(project,emitter,index,clip=clip,instances=instances,layer_space_transform=layer_space_transform,layer_space_affine=layer_space_affine) for index in range(settings.output_frame_count)]
     return outputs
 
 

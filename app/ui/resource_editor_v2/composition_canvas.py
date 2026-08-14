@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.services.resource_composition_render_service import composition_layer_transform,render_composition_frame
 from app.services.layer_space_transform_service import project_local_point,project_local_points,projected_layer_quad,projected_local_axes
+from app.services.layer_parenting_service import offset_matrix, resolve_world_affines, resource_local_affine
 
 
 def alpha_bounds(pixels):
@@ -29,13 +30,18 @@ class CompositionCanvas(QWidget):
         super().__init__(parent)
         self.setObjectName("resourceV2CompositionCanvas")
         self.setMinimumSize(320, 240); self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.project = self.composition = self.layer = None; self.frame = 0; self.mode = "move"; self.mode_text = ""
+        self.project = self.composition = self.layer = None; self.frame = 0; self.mode = "move"; self.mode_text = "";self._parent_prefix=None
         self.zoom = 8; self.pan = QPointF(); self._panning = False; self._drag = None; self._drag_axis = None; self._hover_handle=None; self._start_point = QPointF(); self._start_value = None; self._start_angle = 0.0;self._alpha_bounds_cache={}
         self.setMouseTracking(True)
 
     def set_context(self, project, composition, layer, frame):
         if project is not self.project:self._alpha_bounds_cache.clear()
-        self.project, self.composition, self.layer, self.frame = project, composition, layer, frame; self.update()
+        self.project, self.composition, self.layer, self.frame = project, composition, layer, frame;self._parent_prefix=None
+        if composition is not None and layer is not None and (layer.parent_id is not None or not np.allclose(offset_matrix(layer.parent_offset),np.eye(3))):
+            worlds=resolve_world_affines(composition.layers,frame,lambda item,value:resource_local_affine(item,value,composition));local=resource_local_affine(layer,frame,composition)
+            try:self._parent_prefix=worlds[layer.id]@np.linalg.inv(local)
+            except np.linalg.LinAlgError:self._parent_prefix=None
+        self.update()
 
     def set_mode(self, mode, text=""):
         self.mode, self.mode_text = mode, text; self.update()
@@ -70,14 +76,14 @@ class CompositionCanvas(QWidget):
         if source is None: return QPolygonF()
         x0,y0,x1,y1=self._source_alpha_bounds(source);cx=self.composition.width/2;cy=self.composition.height/2
         bounds=(cx+x0-layer.pivot_x,cy+y0-layer.pivot_y,cx+x1-layer.pivot_x,cy+y1-layer.pivot_y)
-        projected,valid=projected_layer_quad(bounds,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True)
+        projected,valid=projected_layer_quad(bounds,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
         return QPolygonF([QPointF(float(x),float(y)) for (x,y),ok in zip(projected,valid) if ok])
 
     def _polygon_widget(self, layer):
         return QPolygonF([self.to_widget(point) for point in self.selection_polygon_comp(layer)])
 
     def _pivot_widget(self, layer):
-        point=project_local_point(self.composition.width/2,self.composition.height/2,0,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True)
+        point=project_local_point(self.composition.width/2,self.composition.height/2,0,composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
         return self.to_widget(QPointF(point.x,point.y))
 
     def pivot_marker_position(self,layer=None):
@@ -96,7 +102,7 @@ class CompositionCanvas(QWidget):
     def projected_axis_positions(self,layer=None):
         layer=layer or self.layer
         if layer is None:return {}
-        projected,valid=projected_local_axes(composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,length=42/max(.001,self.zoom),local_z_spin=True)
+        projected,valid=projected_local_axes(composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,length=42/max(.001,self.zoom),local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
         if not valid.all():return {}
         center,x_axis,y_axis,z_axis=[self.to_widget(QPointF(float(x),float(y))) for x,y in projected]
         if self._near(center,z_axis,18):z_axis=center+QPointF(30,-30)
@@ -120,7 +126,7 @@ class CompositionCanvas(QWidget):
             angle=index*math.tau/48;c=math.cos(angle)*radius;s=math.sin(angle)*radius
             offset=(0,c,s) if axis=="x" else (c,0,s) if axis=="y" else (c,s,0)
             points.append((cx+offset[0],cy+offset[1],offset[2]))
-        projected,_,_,valid=project_local_points(np.asarray(points),composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True)
+        projected,_,_,valid=project_local_points(np.asarray(points),composition_layer_transform(layer,self.frame),self.composition.width,self.composition.height,local_z_spin=True,post_affine=self._parent_prefix if layer is self.layer else None)
         if not valid.all():return QPolygonF()
         return QPolygonF([self.to_widget(QPointF(float(x),float(y))) for x,y in projected])
 
@@ -208,6 +214,13 @@ class CompositionCanvas(QWidget):
         point=self.to_comp(event.position()); delta=point-self._start_point
         if self._drag in {"position","pivot"}:
             dx=0 if self._drag_axis=="y" else delta.x();dy=0 if self._drag_axis=="x" else delta.y();value=[round(self._start_value[0]+dx),round(self._start_value[1]+dy)]
+            if self._drag=="position" and self._parent_prefix is not None:
+                try:
+                    local_delta=np.linalg.inv(self._parent_prefix[:2,:2])@np.array((delta.x(),delta.y()))
+                    if self._drag_axis=="x":local_delta[1]=0
+                    elif self._drag_axis=="y":local_delta[0]=0
+                    value=[round(self._start_value[0]+local_delta[0]),round(self._start_value[1]+local_delta[1])]
+                except np.linalg.LinAlgError:pass
         elif self._drag in {"rotation","rotation_x","rotation_y"}:
             pivot=self.to_comp(self._pivot_widget(self.layer)); angle=math.atan2(point.y()-pivot.y(),point.x()-pivot.x()); value=self._start_value+math.degrees(angle-self._start_angle); value=round(value/15)*15 if event.modifiers()&Qt.KeyboardModifier.ShiftModifier else value
         else:

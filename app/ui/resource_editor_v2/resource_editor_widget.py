@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QMenu, QMessageBox, 
 
 from app.models.resource_composition import CompositionLayer, ResourceComposition
 from app.models.layer_group import LayerGroup,group_node,layer_node
+from app.models.layer_parenting import surviving_parent_dependencies, would_create_parent_cycle
+from app.services.layer_parenting_service import resource_local_affine, set_parent_keep_world
 from app.services.resource_composition_render_service import invalidate_composition_cache
 from app.ui.interface_settings_dialog import timeline_frame_width
 
@@ -49,11 +51,12 @@ class ResourceEditorWidget(QWidget):
         self.browser.import_requested.connect(lambda:self.import_requested.emit(None));self.browser.asset_selected.connect(self._select_asset);self.browser.composition_selected.connect(lambda identifier:self.controller.select_composition(identifier));self.browser.asset_delete_requested.connect(self.delete_requested);self.browser.composition_delete_requested.connect(self._delete_composition);self.asset_strip.frame_selected.connect(self.set_frame);self.asset_inspector.create_requested.connect(self._create_dialog);self.asset_inspector.reimport_requested.connect(self._reimport);self.asset_inspector.pivot_changed.connect(self._asset_pivot)
         self.asset_fit.clicked.connect(self.asset_canvas.fit_to_view);self.asset_actual.clicked.connect(self.asset_canvas.actual_pixels)
         self.empty.import_button.clicked.connect(lambda:self.import_requested.emit(None));self.empty.blank_button.clicked.connect(self._create_blank_dialog)
-        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
+        self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.parent_changed.connect(lambda parent_id:self.set_layer_parent(self.selected_layer.id,parent_id) if self.selected_layer else None);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
         self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.selection_requested.connect(self.select_layer_with_modifiers);self.composition_timeline.select_all_requested.connect(self.select_all_layers);self.composition_timeline.batch_command_requested.connect(self.batch_command);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe);self.composition_timeline.move_keyframe_requested.connect(self._move_keyframe)
         self.composition_timeline.add_layer_requested.connect(self.add_asset_layer);self.composition_timeline.duplicate_layer_requested.connect(self.duplicate_layer);self.composition_timeline.remove_layer_requested.connect(self.remove_layer);self.composition_timeline.move_layer_requested.connect(self.move_layer);self.composition_timeline.reorder_layer_requested.connect(self.reorder_layers)
         self.composition_timeline.lock_requested.connect(self.set_layer_locked);self.composition_timeline.solo_requested.connect(self.set_layer_solo)
         self.composition_timeline.group_expanded_requested.connect(self.toggle_group_expanded)
+        self.composition_timeline.parent_requested.connect(self.set_layer_parent)
         self.group_inspector.rename_requested.connect(self.rename_group);self.group_inspector.state_requested.connect(self.set_group_state)
         self.composition_timeline.scrub_started.connect(self.stop)
         self.composition_canvas.layer_selected.connect(lambda identifier:self.select_layer_with_modifiers(identifier,Qt.KeyboardModifier.NoModifier) if identifier else self.clear_layer_selection());self.composition_canvas.transform_changed.connect(self._gizmo_change);self.composition_canvas.transform_cancelled.connect(self._gizmo_cancel);self.composition_canvas.drag_started.connect(self.stop)
@@ -127,7 +130,7 @@ class ResourceEditorWidget(QWidget):
             if state.layer_id in ui_ids and state.layer_id!=self.layer_selection.primary_id:self.layer_selection.restore({"selected_ids":[state.layer_id],"primary_id":state.layer_id,"anchor_id":state.layer_id},ui_ids)
             preferred=self.layer_selection.primary_id or state.layer_id;primary=self.layer_selection.repair(ui_ids,preferred,allow_empty=state.layer_id is None and not self.layer_selection.selected_ids);state.layer_id=primary if any(item.id==primary for item in composition.layers) else None;layer=self.controller.layer
             self.composition_timeline.set_available_sources(self.project)
-            group=composition.group_by_id(primary);self.inspector_stack.setCurrentWidget(self.group_inspector if group else self.layer_inspector if layer else self.composition_inspector);self.group_inspector.set_group(group);source=self._layer_source(layer);self.composition_canvas.set_context(self.project,composition,layer,state.frame);self.composition_inspector.set_composition(composition);self.layer_inspector.set_layer(layer,source,state.frame);self.layer_inspector.set_mode(state.gizmo_mode);self.composition_canvas.set_mode(state.gizmo_mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[state.gizmo_mode]) if self.localization else state.gizmo_mode);self.composition_timeline.refresh(composition,layer,state.frame,self.layer_selection.selected_ids,self.layer_selection.primary_id,self.expanded_group_ids)
+            group=composition.group_by_id(primary);self.inspector_stack.setCurrentWidget(self.group_inspector if group else self.layer_inspector if layer else self.composition_inspector);self.group_inspector.set_group(group);source=self._layer_source(layer);self.composition_canvas.set_context(self.project,composition,layer,state.frame);self.composition_inspector.set_composition(composition);self.layer_inspector.set_layer(layer,source,state.frame);self.layer_inspector.set_parent_candidates(composition.layers);self.layer_inspector.set_mode(state.gizmo_mode);self.composition_canvas.set_mode(state.gizmo_mode,self.localization.text({"move":"gizmo.move","rotate_x":"gizmo.rotate_x","rotate_y":"gizmo.rotate_y","rotate":"gizmo.rotate_z","scale":"gizmo.scale","pivot":"composition.pivot"}[state.gizmo_mode]) if self.localization else state.gizmo_mode);self.composition_timeline.refresh(composition,layer,state.frame,self.layer_selection.selected_ids,self.layer_selection.primary_id,self.expanded_group_ids)
             count=len(self.layer_selection.selected_ids);help_text=self.localization.text("layer.multiselect_primary_help") if self.localization and count>1 else "";self.layer_inspector.title.setToolTip(help_text)
             if self.localization and layer and count>1:self.layer_inspector.title.setText(self.localization.text("layer.primary_summary").format(name=layer.name,count=count))
         self._legacy_timeline()
@@ -438,9 +441,8 @@ class ResourceEditorWidget(QWidget):
         layer=CompositionLayer(name,kind,asset.id,0,self.composition.frame_count-1,pivot_x=asset.pivot_x,pivot_y=asset.pivot_y);before=deepcopy(self.composition.layers);after=before+[deepcopy(layer)];self._push_value(self.composition.id,"layers",before,after,"Add Resource Layer");self.controller.select_layer(layer.id);return self.selected_layer
     def remove_layer(self,identifier):
         if not self.composition:return False
-        index=next((i for i,item in enumerate(self.composition.layers) if item.id==identifier),-1)
-        if index<0 or self._layer_effectively_locked(self.composition.layers[index]):return False
-        before=deepcopy(self.composition.layers);after=before[:index]+before[index+1:];self._push_value(self.composition.id,"layers",before,after,"Remove Resource Layer");return True
+        if identifier not in self.layer_selection.selected_ids:self.select_layer_with_modifiers(identifier)
+        return self.delete_selected_layers()
     def duplicate_layer(self,identifier):
         if identifier not in self.layer_selection.selected_ids:self.select_layer_with_modifiers(identifier)
         values=self.duplicate_selected_layers();return values[0] if values else None
@@ -479,6 +481,15 @@ class ResourceEditorWidget(QWidget):
         if layer is None or layer.solo==solo:return False
         self._push_value(identifier,"solo",layer.solo,solo,"Solo Resource Layer");return True
 
+    def set_layer_parent(self,identifier,parent_id):
+        if not self.composition:return False
+        layer=next((item for item in self.composition.layers if item.id==identifier),None)
+        parent_id=None if not parent_id else str(parent_id)
+        if layer is None or self._layer_effectively_locked(layer) or would_create_parent_cycle(self.composition.layers,identifier,parent_id):return False
+        before=self._selection_value()
+        changed=set_parent_keep_world(self.composition.layers,identifier,parent_id,self.controller.state.frame,lambda item,frame:resource_local_affine(item,frame,self.composition))
+        return self._commit_hierarchy(before,"Set Resource Layer Parent") if changed else False
+
     def duplicate_selected_layers(self):
         if not self.composition:return []
         selected={value for value in self.layer_selection.selected_ids if self.composition.group_by_id(value) is None};before=self._selection_value();existing={item.name for item in self.composition.layers};after=[];duplicates=[];primary_duplicate=None;duplicate_by_original={}
@@ -490,6 +501,9 @@ class ResourceEditorWidget(QWidget):
             duplicate.name=name;existing.add(name);after.append(duplicate);duplicates.append(duplicate);duplicate_by_original[layer.id]=duplicate.id
             if layer.id==self.layer_selection.primary_id:primary_duplicate=duplicate.id
         if not duplicates:return []
+        for original_id,duplicate_id in duplicate_by_original.items():
+            original=next(item for item in self.composition.layers if item.id==original_id);duplicate=next(item for item in after if item.id==duplicate_id)
+            if original.parent_id in duplicate_by_original:duplicate.parent_id=duplicate_by_original[original.parent_id]
         groups=deepcopy(self.composition.groups);root=deepcopy(self.composition.root_order)
         for group in groups:
             values=[]
@@ -507,6 +521,7 @@ class ResourceEditorWidget(QWidget):
         selected=set(self.layer_selection.selected_ids);targets=[item for item in self.composition.layers if item.id in selected]
         if not targets:return False
         if any(self._layer_effectively_locked(item) for item in targets):self._report_locked_batch();return False
+        if surviving_parent_dependencies(self.composition.layers,selected):return False
         before=self._selection_value();after=[deepcopy(item) for item in self.composition.layers if item.id not in selected];groups=deepcopy(self.composition.groups);root=deepcopy(self.composition.root_order)
         for group in groups:group.children=[value for value in group.children if value not in selected]
         root=[node for node in root if not (node["type"]=="layer" and node["id"] in selected)]
@@ -594,11 +609,15 @@ class ResourceEditorWidget(QWidget):
             duplicate=deepcopy(by_id[child]);duplicate.id=uuid4().hex;base_name=re.sub(r" \(\d+\)$","",duplicate.name);number=2;leaf_name=f"{base_name} ({number})"
             while leaf_name in existing_layer_names:number+=1;leaf_name=f"{base_name} ({number})"
             duplicate.name=leaf_name;existing_layer_names.add(leaf_name);children.append(duplicate.id);duplicates.append(duplicate)
+        remap={old:new for old,new in zip(group.children,children)}
+        for duplicate in duplicates:
+            if duplicate.parent_id in remap:duplicate.parent_id=remap[duplicate.parent_id]
         copy_group=deepcopy(group);copy_group.id=uuid4().hex;copy_group.name=name;copy_group.children=children;self.composition.layers.extend(duplicates);self.composition.groups.append(copy_group);index=next(i for i,node in enumerate(self.composition.root_order) if node["id"]==group.id);self.composition.root_order.insert(index+1,group_node(copy_group.id));self.composition.sync_flat_order();self.expanded_group_ids.add(copy_group.id);self.layer_selection.restore({"selected_ids":[copy_group.id],"primary_id":copy_group.id,"anchor_id":copy_group.id},self._ui_node_ids(False));self.controller.state.layer_id=None;self._commit_hierarchy(before,"Duplicate Resource Group");return self.composition.group_by_id(copy_group.id)
 
     def delete_group(self,identifier=None):
         identifier=identifier or self.layer_selection.primary_id;group=self.composition.group_by_id(identifier) if self.composition else None
         if group is None or self._node_structurally_locked(group.id):return False
+        if surviving_parent_dependencies(self.composition.layers,set(group.children)):return False
         before=self._selection_value();children=set(group.children);self.composition.layers=[item for item in self.composition.layers if item.id not in children];self.composition.groups.remove(group);self.composition.root_order=[node for node in self.composition.root_order if node["id"]!=group.id];self.expanded_group_ids.discard(group.id);ui=self._ui_node_ids(False);primary=ui[0] if ui else None;self.layer_selection.restore({"selected_ids":[primary] if primary else [],"primary_id":primary,"anchor_id":primary},ui);self.controller.state.layer_id=primary if any(item.id==primary for item in self.composition.layers) else None;return self._commit_hierarchy(before,"Delete Resource Group")
 
     def move_hierarchy_nodes(self,identifiers,target_parent_id=None,target_ui_index=0):

@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QApplication, QAbstractItemView, QHBoxLayout, QMen
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 from app.models.layer_group import LayerGroup
+from app.models.layer_parenting import would_create_parent_cycle
 
 
 class LayerOrderTable(QTableWidget):
@@ -66,6 +67,7 @@ class CompositionTimeline(QWidget):
     solo_requested = Signal(str,bool)
     selection_requested=Signal(str,object);select_all_requested=Signal();batch_command_requested=Signal(str)
     group_expanded_requested=Signal(str,bool)
+    parent_requested=Signal(str,object)
     scrub_started = Signal()
 
     def __init__(self, parent=None):
@@ -113,7 +115,7 @@ class CompositionTimeline(QWidget):
         return super().eventFilter(watched,event)
 
     def refresh(self, composition, selected_layer, frame, selected_ids=None, primary_id=None, expanded_ids=None):
-        composition.repair_hierarchy();primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
+        composition.repair_hierarchy();self._composition=composition;primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
         # The renderer composites later model entries over earlier ones. Reverse
         # the UI rows so list top means Canvas Front / Top.
         expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups}
@@ -137,7 +139,9 @@ class CompositionTimeline(QWidget):
             child=row in self._child_rows
             property_name=self.localization.text("property."+property_id) if self.localization and property_id else property_id
             if isinstance(layer,LayerGroup):headers.append(("▼ " if layer.id in expanded_ids else "▶ ")+("☑ " if layer.visible else "☐ ")+("🔒 " if layer.locked else "")+("S " if layer.solo else "")+f"📁 {layer.name}  {len(layer.children)}")
-            else:headers.append((("    " if child else "")+("☑ " if layer.visible else "☐ ")+("🔒 " if layer.locked else "")+("S " if layer.solo else "")+layer.name) if property_id is None else ("      ↳ " if child else "  ↳ ")+property_name)
+            else:
+                parent=layer_by_id.get(layer.parent_id);relation=f"  ↳ {parent.name}" if parent else ""
+                headers.append((("    " if child else "")+("☑ " if layer.visible else "☐ ")+("🔒 " if layer.locked else "")+("S " if layer.solo else "")+layer.name+relation) if property_id is None else ("      ↳ " if child else "  ↳ ")+property_name)
             for column in range(composition.frame_count):
                 marker="" if isinstance(layer,LayerGroup) else "◆" if property_id and any(key.frame==column for key in layer.tracks[property_id].keyframes) else "■" if property_id is None and layer.start_frame<=column<=layer.end_frame else "·"
                 item=QTableWidgetItem(marker); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter); self.table.setItem(row,column,item)
@@ -210,7 +214,16 @@ class CompositionTimeline(QWidget):
                 self.selection_requested.emit(clicked,Qt.KeyboardModifier.NoModifier)
         layer=self._selected_layer()
         if not layer:return
-        keys=("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete");menu=QMenu(self);actions={key:menu.addAction(self.localization.text("layer.batch."+key)) for key in keys};actions["group"]=menu.addAction(self.localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self.localization.text("group.ungroup"));chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
+        keys=("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete");menu=QMenu(self);actions={key:menu.addAction(self.localization.text("layer.batch."+key)) for key in keys};actions["group"]=menu.addAction(self.localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self.localization.text("group.ungroup"))
+        parent_actions={}
+        if not isinstance(layer,LayerGroup):
+            parent_menu=menu.addMenu(self.localization.text("parent.set"));clear=menu.addAction(self.localization.text("parent.clear"));clear.setEnabled(layer.parent_id is not None);parent_actions[clear]=None
+            composition=getattr(self,"_composition",None)
+            for candidate in composition.layers if composition else ():
+                if candidate.id!=layer.id and not would_create_parent_cycle(composition.layers,layer.id,candidate.id):
+                    action=parent_menu.addAction(candidate.name);parent_actions[action]=candidate.id
+        chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen in parent_actions:self.parent_requested.emit(layer.id,parent_actions[chosen]);return
         command=next((key for key,value in actions.items() if value is chosen),None)
         if command:self.batch_command_requested.emit(command)
 

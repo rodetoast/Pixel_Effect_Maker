@@ -170,6 +170,10 @@ Asset 내용은 기록하지 않습니다. 손상 프로젝트와 더 새로운 
 
 저장은 대상과 같은 폴더에 Temporary File을 완성하고 flush/fsync한 뒤 atomic replace합니다. 일반 Save/Save As는 Motion metadata와 이미 존재하는 Project Pixel만 기록하고 Particle current/full sequence, Bake 또는 Export를 실행하지 않습니다. 실패하면 기존 파일, Dirty 표시와 이전 Save As 경로가 유지됩니다. Preview, QImage/QPixmap, Interactive Proxy와 Prewarm Cache는 프로젝트에 저장되지 않습니다.
 
+## Parenting
+
+Resource 및 Effect의 Leaf Layer를 같은 Composition 안의 다른 Leaf에 연결하면 부모의 Position X/Y, Rotation Z, Scale X/Y를 따라갑니다. 부모를 설정·해제·변경해도 현재 재생 프레임의 화면상 Transform은 유지되며 기존 Local Keyframe은 다시 쓰지 않습니다. Rotation X/Y, Position Z와 Perspective는 각 Leaf의 Local visual deformation으로 유지됩니다. Group은 목록 정리용이며 Parenting 및 Transform과 독립적입니다.
+
 ## 현재 지원하지 않는 기능
 
 - 브러시, 지우개, 스포이트, 채우기, 선택

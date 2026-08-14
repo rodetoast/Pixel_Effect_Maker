@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.models.project import Project
 from app.models.layer_group import LayerGroup
+from app.models.layer_parenting import would_create_parent_cycle
 from app.models.source_asset import SourceAsset
 from app.ui.tooltip_helper import apply_tooltip
 
@@ -85,6 +86,7 @@ class EffectLibraryPanel(QWidget):
     select_all_resource_layers_requested=Signal()
     batch_resource_layer_requested=Signal(str)
     group_expanded_requested=Signal(str)
+    parent_requested=Signal(str,object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -241,7 +243,8 @@ class EffectLibraryPanel(QWidget):
         self._resource_layers={**layers,**groups};self.composition_list.locked_ids={node_id for node_id in layers if project.effect_effective_locked(layers[node_id])}|{group.id for group in groups.values() if group.locked}
         def add_leaf(layer,child=False):
             mode="Particle" if layer.placement_mode=="particle" else "Single";visible=generated_by_id.get(layer.generated_layer_id).visible if layer.generated_layer_id in generated_by_id else layer.visible;resource=resource_names.get(layer.resource_composition_id,"Missing Resource")
-            self.composition_list.addItem(self._item(layer.id,f"{'    ' if child else ''}{'●' if visible else '○'} {'🔒 ' if project.effect_effective_locked(layer) else ''}{'S ' if layer.solo else ''}{layer.name} — {resource} · {mode}"))
+            parent=layers.get(layer.parent_id);relation=f"  ↳ {parent.name}" if parent else ""
+            self.composition_list.addItem(self._item(layer.id,f"{'    ' if child else ''}{'●' if visible else '○'} {'🔒 ' if project.effect_effective_locked(layer) else ''}{'S ' if layer.solo else ''}{layer.name}{relation} — {resource} · {mode}"))
         for node in reversed(project.effect_root_order):
             if node.get("type")=="group" and node.get("id") in groups:
                 group=groups[node["id"]];self.composition_list.addItem(self._item(group.id,f"{'▼' if group.id in expanded else '▶'} {'●' if group.visible else '○'} {'🔒 ' if group.locked else ''}{'S ' if group.solo else ''}📁 {group.name}  ({len(group.children)})"))
@@ -367,9 +370,14 @@ class EffectLibraryPanel(QWidget):
         if identifier not in self._selected_resource_ids:self.resource_layer_selection_requested.emit(identifier,Qt.KeyboardModifier.NoModifier)
         layer=getattr(self,"_resource_layers",{}).get(identifier)
         if not layer:return
-        menu=QMenu(self);actions={key:menu.addAction(self._localization.text("layer.batch."+key)) for key in ("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete")}
+        menu=QMenu(self);actions={key:menu.addAction(self._localization.text("layer.batch."+key)) for key in ("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete")};parent_actions={}
         if isinstance(layer,LayerGroup):actions["toggle_expand"]=menu.addAction("▶/▼");actions["ungroup"]=menu.addAction(self._localization.text("group.ungroup"))
+        else:
+            parent_menu=menu.addMenu(self._localization.text("parent.set"));clear=menu.addAction(self._localization.text("parent.clear"));clear.setEnabled(layer.parent_id is not None);parent_actions[clear]=None;leaves=[value for value in self._resource_layers.values() if not isinstance(value,LayerGroup)]
+            for candidate in leaves:
+                if candidate.id!=layer.id and not would_create_parent_cycle(leaves,layer.id,candidate.id):action=parent_menu.addAction(candidate.name);parent_actions[action]=candidate.id
         chosen=menu.exec(self.composition_list.viewport().mapToGlobal(pos));command=next((key for key,value in actions.items() if value is chosen),None)
+        if chosen in parent_actions:self.parent_requested.emit(identifier,parent_actions[chosen]);return
         if command=="toggle_expand":self.group_expanded_requested.emit(identifier);return
         if command:self.batch_resource_layer_requested.emit(command)
 

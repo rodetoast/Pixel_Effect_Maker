@@ -107,7 +107,7 @@ def test_resource_editor_add_edit_delete_move_undo_redo(tmp_path):
 def test_v9_resource_effect_and_motion_tracks_round_trip_deterministically():
     project,composition,resource_layer=_composition_project();resource_layer.add_property("rotation").set_keyframe(10,90,"Ease In");resource_layer.tracks["rotation"].set_keyframe(0,0)
     effect=EffectResourceLayer("Effect Resource",composition.id,end_frame=10);effect.layer_transform.set_keyframe("rotation_z",10,180);effect.layer_transform.set_keyframe("rotation_z",0,0);effect.particle_settings.motion.set_keyframe("radius_end",0,2);effect.particle_settings.motion.set_keyframe("radius_end",10,8);project.effect_resource_layers.append(effect)
-    data=project.to_dict();loaded=Project.from_dict(deepcopy(data));assert FORMAT_VERSION==11 and loaded.to_dict()==data
+    data=project.to_dict();loaded=Project.from_dict(deepcopy(data));assert FORMAT_VERSION==12 and loaded.to_dict()==data
     loaded_resource=loaded.resource_compositions[0].layers[0];loaded_effect=loaded.effect_resource_layers[0]
     assert loaded_resource.value("rotation",5)==45 and loaded_effect.layer_transform.value("rotation_z",5)==90 and loaded_effect.particle_settings.motion.value("radius_end",5)==5
 

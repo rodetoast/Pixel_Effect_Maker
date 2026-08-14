@@ -15,6 +15,7 @@ from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectLayerTransform3D,PLACEMENT_PARTICLE
 from app.models.particle_emitter import ParticleEmitterSettings
 from app.services.particle_render_service import particle_motion_guide, project_particle_billboard, representative_particle_guide
+from app.services.layer_parenting_service import effect_local_affine, resolve_world_affines
 
 
 RESOURCE_TRANSFORM_HANDLE_PROPERTIES={
@@ -70,7 +71,7 @@ class CanvasWidget(QWidget):
         self._guide_before = None
         self._guide_last_canvas_point: tuple[int, int] | None = None
         self._ghost_cache: dict[tuple, list[QPixmap]] = {}
-        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self.resource_transform_tooltips={}
+        self.resource_transform_id=None;self.resource_transform=None;self.resource_transform_mode="move";self._resource_transform_drag=None;self._resource_transform_before=None;self._resource_transform_start=None;self._resource_transform_hover=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self._resource_parent_prefix=None;self.resource_transform_tooltips={}
         self.resource_transform_changed_fields: tuple[str,...] = ()
         self.interactive_transform_proxy: InteractiveTransformProxyState | None = None
         self.playback_pixmap:QPixmap|None=None;self.playback_pixmap_frame:int|None=None;self.playback_pixmap_key=None;self.playback_mode=False
@@ -150,7 +151,13 @@ class CanvasWidget(QWidget):
     def set_resource_layer_transform(self, identifier=None, transform=None, *, mode="move") -> None:
         if self.interactive_transform_proxy is not None and self.interactive_transform_proxy.resource_layer_id!=identifier:
             self.clear_interactive_transform_proxy(update=False)
-        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None
+        self.resource_transform_id=identifier;self.resource_transform=deepcopy(transform);self.resource_transform_mode=mode;self._resource_transform_drag=None;self._resource_parent_prefix=None
+        if identifier and self.project is not None:
+            layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
+            if layer is not None and layer.parent_id is not None:
+                worlds=resolve_world_affines(self.project.effect_resource_layers,self.frame_index,lambda item,frame:effect_local_affine(item,frame,self.project));local=effect_local_affine(layer,self.frame_index,self.project)
+                try:self._resource_parent_prefix=worlds[layer.id]@np.linalg.inv(local)
+                except np.linalg.LinAlgError:self._resource_parent_prefix=None
         for key in list(self._ghost_cache):
             if isinstance(key,tuple) and key and key[0]=="2.5d":self._ghost_cache.pop(key,None)
         self.update()
@@ -160,7 +167,7 @@ class CanvasWidget(QWidget):
 
     def resource_transform_handle_positions(self) -> dict[str,QPointF]:
         if self.project is None or self.resource_transform is None:return {}
-        projected,valid=projected_local_axes(self.resource_transform,self.project.width,self.project.height,self.frame_index,42/max(.001,self.zoom))
+        projected,valid=projected_local_axes(self.resource_transform,self.project.width,self.project.height,self.frame_index,42/max(.001,self.zoom),post_affine=self._resource_parent_prefix)
         if not valid.all():return {}
         points=[self.canvas_to_widget(float(x),float(y)) for x,y in projected]
         center,x_axis,y_axis,z_axis=points
@@ -860,8 +867,12 @@ class CanvasWidget(QWidget):
             delta=event.position()-self._pan_last;self._pan_last=event.position();self.pan_offset+=delta;self.update();event.accept();return
         if self._resource_transform_drag:
             event_started=perf_counter();old_gizmo=self._resource_transform_gizmo_bounds();value_started=perf_counter();t=self.resource_transform;delta=(event.position()-self._resource_transform_start)/max(.001,self.zoom);before=self._resource_transform_before;handle=self._resource_transform_drag;changed=False
-            if handle in {"x","center"}:changed=self._set_resource_transform_interactive_value(t,"position_x",before.value("position_x",self.frame_index)+delta.x()) or changed
-            if handle in {"y","center"}:changed=self._set_resource_transform_interactive_value(t,"position_y",before.value("position_y",self.frame_index)+delta.y()) or changed
+            local_delta=np.array((delta.x(),delta.y()),dtype=np.float64)
+            if self._resource_parent_prefix is not None:
+                try:local_delta=np.linalg.inv(self._resource_parent_prefix[:2,:2])@local_delta
+                except np.linalg.LinAlgError:pass
+            if handle in {"x","center"}:changed=self._set_resource_transform_interactive_value(t,"position_x",before.value("position_x",self.frame_index)+local_delta[0]) or changed
+            if handle in {"y","center"}:changed=self._set_resource_transform_interactive_value(t,"position_y",before.value("position_y",self.frame_index)+local_delta[1]) or changed
             if handle=="z":changed=self._set_resource_transform_interactive_value(t,"position_z",before.value("position_z",self.frame_index)-delta.y()+delta.x()) or changed
             if handle.startswith("rotate_"):
                 center=self.resource_transform_handle_positions()["center"];pointer_angle=math.degrees(math.atan2(event.position().y()-center.y(),event.position().x()-center.x()));angle=pointer_angle+round((self._resource_rotation_accumulated-pointer_angle)/360.0)*360.0;self._resource_rotation_last_angle=pointer_angle;self._resource_rotation_accumulated=angle

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QFormLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from app.models.layer_parenting import would_create_parent_cycle
 
 from app.models.property_registry import search_properties
 from app.models.property_registry import NUMERIC_PROPERTY_SPECS
@@ -57,16 +58,17 @@ class CompositionInspector(QWidget):
 
 
 class LayerInspector(QScrollArea):
-    changed=Signal(object,object); mode_changed=Signal(str); add_property_requested=Signal(); full_rotation_requested=Signal(); center_pivot_requested=Signal(); use_requested=Signal(); keyframe_requested=Signal(str,object,str); keyframe_delete_requested=Signal(str); property_value_requested=Signal(str,object); remove_property_requested=Signal(str)
+    changed=Signal(object,object); parent_changed=Signal(object); mode_changed=Signal(str); add_property_requested=Signal(); full_rotation_requested=Signal(); center_pivot_requested=Signal(); use_requested=Signal(); keyframe_requested=Signal(str,object,str); keyframe_delete_requested=Signal(str); property_value_requested=Signal(str,object); remove_property_requested=Signal(str)
 
     def __init__(self,parent=None):
         super().__init__(parent); self.setWidgetResizable(True); self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); body=QWidget(); body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding); self.layout=QVBoxLayout(body); self.title=QLabel(); self.name=QLineEdit(); self.source=QLabel(); self.source.setWordWrap(True); self.source.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred); self.start=ScrollSafeSpinBox(); self.end=ScrollSafeSpinBox(); self.visible=QCheckBox(); self.pivot_x=ScrollSafeDoubleSpinBox(); self.pivot_y=ScrollSafeDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)]; self.start.setRange(0,511);self.end.setRange(0,511); self.form=QFormLayout(); self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        for widget in (self.name,self.source,self.start,self.end,self.visible,self.pivot_x,self.pivot_y): self.form.addRow(" ",widget)
+        self.parent_layer=QComboBox()
+        for widget in (self.name,self.source,self.parent_layer,self.start,self.end,self.visible,self.pivot_x,self.pivot_y): self.form.addRow(" ",widget)
         self.layout.addWidget(self.title); self.layout.addLayout(self.form); self.center=QPushButton(); self.layout.addWidget(self.center); modes=QGridLayout(); self.mode_buttons={}
         for index,mode in enumerate(("move","rotate_x","rotate_y","rotate","scale","pivot")):
             button=QPushButton();button.setCheckable(True);button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);button.clicked.connect(lambda checked=False,value=mode:self.mode_changed.emit(value));self.mode_buttons[mode]=button;modes.addWidget(button,index//2,index%2)
         self.mode_buttons["move"].setChecked(True);self.layout.addLayout(modes);self.add_property=QPushButton();self.full_rotation=QPushButton();self.full_rotation.setObjectName("fullRotationButton");self.use=QPushButton();self.use.setObjectName("useResourceInEffectFromLayerButton");self.use.setDefault(True);self.use.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed);self.use.setMinimumHeight(36);self.layout.addWidget(self.add_property);self.layout.addWidget(self.full_rotation);self.property_body=QWidget();self.property_body.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.MinimumExpanding);self.property_layout=QVBoxLayout(self.property_body);self.property_layout.setContentsMargins(0,4,0,4);self.layout.addWidget(self.property_body);self.layout.addWidget(self.use);self.layout.addStretch();self.setWidget(body);self.layer=None;self.frame=0;self._loading=False;self.localization=None;self.property_cards={}
-        self.name.editingFinished.connect(self._apply);self.start.valueChanged.connect(self._apply);self.end.valueChanged.connect(self._apply);self.visible.toggled.connect(self._apply);self.pivot_x.valueChanged.connect(self._apply);self.pivot_y.valueChanged.connect(self._apply);self.center.clicked.connect(self.center_pivot_requested);self.add_property.clicked.connect(self.add_property_requested);self.full_rotation.clicked.connect(self.full_rotation_requested);self.use.clicked.connect(self.use_requested)
+        self.name.editingFinished.connect(self._apply);self.parent_layer.currentIndexChanged.connect(lambda:self.parent_changed.emit(self.parent_layer.currentData()) if not self._loading else None);self.start.valueChanged.connect(self._apply);self.end.valueChanged.connect(self._apply);self.visible.toggled.connect(self._apply);self.pivot_x.valueChanged.connect(self._apply);self.pivot_y.valueChanged.connect(self._apply);self.center.clicked.connect(self.center_pivot_requested);self.add_property.clicked.connect(self.add_property_requested);self.full_rotation.clicked.connect(self.full_rotation_requested);self.use.clicked.connect(self.use_requested)
 
     def set_layer(self,layer,source,frame):
         self.layer,self.frame=layer,frame;self._loading=True
@@ -74,8 +76,16 @@ class LayerInspector(QScrollArea):
             self.name.setText(layer.name);self.source.setText(source.name if source else "");self.start.setValue(layer.start_frame);self.end.setValue(layer.end_frame);self.visible.setChecked(layer.visible);self.pivot_x.setValue(layer.pivot_x);self.pivot_y.setValue(layer.pivot_y)
         self._loading=False;self._update_visibility_tooltip();self._properties();self._set_locked(bool(layer and layer.locked))
 
+    def set_parent_candidates(self,layers):
+        self._loading=True;current=self.layer.parent_id if self.layer else None;self.parent_layer.clear();self.parent_layer.addItem("None",None)
+        if self.layer:
+            counts={item.name:sum(other.name==item.name for other in layers) for item in layers}
+            for item in layers:
+                if item.id!=self.layer.id and not would_create_parent_cycle(layers,self.layer.id,item.id):self.parent_layer.addItem(item.name+(f" · {item.id[:6]}" if counts[item.name]>1 else ""),item.id)
+        self.parent_layer.setCurrentIndex(max(0,self.parent_layer.findData(current)));self._loading=False
+
     def _set_locked(self,locked):
-        for widget in (self.name,self.start,self.end,self.pivot_x,self.pivot_y,self.center,self.add_property,self.full_rotation):widget.setEnabled(not locked)
+        for widget in (self.name,self.parent_layer,self.start,self.end,self.pivot_x,self.pivot_y,self.center,self.add_property,self.full_rotation):widget.setEnabled(not locked)
         for button in self.mode_buttons.values():button.setEnabled(not locked)
         for values in self.property_cards.values():
             for widget in (*values["editors"],values["easing"],values["keyframe"],values["remove"]):widget.setEnabled(not locked)
@@ -134,7 +144,7 @@ class LayerInspector(QScrollArea):
 
     def retranslate(self,localization):
         self.localization=localization;t=localization.text;self.title.setText(t("v2.layer_inspector"))
-        for widget,key in ((self.name,"v2.layer_name"),(self.source,"v2.source_asset"),(self.start,"composition.start"),(self.end,"composition.end"),(self.visible,"v2.visible"),(self.pivot_x,"v2.layer_pivot_x"),(self.pivot_y,"v2.layer_pivot_y")):self.form.labelForField(widget).setText(t(key))
+        for widget,key in ((self.name,"v2.layer_name"),(self.source,"v2.source_asset"),(self.parent_layer,"layer.parent"),(self.start,"composition.start"),(self.end,"composition.end"),(self.visible,"v2.visible"),(self.pivot_x,"v2.layer_pivot_x"),(self.pivot_y,"v2.layer_pivot_y")):self.form.labelForField(widget).setText(t(key))
         self.center.setText(t("v2.center_layer_pivot"));self.add_property.setText(t("composition.add_property"));self.full_rotation.setText(t("v2.full_rotation"));self.use.setText(t("v2.use_in_effect"))
         apply_tooltip(self.visible,localization,"tooltip.visibility.hide" if self.visible.isChecked() else "tooltip.visibility.show",status=False);apply_tooltip(self.pivot_x,localization,"tooltip.resource.layer_pivot",status=False);apply_tooltip(self.pivot_y,localization,"tooltip.resource.layer_pivot",status=False);apply_tooltip(self.center,localization,"tooltip.resource.center_layer");apply_tooltip(self.add_property,localization,"tooltip.resource.add_property");apply_tooltip(self.full_rotation,localization,"tooltip.resource.full_rotation");apply_tooltip(self.use,localization,"tooltip.resource.use")
         for mode,key in (("move","gizmo.move"),("rotate_x","gizmo.rotate_x"),("rotate_y","gizmo.rotate_y"),("rotate","gizmo.rotate_z"),("scale","gizmo.scale"),("pivot","composition.pivot")):self.mode_buttons[mode].setText(t(key));apply_tooltip(self.mode_buttons[mode],localization,"tooltip.resource.gizmo_"+mode)

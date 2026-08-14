@@ -47,6 +47,8 @@ from app.models.source_asset import SourceAsset
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings
 from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE, PLACEMENT_SINGLE
+from app.models.layer_parenting import surviving_parent_dependencies, would_create_parent_cycle
+from app.services.layer_parenting_service import effect_local_affine, set_parent_keep_world
 from app.services.clip_service import create_clip_from_generator, update_clip_from_generator
 from app.services.particle_render_service import apply_particle_frames, render_particle_frames, invalidate_particle_render_caches
 from app.services.particle_preview_service import ParticlePreviewManager
@@ -536,6 +538,7 @@ class MainWindow(QMainWindow):
         self.effect_library.resource_layer_selection_requested.connect(self.select_effect_layers_with_modifiers)
         self.effect_library.select_all_resource_layers_requested.connect(self.select_all_effect_layers)
         self.effect_library.batch_resource_layer_requested.connect(self.batch_effect_layers)
+        self.effect_library.parent_requested.connect(self.set_effect_layer_parent)
         self.effect_library.group_expanded_requested.connect(self.toggle_effect_group_expanded)
         self.effect_library.resource_open_requested.connect(self.open_resource_editor)
         self.effect_properties.generate_requested.connect(self.generate_effect)
@@ -568,9 +571,11 @@ class MainWindow(QMainWindow):
         self.composition_layer_properties.changed.connect(self.update_composition_layer)
         self.composition_layer_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.composition_layer_properties.name_changed.connect(self.rename_resource_layer)
+        self.composition_layer_properties.parent_changed.connect(self.set_effect_layer_parent)
         self.composition_layer_properties.resource_changed.connect(self.set_resource_layer_resource)
         self.particle_properties.mode_changed.connect(self.set_resource_layer_mode)
         self.particle_properties.name_changed.connect(self.rename_resource_layer)
+        self.particle_properties.parent_changed.connect(self.set_effect_layer_parent)
         self.particle_properties.motion_keyframe_requested.connect(self.add_particle_motion_keyframe)
         self.particle_properties.motion_keyframe_delete_requested.connect(self.delete_particle_motion_keyframe)
         for panel in (self.composition_layer_properties,self.particle_properties):
@@ -1275,6 +1280,20 @@ class MainWindow(QMainWindow):
         if layer is None or layer.solo==solo:return False
         self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_solo",layer.solo,solo,"Solo Effect Layer"));return True
 
+    def set_effect_layer_parent(self,identifier,parent_id):
+        layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None);parent_id=None if not parent_id else str(parent_id)
+        if layer is None or self._effect_layer_locked(layer) or would_create_parent_cycle(self.project.effect_resource_layers,identifier,parent_id):return False
+        before=self._effect_batch_snapshot()
+        if not set_parent_keep_world(self.project.effect_resource_layers,identifier,parent_id,self.frame_index,lambda item,frame:effect_local_affine(item,frame,self.project)):return False
+        affected={identifier};changed=True
+        while changed:
+            changed=False
+            for item in self.project.effect_resource_layers:
+                if item.parent_id in affected and item.id not in affected:affected.add(item.id);changed=True
+        for item in self.project.effect_resource_layers:
+            if item.id in affected:invalidate_effect_resource_layer_base(item.id);apply_effect_resource_layer(self.project,item)
+        self._sync_resource_layer_adapters();return self._push_effect_batch(before,"Set Effect Layer Parent")
+
     def _effect_batch_snapshot(self):
         return {"resources":deepcopy(self.project.effect_resource_layers),"groups":deepcopy(self.project.effect_layer_groups),"root_order":deepcopy(self.project.effect_root_order),"layers":deepcopy(self.project.layers),"pixels":[{key:value.copy() for key,value in frame.layer_pixels.items()} for frame in self.project.frames],"selection":self.effect_layer_selection.snapshot(),"expanded":list(self.effect_expanded_group_ids),"layer_index":self.layer_index}
 
@@ -1337,11 +1356,16 @@ class MainWindow(QMainWindow):
             duplicate=deepcopy(by_id[child]);duplicate.id=uuid4().hex;base_name=re.sub(r" \(\d+\)$","",duplicate.name);number=2;leaf_name=f"{base_name} ({number})"
             while leaf_name in leaf_names:number+=1;leaf_name=f"{base_name} ({number})"
             duplicate.name=leaf_name;leaf_names.add(leaf_name);duplicate.generated_layer_id=None;duplicate.single_settings.id=duplicate.id;duplicate.single_settings.name=leaf_name;duplicate.single_settings.generated_layer_id=None;apply_effect_resource_layer(self.project,duplicate);self.project.effect_resource_layers.append(duplicate);children.append(duplicate.id)
+        remap={old:new for old,new in zip(group.children,children)}
+        for duplicate in self.project.effect_resource_layers:
+            if duplicate.id in children and duplicate.parent_id in remap:
+                duplicate.parent_id=remap[duplicate.parent_id];invalidate_effect_resource_layer_base(duplicate.id);apply_effect_resource_layer(self.project,duplicate)
         copy_group=deepcopy(group);copy_group.id=uuid4().hex;copy_group.name=name;copy_group.children=children;self.project.effect_layer_groups.append(copy_group);index=next(i for i,node in enumerate(self.project.effect_root_order) if node["id"]==group.id);self.project.effect_root_order.insert(index+1,group_node(copy_group.id));self.project.sync_effect_flat_order();self.effect_expanded_group_ids.add(copy_group.id);self.effect_layer_selection.restore({"selected_ids":[copy_group.id],"primary_id":copy_group.id,"anchor_id":copy_group.id},self._effect_ui_ids(False));self._sync_resource_layer_adapters();self._push_effect_batch(before,"Duplicate Effect Group");return self.project.effect_group_by_id(copy_group.id)
 
     def delete_effect_group(self,identifier=None):
         identifier=identifier or self.effect_layer_selection.primary_id;group=self.project.effect_group_by_id(identifier)
         if group is None or self._effect_node_structurally_locked(group.id):return False
+        if surviving_parent_dependencies(self.project.effect_resource_layers,set(group.children)):return False
         before=self._effect_batch_snapshot();children=set(group.children);targets=[item for item in self.project.effect_resource_layers if item.id in children];generated={item.generated_layer_id for item in targets};self.project.effect_resource_layers=[item for item in self.project.effect_resource_layers if item.id not in children];self.project.effect_layer_groups.remove(group);self.project.effect_root_order=[node for node in self.project.effect_root_order if node["id"]!=group.id];self.project.layers=[item for item in self.project.layers if item.id not in generated]
         for frame in self.project.frames:
             for value in generated:frame.layer_pixels.pop(value,None)
@@ -1378,6 +1402,10 @@ class MainWindow(QMainWindow):
             duplicate.name=name;existing.add(name);duplicate.generated_layer_id=None;duplicate.single_settings.id=duplicate.id;duplicate.single_settings.name=name;duplicate.single_settings.generated_layer_id=None
             generated=apply_effect_resource_layer(self.project,duplicate);self.project.effect_resource_layers.insert(index+1,duplicate);original_generated=next(item for item in self.project.layers if item.id==original.generated_layer_id);target=self.project.layers.index(original_generated)+1;self.project.layers.remove(generated);self.project.layers.insert(target,generated);duplicates.append(duplicate);duplicate_by_original[original.id]=duplicate.id
             if original.id==self.effect_layer_selection.primary_id:primary_duplicate=duplicate.id
+        for original in originals:
+            duplicate=next(item for item in duplicates if item.id==duplicate_by_original[original.id])
+            if original.parent_id in duplicate_by_original:
+                duplicate.parent_id=duplicate_by_original[original.parent_id];invalidate_effect_resource_layer_base(duplicate.id);apply_effect_resource_layer(self.project,duplicate)
         for group in self.project.effect_layer_groups:
             values=[]
             for value in group.children:values.extend([value,duplicate_by_original[value]] if value in duplicate_by_original else [value])
@@ -1393,6 +1421,7 @@ class MainWindow(QMainWindow):
         selected=set(self.effect_layer_selection.selected_ids);targets=[item for item in self.project.effect_resource_layers if item.id in selected]
         if not targets:return False
         if any(self._effect_layer_locked(item) for item in targets):self._report_effect_locked_batch();return False
+        if surviving_parent_dependencies(self.project.effect_resource_layers,selected):return False
         before=self._effect_batch_snapshot();generated_ids={item.generated_layer_id for item in targets};self.project.effect_resource_layers=[item for item in self.project.effect_resource_layers if item.id not in selected];self.project.layers=[item for item in self.project.layers if item.id not in generated_ids]
         for frame in self.project.frames:
             for identifier in generated_ids:frame.layer_pixels.pop(identifier,None)

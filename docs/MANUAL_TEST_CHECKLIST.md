@@ -704,6 +704,14 @@
 
 These are real Windows GUI checks and are not claimed by offscreen automation.
 
+## v0.0.08 Parenting
+
+- [ ] Resource: Set/Clear/Reparent, parent chain, cycle rejection, rename/reorder, Group move/ungroup, Group duplicate remap, and dependent delete safety.
+- [ ] Transform: Position/Rotation Z/Scale inheritance, current-world preservation, parent keyframe playback, child Local editing/Auto-Key, and gizmo drag under rotated/scaled parents.
+- [ ] Effect: Layer Space parent with Single and Particle Linear/Orbit/Helix; verify Surface Transform, playback speed, seed, motion, generated-layer mapping, visibility, Solo and lock stay independent.
+- [ ] Output: compare Canvas, PNG, PNG Sequence and Bake for parented and no-parent fixtures without render-order changes.
+- [ ] UI: Korean/English at 100/125/150% DPI, duplicate names in Parent selectors, Primary-only multi-select behavior, row indicators and context Set/Clear Parent actions.
+
 - Startup: first run, accept/reject notice, do-not-show, Help reopen, Korean and space-containing paths.
 - Project: New/Open, first and repeated Save, Save As, failed-save close, reopen.
 - Import: RGBA/RGB/grayscale PNG, transparent/multi-frame GIF, Aseprite success/failure, move original then reopen embedded project.

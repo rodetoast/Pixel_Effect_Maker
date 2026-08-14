@@ -103,13 +103,14 @@ class PlaybackFrameCache:
 def playback_relevant_revision(project) -> tuple:
     return (
         tuple((item.id,item.revision) for item in project.resource_compositions),
-        tuple((item.id,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision) for item in project.effect_resource_layers),
+        tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision) for item in project.effect_resource_layers),
         tuple((layer.id,layer.visible,layer.opacity) for layer in project.layers),
         project.width,project.height,project.fps,project.loop,
     )
 
 
 def _static_resource_layer_key(project,layer):
+    if layer.parent_id is not None:return None
     if layer.placement_mode==PLACEMENT_PARTICLE:return None
     settings=layer.single_settings
     transform=layer.layer_space_transform if layer.advanced_transform_enabled else EffectLayerTransform3D()

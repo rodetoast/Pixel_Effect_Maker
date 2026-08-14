@@ -96,7 +96,7 @@ def test_preview_sequence_export_is_numbered_rgba_and_non_overwriting(tmp_path):
 
 def test_v2_migrates_empty_collections_and_v3_round_trip_rejects_future():
     project=Project.create_default(width=8,height=8); legacy=project.to_dict(); legacy["format_version"]=2; legacy.pop("animation_clips"); legacy.pop("effect_resource_layers")
-    migrated=Project.from_dict(legacy); assert migrated.animation_clips==[] and migrated.particle_emitters==[] and migrated.format_version==11
+    migrated=Project.from_dict(legacy); assert migrated.animation_clips==[] and migrated.particle_emitters==[] and migrated.format_version==12
     clip=clip_asset(); migrated.animation_clips.append(clip); emitter=ParticleEmitter("P",settings(clip.id)); migrated.effect_resource_layers.append(EffectResourceLayer.from_particle_emitter(emitter))
     loaded=Project.from_dict(migrated.to_dict()); assert loaded.animation_clips[0].id==clip.id and loaded.particle_emitters[0].settings.seed==42
     future=migrated.to_dict(); future["format_version"]=FORMAT_VERSION+1

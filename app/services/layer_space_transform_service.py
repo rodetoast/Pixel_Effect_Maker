@@ -11,6 +11,7 @@ from app.models.effect_resource_layer import EffectLayerTransform3D
 from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.models.frame import empty_pixels
 from app.services.effect_render_service import _homography_from_unit_square,_source_over
+from app.services.layer_parenting_service import apply_affine_xy
 
 _NEAR_RATIO = 0.05
 
@@ -90,9 +91,14 @@ def project_local_points(
     canvas_height: int,
     frame: int = 0,
     *, local_z_spin: bool = False,
+    post_affine=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     world = transform_local_points(points, transform, canvas_width, canvas_height, frame,local_z_spin=local_z_spin)
-    return project_world_points(world, transform, canvas_width, canvas_height, frame)
+    projected,depth,factor,valid=project_world_points(world, transform, canvas_width, canvas_height, frame)
+    if post_affine is not None:
+        projected=apply_affine_xy(np.column_stack((projected,np.zeros(len(projected)))),post_affine)[:,:2]
+        valid&=np.isfinite(projected).all(axis=1)
+    return projected,depth,factor,valid
 
 
 def project_local_point(
@@ -103,10 +109,10 @@ def project_local_point(
     canvas_width: int,
     canvas_height: int,
     frame: int = 0,
-    *, local_z_spin: bool = False,
+    *, local_z_spin: bool = False, post_affine=None,
 ) -> ProjectedLayerPoint:
     projected, depth, factor, valid = project_local_points(
-        np.array(((x, y, z),), dtype=np.float64), transform, canvas_width, canvas_height, frame,local_z_spin=local_z_spin
+        np.array(((x, y, z),), dtype=np.float64), transform, canvas_width, canvas_height, frame,local_z_spin=local_z_spin,post_affine=post_affine
     )
     return ProjectedLayerPoint(
         float(projected[0, 0]), float(projected[0, 1]), float(depth[0]),
@@ -120,13 +126,13 @@ def projected_local_axes(
     canvas_height: int,
     frame: int = 0,
     length: float = 24.0,
-    *, local_z_spin: bool = False,
+    *, local_z_spin: bool = False, post_affine=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the shared projected pivot and +X/+Y/+Z endpoints."""
     value = transform.evaluated(frame)
     pivot = np.array((canvas_width / 2.0 + value.pivot_x, canvas_height / 2.0 + value.pivot_y, 0.0))
     points = np.vstack((pivot, pivot + (length, 0, 0), pivot + (0, length, 0), pivot + (0, 0, length)))
-    projected, _, _, valid = project_local_points(points, transform, canvas_width, canvas_height, frame,local_z_spin=local_z_spin)
+    projected, _, _, valid = project_local_points(points, transform, canvas_width, canvas_height, frame,local_z_spin=local_z_spin,post_affine=post_affine)
     return projected, valid
 
 
@@ -137,10 +143,11 @@ def projected_layer_quad(
     canvas_height: int,
     frame: int = 0,
     *, local_z_spin: bool = False,
+    post_affine=None,
 ) -> tuple[np.ndarray,np.ndarray]:
     left,top,right,bottom=bounds
     points=np.array(((left,top,0),(right,top,0),(right,bottom,0),(left,bottom,0)),dtype=np.float64)
-    projected,_,_,valid=project_local_points(points,transform,canvas_width,canvas_height,frame,local_z_spin=local_z_spin)
+    projected,_,_,valid=project_local_points(points,transform,canvas_width,canvas_height,frame,local_z_spin=local_z_spin,post_affine=post_affine)
     return projected,valid
 
 
@@ -149,16 +156,17 @@ def transform_layer_space_rgba_frame(
     transform: EffectLayerTransform3D,
     effect_frame: int = 0,
     *, local_z_spin: bool = False,
+    post_affine=None,
 ) -> np.ndarray:
     """Rasterize a flat Single resource with the canonical Layer Space camera."""
     value=transform.evaluated(effect_frame)
-    if value.is_identity():return frame_rgba
+    if value.is_identity() and post_affine is None:return frame_rgba
     height,width=frame_rgba.shape[:2];output=empty_pixels(width,height);alpha_y,alpha_x=np.nonzero(frame_rgba[...,3])
     if not len(alpha_x) or value.opacity<=0:return output
     left,right=int(alpha_x.min()),int(alpha_x.max())+1;top,bottom=int(alpha_y.min()),int(alpha_y.max())+1
     # Project half-open source pixel cells by their outer edges, then sample
     # destination pixel centers.  Resource selection uses the same convention.
-    destination,valid=projected_layer_quad((left,top,right,bottom),value,width,height,local_z_spin=local_z_spin)
+    destination,valid=projected_layer_quad((left,top,right,bottom),value,width,height,local_z_spin=local_z_spin,post_affine=post_affine)
     if not valid.all() or not np.isfinite(destination).all():return output
     try:inverse=np.linalg.inv(_homography_from_unit_square(destination))
     except np.linalg.LinAlgError:return output

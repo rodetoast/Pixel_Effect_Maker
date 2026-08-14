@@ -5,6 +5,7 @@ from typing import Any
 from math import isfinite
 from uuid import uuid4
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
+from .layer_parenting import IDENTITY_PARENT_OFFSET,normalize_parent_offset,repair_parent_links
 
 EASINGS={"Linear","Ease In","Ease Out","Ease In/Out"}
 PROPERTY_DEFAULTS={
@@ -84,20 +85,21 @@ class AnimationTrack:
 
 @dataclass
 class CompositionLayer:
-    name:str;source_type:str;source_id:str;start_frame:int;end_frame:int;source_start_frame:int=0;visible:bool=True;locked:bool=False;solo:bool=False;pivot_x:float=0.0;pivot_y:float=0.0;tracks:dict[str,AnimationTrack]=field(default_factory=dict);id:str=field(default_factory=lambda:uuid4().hex)
+    name:str;source_type:str;source_id:str;start_frame:int;end_frame:int;source_start_frame:int=0;visible:bool=True;locked:bool=False;solo:bool=False;pivot_x:float=0.0;pivot_y:float=0.0;tracks:dict[str,AnimationTrack]=field(default_factory=dict);id:str=field(default_factory=lambda:uuid4().hex);parent_id:str|None=None;parent_offset:tuple[float,...]=field(default_factory=lambda:IDENTITY_PARENT_OFFSET)
     def __post_init__(self):
         if self.source_type not in {"source_asset","animation_clip"}:raise ValueError("unsupported composition layer source")
         if self.start_frame<0 or self.end_frame<self.start_frame:raise ValueError("invalid composition layer range")
         if self.source_start_frame < 0 or not isfinite(float(self.pivot_x)) or not isfinite(float(self.pivot_y)):
             raise ValueError("invalid composition layer coordinates")
+        self.parent_id=None if self.parent_id is None else str(self.parent_id);self.parent_offset=normalize_parent_offset(self.parent_offset)
     def add_property(self,property_id):
         if property_id not in PROPERTY_DEFAULTS:raise ValueError("unsupported composition property")
         return self.tracks.setdefault(property_id,AnimationTrack(property_id,PROPERTY_DEFAULTS[property_id]))
     def remove_property(self,property_id):self.tracks.pop(property_id,None)
     def value(self,property_id,frame):return self.tracks[property_id].evaluate(frame) if property_id in self.tracks else PROPERTY_DEFAULTS[property_id]
-    def to_dict(self):return {"id":self.id,"name":self.name,"visible":self.visible,"locked":self.locked,"solo":self.solo,"source_type":self.source_type,"source_id":self.source_id,"start_frame":self.start_frame,"end_frame":self.end_frame,"source_start_frame":self.source_start_frame,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"tracks":{k:v.to_dict() for k,v in self.tracks.items()}}
+    def to_dict(self):return {"id":self.id,"name":self.name,"visible":self.visible,"locked":self.locked,"solo":self.solo,"source_type":self.source_type,"source_id":self.source_id,"start_frame":self.start_frame,"end_frame":self.end_frame,"source_start_frame":self.source_start_frame,"pivot_x":self.pivot_x,"pivot_y":self.pivot_y,"tracks":{k:v.to_dict() for k,v in self.tracks.items()},"parent_id":self.parent_id,"parent_offset":list(self.parent_offset)}
     @classmethod
-    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),visible=bool(data.get("visible",True)),locked=bool(data.get("locked",False)),solo=bool(data.get("solo",False)),source_type=str(data["source_type"]),source_id=str(data["source_id"]),start_frame=int(data.get("start_frame",0)),end_frame=int(data["end_frame"]),source_start_frame=int(data.get("source_start_frame",0)),pivot_x=float(data.get("pivot_x",0)),pivot_y=float(data.get("pivot_y",0)),tracks={k:AnimationTrack.from_dict(v) for k,v in data.get("tracks",{}).items()})
+    def from_dict(cls,data):return cls(id=str(data["id"]),name=str(data["name"]),visible=bool(data.get("visible",True)),locked=bool(data.get("locked",False)),solo=bool(data.get("solo",False)),source_type=str(data["source_type"]),source_id=str(data["source_id"]),start_frame=int(data.get("start_frame",0)),end_frame=int(data["end_frame"]),source_start_frame=int(data.get("source_start_frame",0)),pivot_x=float(data.get("pivot_x",0)),pivot_y=float(data.get("pivot_y",0)),tracks={k:AnimationTrack.from_dict(v) for k,v in data.get("tracks",{}).items()},parent_id=None if data.get("parent_id") is None else str(data.get("parent_id")),parent_offset=normalize_parent_offset(data.get("parent_offset")))
 
 @dataclass
 class ResourceComposition:
@@ -118,6 +120,7 @@ class ResourceComposition:
         if not self.groups:self.root_order=[layer_node(identifier) for identifier in leaf_ids]
         self.groups,self.root_order=repair_hierarchy(leaf_ids,self.groups,self.root_order)
         self.sync_flat_order()
+        repair_parent_links(self.layers)
     def sync_flat_order(self):
         by_id={layer.id:layer for layer in self.layers};ordered=flatten_hierarchy(self.groups,self.root_order)
         self.layers=[by_id[value] for value in ordered if value in by_id]
