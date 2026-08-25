@@ -6,11 +6,13 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v12. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.12`.
+New saves use project format v12. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.13`.
 
 Resource and Effect Timelines support runtime-only multi-key editing. Click a key for a single selection, use `Ctrl+Click` to toggle keys, `Shift+Click` for a same-track key range, or drag a marquee across visible Property rows. Drag selected keys horizontally, use `Alt+Left/Right` to nudge, Delete to remove, or the key context menu to batch easing. Timing edits preserve relative spacing and reject the entire operation when an unselected key occupies any destination frame.
 
 With a Timeline table focused, `Ctrl+C` copies the selected keys and `Ctrl+V` places their earliest key at the current playhead. Copy/Paste preserves original logical Layer/Property tracks, relative timing, values, mixed easing and rotation revolutions. Paste is one Undo step and is rejected atomically for collisions, range overflow, stale projects, missing tracks, or Resource/Effect cross-type payloads; text fields retain native clipboard shortcuts.
+
+Timeline navigation supports cursor-anchored `Ctrl+Wheel` time zoom, middle-drag horizontal pan, Fit Timeline/Visible Keys/Selected Keys, and `Ctrl+Alt+Left/Right` previous/next visible-key navigation. All, Animated, and Selected Layer reveal modes reduce row density without changing Layer selection or project data; hidden key selections are repaired for safe editing.
 
 Resource and Effect editors now support one-level Layer Groups. Select contiguous layers at the same hierarchy level to group them, then collapse, rename, duplicate, reorder, lock, Solo, hide, delete, or ungroup them as one unit. Groups are organization metadata only: they add no transform, keyframe, parent-space math, or Generated Layer, and preserve the existing `List Top = Canvas Front` render order. See [Layer Group Hierarchy](docs/LAYER_GROUP_HIERARCHY.md).
 
@@ -28,7 +30,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.12**입니다. Resource/Effect Timeline에서 여러 Key를 선택해 시간축 편집과 Easing 일괄 적용뿐 아니라 현재 Playhead 기준 Copy/Paste를 할 수 있습니다. 선택과 Clipboard는 런타임 전용이며 프로젝트 형식은 v12를 유지합니다.
+현재 버전은 **v0.0.13**입니다. Resource/Effect Timeline에서 Multi-Key 편집과 Copy/Paste에 더해 시간축 Zoom/Pan, Fit, 이전/다음 Key 이동, All/Animated/Selected Reveal을 사용할 수 있습니다. 모든 viewport/filter 상태는 런타임 전용이며 프로젝트 형식은 v12를 유지합니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 

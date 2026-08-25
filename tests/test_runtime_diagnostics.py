@@ -45,7 +45,7 @@ def test_uncaught_exception_is_logged(tmp_path, monkeypatch):
 def test_diagnostics_text_is_versioned_and_contains_no_project_payload(tmp_path):
     diagnostics.configure_runtime_logging(tmp_path)
     text = diagnostics.build_diagnostic_text()
-    assert "Pixel Effect Maker v0.0.12" in text
+    assert "Pixel Effect Maker v0.0.13" in text
     assert f"Project Format: {FORMAT_VERSION}" in text
     assert "Build Channel: Early Preview" in text
     assert "layer_pixels" not in text and "rgba8-zlib-base64" not in text

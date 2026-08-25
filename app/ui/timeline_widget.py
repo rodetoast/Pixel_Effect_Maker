@@ -7,6 +7,7 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,6 +28,7 @@ from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 from app.ui.hierarchy_display import parent_display_labels
 from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MIN_HEIGHT, HIERARCHY_LABEL_WIDTH
 from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
+from app.ui.timeline_time_view import TimelineTimeView,navigation_frame
 
 
 class TimelineWidget(QWidget):
@@ -50,6 +52,7 @@ class TimelineWidget(QWidget):
     multi_key_easing_requested=Signal(object,str)
     multi_key_copy_requested=Signal(object)
     multi_key_paste_requested=Signal()
+    key_frame_requested=Signal(int)
     VISIBILITY_COLUMN = 0
     NAME_COLUMN = 1
     FRAME_COLUMN_OFFSET = 2
@@ -64,7 +67,7 @@ class TimelineWidget(QWidget):
         self._play_shortcuts = []
         self._previous_shortcuts = []
         self._next_shortcuts = []
-        self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
+        self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self.reveal_mode="all";self._selected_logical_ids=set();self._primary_logical_id=None;self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
         layout = QVBoxLayout(self)
         status_toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
@@ -74,6 +77,10 @@ class TimelineWidget(QWidget):
         status_toolbar.addWidget(self.playback_status_label)
         status_toolbar.addStretch(1)
         edit_toolbar = QHBoxLayout()
+        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"])
+        self.previous_key.setFixedWidth(28);self.next_key.setFixedWidth(28);self.fit_timeline_button.setFixedWidth(30);self.fit_keys_button.setFixedWidth(34);self.fit_selected_button.setFixedWidth(30);self.reveal_combo.setFixedWidth(76)
+        for widget in (self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo):edit_toolbar.addWidget(widget)
+        self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]))
 
         self.edit_buttons: list[QPushButton] = []
         for label, signal, tooltip in (
@@ -111,7 +118,7 @@ class TimelineWidget(QWidget):
         self.table.setMinimumHeight(EFFECT_TIMELINE_MIN_HEIGHT)
         self.table.setMaximumHeight(EFFECT_TIMELINE_MAX_HEIGHT)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setMinimumSectionSize(20)
+        self.table.horizontalHeader().setMinimumSectionSize(self._time_view.minimum_width)
         self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
         self.table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
@@ -133,13 +140,41 @@ class TimelineWidget(QWidget):
         self.table.setCurrentCell(row, column)
 
     def set_frame_cell_width(self, width: int) -> None:
-        self.frame_cell_width = max(20, min(96, int(width)))
+        self.frame_cell_width = self._time_view.clamp_width(width)
         self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
         for column in range(self.FRAME_COLUMN_OFFSET, self.table.columnCount()):
             self.table.setColumnWidth(column, self.frame_cell_width)
         if self.table.columnCount() >= self.FRAME_COLUMN_OFFSET:
             self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
             self.table.setColumnWidth(self.NAME_COLUMN, HIERARCHY_LABEL_WIDTH)
+        stride=max(1,(28+self.frame_cell_width-1)//self.frame_cell_width)
+        for frame in range(max(0,self.table.columnCount()-self.FRAME_COLUMN_OFFSET)):
+            item=self.table.horizontalHeaderItem(frame+self.FRAME_COLUMN_OFFSET)
+            if item:item.setText(str(frame+1) if frame%stride==0 else "")
+
+    def zoom_time(self,steps,viewport_x):
+        old=self.frame_cell_width;new=self._time_view.zoom_width(old,steps)
+        if new==old:return False
+        header=self.table.horizontalHeader();first_x=header.sectionViewportPosition(self.FRAME_COLUMN_OFFSET) if self.table.columnCount()>self.FRAME_COLUMN_OFFSET else 0;coordinate=self._time_view.frame_coordinate(viewport_x,first_x,old);self.set_frame_cell_width(new);new_first=header.sectionViewportPosition(self.FRAME_COLUMN_OFFSET) if self.table.columnCount()>self.FRAME_COLUMN_OFFSET else 0;bar=self.table.horizontalScrollBar();bar.setValue(int(round(bar.value()+self._time_view.anchored_scroll_delta(viewport_x,coordinate,new_first,new))));return True
+
+    def _fit_range(self,frames):
+        values=sorted(set(int(frame) for frame in frames))
+        if not values:return False
+        width=self._time_view.fit_width(self.table.viewport().width(),values[0],values[-1]);self.set_frame_cell_width(width);center=(values[0]+values[-1])/2;bar=self.table.horizontalScrollBar();bar.setValue(int(round((center+.5)*width-self.table.viewport().width()/2)));return True
+
+    def fit_timeline(self):return self._fit_range(range(self._display_frame_count))
+    def fit_visible_keys(self):return self._fit_range(key.frame for key in self._visible_keys) or self.fit_timeline()
+    def fit_selected_keys(self):return self._fit_range(key.frame for key in self.key_selection.selected)
+    def navigate_key(self,direction):
+        target=navigation_frame((key.frame for key in self._visible_keys),self._current_frame,direction)
+        if target is None:return False
+        self.key_frame_requested.emit(target);return True
+    def set_reveal_mode(self,mode):
+        mode=str(mode)
+        if mode not in {"all","animated","selected"} or mode==self.reveal_mode:return False
+        self.reveal_mode=mode
+        if self._project is not None:self.refresh(self._project,getattr(self,"_selected_layer_index",0),self._current_frame,self._display_frame_count,self._preview)
+        return True
 
     def _toggle_visibility(self, row: int) -> None:
         if self._project is None:return
@@ -195,6 +230,7 @@ class TimelineWidget(QWidget):
             apply_tooltip(button, localization, key, shortcuts)
         apply_tooltip(self.fps_spin, localization, "tooltip.timeline.fps")
         apply_tooltip(self.table, localization, "tooltip.timeline.table", status=False)
+        self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);apply_tooltip(self.previous_key,localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,localization,"tooltip.timeline.reveal")
         self._update_play_tooltip()
         header = self.table.horizontalHeaderItem(self.NAME_COLUMN)
         if header is not None: header.setText(localization.text("timeline.layer"))
@@ -287,6 +323,7 @@ class TimelineWidget(QWidget):
 
     def eventFilter(self,watched,event):
         if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            if event.modifiers()==(Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.AltModifier) and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:self.navigate_key(-1 if event.key()==Qt.Key.Key_Left else 1);return True
             control=event.modifiers()==Qt.KeyboardModifier.ControlModifier
             if control and event.key()==Qt.Key.Key_C and self.key_selection.selected:self.multi_key_copy_requested.emit(list(self.key_selection.selected));return True
             if control and event.key()==Qt.Key.Key_V and read_timeline_clipboard_payload() is not None:self.multi_key_paste_requested.emit();return True
@@ -297,6 +334,16 @@ class TimelineWidget(QWidget):
             if event.key()==Qt.Key.Key_A and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.select_all_layers_requested.emit();return True
             if event.key()==Qt.Key.Key_Delete:self.delete_layer_requested.emit();return True
         if watched is self.table.viewport():
+            if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ControlModifier:
+                self.zoom_time(1 if event.angleDelta().y()>0 else -1,event.position().x());event.accept();return True
+            if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ShiftModifier:
+                bar=self.table.horizontalScrollBar();bar.setValue(bar.value()-event.angleDelta().y());event.accept();return True
+            if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.MiddleButton:
+                self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
+            if event.type()==QEvent.Type.MouseMove and self._time_pan and event.buttons()&Qt.MouseButton.MiddleButton:
+                start,value=self._time_pan;self.table.horizontalScrollBar().setValue(int(value-(event.position().x()-start)));event.accept();return True
+            if event.type()==QEvent.Type.MouseButtonRelease and event.button()==Qt.MouseButton.MiddleButton and self._time_pan:
+                self._time_pan=None;self.table.viewport().unsetCursor();event.accept();return True
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
                 point=event.position().toPoint();index=self.table.indexAt(point);item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
                 if isinstance(key,TimelineKey) and not self._effect_key_locked(key):
@@ -373,7 +420,7 @@ class TimelineWidget(QWidget):
         preview: bool = False,
     ) -> None:
         """Rebuild the table while preserving a valid model selection."""
-        self._project=project;self.table.blockSignals(True);self.table.clear();frame_count=display_frame_count or len(project.frames);self._display_frame_count=frame_count;self._preview=preview;localization=getattr(self,"_localization",None);parent_labels=parent_display_labels(project.effect_resource_layers,project.effect_layer_groups);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers};main_rows=[];property_rows=[]
+        self._project=project;self._selected_layer_index=selected_layer;self.table.blockSignals(True);self.table.clear();frame_count=display_frame_count or len(project.frames);self._display_frame_count=frame_count;self._preview=preview;localization=getattr(self,"_localization",None);parent_labels=parent_display_labels(project.effect_resource_layers,project.effect_layer_groups);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers};main_rows=[];property_rows=[]
         for layer_index in reversed(range(len(project.layers))):
             generated=project.layers[layer_index];logical=logical_by_generated.get(generated.id);main_rows.append({"kind":"layer","layer_index":layer_index,"generated":generated,"logical":logical})
             if logical:
@@ -382,8 +429,11 @@ class TimelineWidget(QWidget):
                 if logical.placement_mode=="particle":
                     for property_id,track in sorted(logical.particle_settings.motion.tracks.items()):
                         if track.keyframes:property_rows.append({"kind":"property","layer_index":layer_index,"generated":generated,"logical":logical,"scope":"effect_motion","property_id":property_id,"track":track})
+        animated_ids={item.id for item in project.effect_resource_layers if any(track.keyframes for track in item.layer_transform.tracks.values()) or item.placement_mode=="particle" and any(track.keyframes for track in item.particle_settings.motion.tracks.values())}
+        if self.reveal_mode=="animated":main_rows=[row for row in main_rows if row["logical"] is not None and row["logical"].id in animated_ids];property_rows=[row for row in property_rows if row["logical"].id in animated_ids]
+        elif self.reveal_mode=="selected":main_rows=[row for row in main_rows if row["logical"] is not None and row["logical"].id in self._selected_logical_ids];property_rows=[row for row in property_rows if row["logical"].id in self._selected_logical_ids]
         self.rows=main_rows+property_rows
-        self.table.setRowCount(len(self.rows));self.table.setColumnCount(frame_count+self.FRAME_COLUMN_OFFSET);self.table.setHorizontalHeaderLabels(["",localization.text("timeline.layer") if localization else "Layer"]+[str(index) for index in range(1,frame_count+1)]);self._visible_keys=set()
+        stride=max(1,(28+self.frame_cell_width-1)//self.frame_cell_width);self.table.setRowCount(len(self.rows));self.table.setColumnCount(frame_count+self.FRAME_COLUMN_OFFSET);self.table.setHorizontalHeaderLabels(["",localization.text("timeline.layer") if localization else "Layer"]+[str(index) if (index-1)%stride==0 else "" for index in range(1,frame_count+1)]);self._visible_keys=set()
         for display_row,descriptor in enumerate(self.rows):
             generated=descriptor["generated"];logical=descriptor["logical"]
             if descriptor["kind"]=="layer":
@@ -468,7 +518,9 @@ class TimelineWidget(QWidget):
         frame=project.frames[frame_index] if frame_index<len(project.frames) else None;pixels=None if frame is None else frame.layer_pixels.get(generated.id);item.setText("■" if pixels is not None and pixels[...,3].any() else "·");item.setToolTip(f"{generated.name} · Frame {int(frame_index)+1}")
 
     def set_effect_selection(self,project,selected_ids,primary_id):
-        selected_ids=set(selected_ids);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
+        selected_ids=set(selected_ids);changed=selected_ids!=self._selected_logical_ids;self._selected_logical_ids=set(selected_ids);self._primary_logical_id=primary_id
+        if changed and self.reveal_mode=="selected":self.refresh(project,getattr(self,"_selected_layer_index",0),self._current_frame,self._display_frame_count,self._preview)
+        logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
         for row,descriptor in enumerate(self.rows):
             generated=descriptor["generated"];logical=logical_by_generated.get(generated.id);selected=logical is not None and logical.id in selected_ids;color=QColor("#315a78" if logical is not None and logical.id==primary_id else "#29465b")
             for column in range(self.table.columnCount()):

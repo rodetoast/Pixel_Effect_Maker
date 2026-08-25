@@ -516,6 +516,7 @@ class MainWindow(QMainWindow):
         self.timeline.delete_layer_requested.connect(self.delete_layer)
         self.timeline.delete_layer_context_requested.connect(self._delete_layer_at)
         self.timeline.cell_selected_with_modifiers.connect(self.select_cell)
+        self.timeline.key_frame_requested.connect(self.select_frame)
         self.timeline.select_all_layers_requested.connect(self.select_all_effect_layers)
         self.timeline.scrub_started.connect(self._resource_timeline_scrub_started)
         self.timeline.scrub_finished.connect(self._resource_timeline_scrub_finished)

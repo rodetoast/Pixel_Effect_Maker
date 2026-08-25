@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.13 - 2026-08-25
+
+- Added cursor-anchored `Ctrl+Wheel` time zoom, middle-drag horizontal pan, and adaptive frame-label stride to Resource and Effect Timelines.
+- Added Fit Timeline, Fit Visible Keys, Fit Selected Keys, and previous/next visible-key navigation (`Ctrl+Alt+Left/Right`).
+- Added runtime-only All, Animated, and Selected Layer reveal modes with Resource Group ancestor preservation and logical Effect Layer filtering.
+- Filtering repairs hidden key selections without changing Layer selection, project data, Undo, rendering, Parenting, Multi-Transform, Auto-Key, or project format v12.
+
 ## v0.0.12 - 2026-08-25
 
 - Added focus-scoped `Ctrl+C` / `Ctrl+V` and key context-menu Copy/Paste for runtime-only Resource and Effect Timeline multi-key selections.

@@ -10,7 +10,7 @@ class LayerSelectionState:
         self.selected_ids:set[str]=set();self.primary_id:str|None=None;self.anchor_id:str|None=None
 
     def snapshot(self):
-        return {"selected_ids":list(self.selected_ids),"primary_id":self.primary_id,"anchor_id":self.anchor_id}
+        return {"selected_ids":sorted(self.selected_ids),"primary_id":self.primary_id,"anchor_id":self.anchor_id}
 
     def restore(self,value,ui_ids):
         valid=set(ui_ids);self.selected_ids={str(item) for item in value.get("selected_ids",[]) if str(item) in valid};self.primary_id=value.get("primary_id") if value.get("primary_id") in valid else None;self.anchor_id=value.get("anchor_id") if value.get("anchor_id") in valid else None;self.repair(ui_ids)

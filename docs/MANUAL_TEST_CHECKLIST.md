@@ -1,4 +1,15 @@
-# Pixel Effect Maker v0.0.12 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.13 수동 테스트 체크리스트
+
+## v0.0.13 Timeline Navigation & Reveal
+
+- [ ] 특정 Key 위에서 Ctrl+Wheel Up/Down 후 해당 Frame이 화면 X에서 크게 튀지 않고 Playhead와 Key 데이터가 유지되는지 확인한다.
+- [ ] Zoom-in 후 Middle Drag와 Shift+Wheel로 시간축만 이동하고 Scrub, Marquee, Key Drag가 시작되지 않는지 확인한다.
+- [ ] Fit, Keys, Sel 버튼이 각각 전체 Duration, 보이는 Key 범위, 선택 Key 범위를 적절한 margin으로 표시하는지 확인한다.
+- [ ] Ctrl+Alt+Left/Right와 키 이동 버튼이 현재 보이는 Track의 가장 가까운 이전/다음 Key Frame으로만 이동하는지 확인한다.
+- [ ] All/Animated/Selected 모드에서 Resource Group ancestor, collapse, Multi-Layer selection과 Parent badge가 유지되는지 확인한다.
+- [ ] Effect의 System/Particle/Motion Track 필터가 logical Effect Layer selection을 사용하고 fake Group을 만들지 않는지 확인한다.
+- [ ] Filter로 숨겨진 Key selection이 제거되지만 Layer selection, Dirty, Undo, Render 상태는 바뀌지 않는지 확인한다.
+- [ ] 좁거나 넓은 Zoom에서 Marquee, Multi-Key Drag, Collision, Copy/Paste Frame 결과가 동일한지 확인한다.
 
 ## Timeline Multi-Key Copy / Paste
 

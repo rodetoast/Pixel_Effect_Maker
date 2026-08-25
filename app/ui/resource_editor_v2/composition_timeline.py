@@ -1,6 +1,6 @@
 from PySide6.QtCore import QEvent, QMimeData, QRect, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QDrag, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu, QPushButton, QRubberBand, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu, QPushButton, QRubberBand, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 from app.models.layer_group import LayerGroup
@@ -11,6 +11,7 @@ from app.ui.hierarchy_display import (
 )
 from app.ui.layout_metrics import COMPACT_TOOL_BUTTON_SIZE, HIERARCHY_LABEL_WIDTH
 from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
+from app.ui.timeline_time_view import TimelineTimeView,navigation_frame
 
 
 def _toolbar_separator(parent):
@@ -114,19 +115,21 @@ class CompositionTimeline(QWidget):
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self.clipboard_context_id="";self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self.clipboard_context_id="";self.reveal_mode="all";self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         self.add_layer=QPushButton();self.add_layer.setObjectName("resourceV2AddLayerButton");self.add_layer_menu=QMenu(self.add_layer);self.add_layer.setMenu(self.add_layer_menu)
         self.remove_layer=QPushButton();self.remove_layer.setObjectName("resourceV2RemoveLayerButton");self.duplicate_layer=QPushButton();self.duplicate_layer.setObjectName("resourceV2DuplicateLayerButton");self.group_layer=QPushButton("Group");self.group_layer.setObjectName("resourceV2GroupButton");self.ungroup_layer=QPushButton("Ungroup");self.ungroup_layer.setObjectName("resourceV2UngroupButton");self.lock_layer=QPushButton("L");self.lock_layer.setCheckable(True);self.solo_layer=QPushButton("S");self.solo_layer.setCheckable(True);self.move_up=QPushButton("↑");self.move_up.setObjectName("resourceV2MoveLayerUpButton");self.move_down=QPushButton("↓");self.move_down.setObjectName("resourceV2MoveLayerDownButton")
-        for widget in (self.previous,self.play,self.next,self.delete_keyframe): controls.addWidget(widget)
+        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"])
+        self.previous_key.setFixedWidth(32);self.next_key.setFixedWidth(32);self.fit_timeline_button.setFixedWidth(38);self.fit_keys_button.setFixedWidth(42);self.fit_selected_button.setFixedWidth(38);self.reveal_combo.setFixedWidth(92)
+        for widget in (self.previous,self.play,self.next,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo,self.delete_keyframe): controls.addWidget(widget)
         controls.addStretch(); layout.addLayout(controls)
         for widget in (self.lock_layer,self.solo_layer,self.move_up,self.move_down):widget.setFixedSize(COMPACT_TOOL_BUTTON_SIZE,COMPACT_TOOL_BUTTON_SIZE)
         layer_controls=QHBoxLayout();layer_controls.setSpacing(4);layer_controls.addWidget(self.add_layer);layer_controls.addWidget(self.duplicate_layer);layer_controls.addWidget(self.remove_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.group_layer);layer_controls.addWidget(self.ungroup_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.lock_layer);layer_controls.addWidget(self.solo_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.move_up);layer_controls.addWidget(self.move_down);layer_controls.addStretch();layout.addLayout(layer_controls)
         self.key_selection_status=QLabel();self.key_selection_status.setObjectName("resourceKeySelectionStatus");layer_controls.addWidget(self.key_selection_status);self.selection_status=QPushButton();self.selection_status.setObjectName("resourceLayerSelectionStatus");self.selection_status.setFlat(True);self.selection_status.setEnabled(False);layer_controls.addWidget(self.selection_status)
-        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents); layout.addWidget(self.table)
+        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection);self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents); layout.addWidget(self.table)
         self.table.cellClicked.connect(self._clicked); self.table.verticalHeader().sectionClicked.connect(self._header_clicked)
         self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self.table.viewport().installEventFilter(self);self.table.installEventFilter(self)
-        self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete)
+        self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete);self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]))
         self.remove_layer.clicked.connect(self._remove_selected_layer);self.duplicate_layer.clicked.connect(self._duplicate_selected_layer);self.group_layer.clicked.connect(lambda:self.batch_command_requested.emit("group"));self.ungroup_layer.clicked.connect(lambda:self.batch_command_requested.emit("ungroup"));self.lock_layer.clicked.connect(self._toggle_lock);self.solo_layer.clicked.connect(self._toggle_solo);self.move_up.clicked.connect(lambda:self._move_selected_layer(1));self.move_down.clicked.connect(lambda:self._move_selected_layer(-1));self.table.layer_drop_requested.connect(self.reorder_layer_requested);self.table.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.table.duplicate_requested.connect(self._duplicate_selected_layer);self.table.delete_requested.connect(lambda:self.batch_command_requested.emit("delete"));self.table.select_all_layers_requested.connect(self.select_all_requested);self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.table.customContextMenuRequested.connect(self._context_menu)
 
     def set_available_sources(self,project):
@@ -141,6 +144,7 @@ class CompositionTimeline(QWidget):
 
     def eventFilter(self,watched,event):
         if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            if event.modifiers()==(Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.AltModifier) and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:self.navigate_key(-1 if event.key()==Qt.Key.Key_Left else 1);return True
             control=event.modifiers()==Qt.KeyboardModifier.ControlModifier
             if control and event.key()==Qt.Key.Key_C and self.key_selection.selected:self.multi_key_copy_requested.emit(list(self.key_selection.selected));return True
             if control and event.key()==Qt.Key.Key_V and read_timeline_clipboard_payload() is not None:self.multi_key_paste_requested.emit();return True
@@ -150,6 +154,16 @@ class CompositionTimeline(QWidget):
                     self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
                 if event.key()==Qt.Key.Key_Escape:self._cancel_key_gesture();return True
         if watched is self.table.viewport():
+            if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ControlModifier:
+                steps=1 if event.angleDelta().y()>0 else -1;self.zoom_time(steps,event.position().x());event.accept();return True
+            if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ShiftModifier:
+                bar=self.table.horizontalScrollBar();bar.setValue(bar.value()-event.angleDelta().y());event.accept();return True
+            if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.MiddleButton:
+                self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
+            if event.type()==QEvent.Type.MouseMove and self._time_pan and event.buttons()&Qt.MouseButton.MiddleButton:
+                start,value=self._time_pan;self.table.horizontalScrollBar().setValue(int(value-(event.position().x()-start)));event.accept();return True
+            if event.type()==QEvent.Type.MouseButtonRelease and event.button()==Qt.MouseButton.MiddleButton and self._time_pan:
+                self._time_pan=None;self.table.viewport().unsetCursor();event.accept();return True
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
                 point=event.position().toPoint();index=self.table.indexAt(point);row=index.row();column=index.column();item=self.table.item(row,column) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole) if item else None
                 if isinstance(key,TimelineKey) and not self._row_locked(row):
@@ -210,19 +224,27 @@ class CompositionTimeline(QWidget):
         count=len(self.key_selection.selected);self.key_selection_status.setText(f"{count} Keys · Δ {delta:+d}"+(" · Collision" if invalid else ""))
 
     def refresh(self, composition, selected_layer, frame, selected_ids=None, primary_id=None, expanded_ids=None):
-        composition.repair_hierarchy();self._composition=composition;self._current_frame=int(frame);primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
+        composition.repair_hierarchy();self._composition=composition;self._selected_layer_ref=selected_layer;self._current_frame=int(frame);primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
         # The renderer composites later model entries over earlier ones. Reverse
         # the UI rows so list top means Canvas Front / Top.
-        expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups};selected_ids=set(selected_ids or ({selected_layer.id} if selected_layer else set()))
+        expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups};selected_ids=set(selected_ids or ({selected_layer.id} if selected_layer else set()));self._selected_ids=set(selected_ids);self._primary_id=primary_id
         display_rows=build_hierarchy_rows(composition.layers,composition.groups,composition.root_order,expanded_ids,selected_ids,primary_id,effective_locked=composition.effective_locked);display_by_id={value.identifier:value for value in display_rows}
+        animated={layer.id for layer in composition.layers if any(track.keyframes for track in layer.tracks.values())};wanted={value for value in selected_ids if value in layer_by_id}
+        for identifier in selected_ids:
+            group=group_by_id.get(identifier)
+            if group:wanted.update(group.children)
+        if self.reveal_mode=="animated":display_rows=[display for display in display_rows if display.identifier in animated or display.kind=="group" and any(child in animated for child in group_by_id[display.identifier].children)]
+        elif self.reveal_mode=="selected":display_rows=[display for display in display_rows if display.identifier in wanted or display.kind=="group" and any(child in wanted for child in group_by_id[display.identifier].children)]
+        display_by_id={value.identifier:value for value in display_rows}
         for display in display_rows:
             value=group_by_id.get(display.identifier) if display.kind=="group" else layer_by_id[display.identifier];row=len(self.rows);self.rows.append((value,None))
             if display.depth:self._child_rows.add(row)
             if display.kind=="leaf":
                 for property_id in value.tracks:
+                    if self.reveal_mode=="animated" and not value.tracks[property_id].keyframes:continue
                     row=len(self.rows);self.rows.append((value,property_id))
                     if display.depth:self._child_rows.add(row)
-        self._visible_keys=set();self.table.blockSignals(True); self.table.clear(); self.table.setRowCount(len(self.rows)); self.table.setColumnCount(composition.frame_count); self.table.setHorizontalHeaderLabels([str(index+1) for index in range(composition.frame_count)])
+        self._visible_keys=set();self.table.blockSignals(True); self.table.clear(); self.table.setRowCount(len(self.rows)); self.table.setColumnCount(composition.frame_count);stride=max(1,(28+self.frame_cell_width-1)//self.frame_cell_width);self.table.setHorizontalHeaderLabels([str(index+1) if index%stride==0 else "" for index in range(composition.frame_count)])
         self.table.layer_rows=[(row,layer.id) for row,(layer,property_id) in enumerate(self.rows) if property_id is None]
         self.table.locked_ids={layer.id for layer in composition.layers if composition.effective_locked(layer)}|{group.id for group in composition.groups if group.locked or any(composition.effective_locked(layer_by_id[value]) for value in group.children)};self.table.selected_layer_ids=selected_ids
         self.table.node_kind={value.identifier:value.kind for value in display_rows};self.table.node_parent={value.identifier:value.group_id for value in display_rows};self.table.sibling_order={None:[node["id"] for node in reversed(composition.root_order)]}|{group.id:list(reversed(group.children)) for group in composition.groups};self.table.row_node_ids={row:layer.id for row,(layer,_property) in enumerate(self.rows)}
@@ -261,8 +283,38 @@ class CompositionTimeline(QWidget):
         self._sync_layer_controls()
 
     def set_frame_cell_width(self,width):
-        self.frame_cell_width=max(20,min(96,int(width)));self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
+        self.frame_cell_width=self._time_view.clamp_width(width);self.table.horizontalHeader().setMinimumSectionSize(self._time_view.minimum_width);self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
         for column in range(self.table.columnCount()):self.table.setColumnWidth(column,self.frame_cell_width)
+        stride=max(1,(28+self.frame_cell_width-1)//self.frame_cell_width)
+        for column in range(self.table.columnCount()):
+            item=self.table.horizontalHeaderItem(column)
+            if item:item.setText(str(column+1) if column%stride==0 else "")
+
+    def zoom_time(self,steps,viewport_x):
+        old=self.frame_cell_width;new=self._time_view.zoom_width(old,steps)
+        if new==old:return False
+        header=self.table.horizontalHeader();first_x=header.sectionViewportPosition(0) if self.table.columnCount() else 0;coordinate=self._time_view.frame_coordinate(viewport_x,first_x,old);self.set_frame_cell_width(new);new_first=header.sectionViewportPosition(0) if self.table.columnCount() else 0;bar=self.table.horizontalScrollBar();bar.setValue(int(round(bar.value()+self._time_view.anchored_scroll_delta(viewport_x,coordinate,new_first,new))));return True
+
+    def _fit_range(self,frames):
+        values=sorted(set(int(frame) for frame in frames))
+        if not values:return False
+        width=self._time_view.fit_width(self.table.viewport().width(),values[0],values[-1]);self.set_frame_cell_width(width);center=(values[0]+values[-1])/2;bar=self.table.horizontalScrollBar();bar.setValue(int(round((center+.5)*width-self.table.viewport().width()/2)));return True
+
+    def fit_timeline(self):return self._fit_range(range(self.table.columnCount()))
+    def fit_visible_keys(self):return self._fit_range(key.frame for key in self._visible_keys) or self.fit_timeline()
+    def fit_selected_keys(self):return self._fit_range(key.frame for key in self.key_selection.selected)
+
+    def navigate_key(self,direction):
+        target=navigation_frame((key.frame for key in self._visible_keys),self._current_frame,direction)
+        if target is None:return False
+        self.frame_selected.emit(target);return True
+
+    def set_reveal_mode(self,mode):
+        mode=str(mode)
+        if mode not in {"all","animated","selected"} or mode==self.reveal_mode:return False
+        self.reveal_mode=mode
+        if hasattr(self,"_composition"):self.refresh(self._composition,self._selected_layer_ref,self._current_frame,self._selected_ids,self._primary_id,self._expanded_ids)
+        return True
 
     def _clicked(self,row,column):
         self.frame_selected.emit(column)
@@ -368,6 +420,7 @@ class CompositionTimeline(QWidget):
         apply_tooltip(self.play,self.localization,"tooltip.timeline.pause" if self._playing else "tooltip.timeline.play",play)
         apply_tooltip(self.delete_keyframe,self.localization,"tooltip.timeline.delete_keyframe")
         apply_tooltip(self.table,self.localization,"tooltip.timeline.table",status=False)
+        apply_tooltip(self.previous_key,self.localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,self.localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,self.localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,self.localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,self.localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,self.localization,"tooltip.timeline.reveal")
 
     def retranslate(self,localization):
-        self.localization=localization;self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self.lock_layer.setAccessibleName(localization.text("layer.lock"));self.solo_layer.setAccessibleName(localization.text("layer.solo"));self.move_up.setAccessibleName(localization.text("hierarchy.front"));self.move_down.setAccessibleName(localization.text("hierarchy.back"));self._update_tooltips();[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.add_layer,self.duplicate_layer,self.remove_layer,self.group_layer,self.ungroup_layer,self.lock_layer,self.solo_layer,self.move_up,self.move_down)]
+        self.localization=localization;self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self.lock_layer.setAccessibleName(localization.text("layer.lock"));self.solo_layer.setAccessibleName(localization.text("layer.solo"));self.move_up.setAccessibleName(localization.text("hierarchy.front"));self.move_down.setAccessibleName(localization.text("hierarchy.back"));self._update_tooltips();[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.add_layer,self.duplicate_layer,self.remove_layer,self.group_layer,self.ungroup_layer,self.lock_layer,self.solo_layer,self.move_up,self.move_down,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo)]
