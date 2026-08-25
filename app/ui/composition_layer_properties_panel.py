@@ -12,6 +12,7 @@ from app.models.layer_parenting import would_create_parent_cycle
 from app.ui.focus_wheel_widgets import ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 from app.ui.tooltip_helper import apply_tooltip
 from app.ui.resource_layer_transform_panel import ResourceLayerTransformPanel
+from app.ui.hierarchy_display import layer_display_labels
 
 
 class CompositionLayerPropertiesPanel(QScrollArea):
@@ -93,8 +94,9 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.resource.clear();[self.resource.addItem(item.name,item.id) for item in project.resource_compositions]
         self.parent_layer.clear();self.parent_layer.addItem("None",None)
         if layer is not None:
+            labels=layer_display_labels(project.effect_resource_layers,project.effect_layer_groups)
             for item in project.effect_resource_layers:
-                if item.id!=layer.id and not would_create_parent_cycle(project.effect_resource_layers,layer.id,item.id):self.parent_layer.addItem(item.name,item.id)
+                if item.id!=layer.id and not would_create_parent_cycle(project.effect_resource_layers,layer.id,item.id):self.parent_layer.addItem(labels.get(item.id,item.name),item.id)
             self.parent_layer.setCurrentIndex(max(0,self.parent_layer.findData(layer.parent_id)));self.name.setText(layer.name);self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
         self._loading = False
         self.transform_panel.set_layer(layer, getattr(project,"_current_effect_frame",0))

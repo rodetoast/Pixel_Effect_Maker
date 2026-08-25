@@ -22,6 +22,8 @@ from app.models.project import Project
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
+from app.ui.hierarchy_display import parent_display_labels
+from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MIN_HEIGHT, HIERARCHY_LABEL_WIDTH
 
 
 class TimelineWidget(QWidget):
@@ -55,13 +57,14 @@ class TimelineWidget(QWidget):
         self._previous_shortcuts = []
         self._next_shortcuts = []
         layout = QVBoxLayout(self)
-        toolbar = QHBoxLayout()
+        status_toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
         self.selection_label.setStyleSheet("font-weight: bold;")
-        toolbar.addWidget(self.selection_label)
+        status_toolbar.addWidget(self.selection_label)
         self.playback_status_label = QLabel("Stopped · Frame 1 / 1 · 12 FPS")
-        toolbar.addWidget(self.playback_status_label)
-        toolbar.addStretch(1)
+        status_toolbar.addWidget(self.playback_status_label)
+        status_toolbar.addStretch(1)
+        edit_toolbar = QHBoxLayout()
 
         self.edit_buttons: list[QPushButton] = []
         for label, signal, tooltip in (
@@ -74,28 +77,30 @@ class TimelineWidget(QWidget):
             button = QPushButton(label)
             button.setToolTip(tooltip)
             button.clicked.connect(signal)
-            toolbar.addWidget(button)
+            edit_toolbar.addWidget(button)
             self.edit_buttons.append(button)
         self.delete_layer_button = self.edit_buttons[-1]
 
         self.play_button = QPushButton("▶")
         self.play_button.clicked.connect(self.play_requested)
-        toolbar.addWidget(self.play_button)
+        status_toolbar.addWidget(self.play_button)
         self.fps_label = QLabel("FPS")
-        toolbar.addWidget(self.fps_label)
+        status_toolbar.addWidget(self.fps_label)
         self.fps_spin = ScrollSafeSpinBox()
         self.fps_spin.setRange(1, 120)
         self.fps_spin.valueChanged.connect(self.fps_changed)
-        toolbar.addWidget(self.fps_spin)
-        layout.addLayout(toolbar)
+        status_toolbar.addWidget(self.fps_spin)
+        edit_toolbar.addStretch(1)
+        layout.addLayout(status_toolbar)
+        layout.addLayout(edit_toolbar)
 
         self.table = QTableWidget()
         self.frame_cell_width = 36
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        self.table.setMinimumHeight(150)
-        self.table.setMaximumHeight(280)
+        self.table.setMinimumHeight(EFFECT_TIMELINE_MIN_HEIGHT)
+        self.table.setMaximumHeight(EFFECT_TIMELINE_MAX_HEIGHT)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
         self.table.verticalHeader().setSectionResizeMode(
@@ -123,7 +128,7 @@ class TimelineWidget(QWidget):
             self.table.setColumnWidth(column, self.frame_cell_width)
         if self.table.columnCount() >= self.FRAME_COLUMN_OFFSET:
             self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
-            self.table.setColumnWidth(self.NAME_COLUMN, 160)
+            self.table.setColumnWidth(self.NAME_COLUMN, HIERARCHY_LABEL_WIDTH)
 
     def _toggle_visibility(self, row: int) -> None:
         if self._project is None:return
@@ -283,6 +288,7 @@ class TimelineWidget(QWidget):
         self._display_frame_count = frame_count
         self._preview = preview
         localization = getattr(self, "_localization", None)
+        parent_labels=parent_display_labels(project.effect_resource_layers,project.effect_layer_groups)
         self.table.setColumnCount(frame_count + self.FRAME_COLUMN_OFFSET)
         self.table.setHorizontalHeaderLabels(
             ["", localization.text("timeline.layer") if localization else "Layer"] + [str(index) for index in range(1, frame_count + 1)]
@@ -300,8 +306,13 @@ class TimelineWidget(QWidget):
                     "tooltip.visibility.hide" if layer.visible else "tooltip.visibility.show"
                 ))
             self.table.setItem(display_row, self.VISIBILITY_COLUMN, visibility)
-            name_item = QTableWidgetItem(layer.name)
-            name_item.setToolTip(layer.name)
+            lock="L" if resource_layer and resource_layer.locked else "L*" if resource_layer and project.effect_effective_locked(resource_layer) else " ";solo="S" if resource_layer and resource_layer.solo else " ";parent_label=parent_labels.get(resource_layer.id,"") if resource_layer else "";base=f"{lock:2} {solo} {layer.name}{f' [P: {parent_label}]' if parent_label else ''}";name_item = QTableWidgetItem("  "+base);name_item.setData(Qt.ItemDataRole.UserRole,resource_layer.id if resource_layer else None);name_item.setData(Qt.ItemDataRole.UserRole+1,base)
+            tooltip=[layer.name]
+            if parent_label and localization:tooltip.append(localization.text("hierarchy.parent_tooltip").format(name=parent_label))
+            if resource_layer and localization:
+                if resource_layer.locked:tooltip.append(localization.text("hierarchy.own_lock"))
+                elif project.effect_effective_locked(resource_layer):tooltip.append(localization.text("hierarchy.inherited_lock"))
+            name_item.setToolTip("\n".join(tooltip))
             self.table.setItem(display_row, self.NAME_COLUMN, name_item)
             for frame_index in range(frame_count):
                 frame = (
@@ -319,7 +330,7 @@ class TimelineWidget(QWidget):
                 item.setToolTip(f"{layer.name} · Frame {frame_index + 1}{key_detail}")
                 self.table.setItem(display_row, frame_index + self.FRAME_COLUMN_OFFSET, item)
         self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
-        self.table.setColumnWidth(self.NAME_COLUMN, 160)
+        self.table.setColumnWidth(self.NAME_COLUMN, HIERARCHY_LABEL_WIDTH)
         for column in range(self.FRAME_COLUMN_OFFSET, self.table.columnCount()):
             self.table.setColumnWidth(column, self.frame_cell_width)
         self.table.blockSignals(False)
@@ -386,6 +397,9 @@ class TimelineWidget(QWidget):
             for column in range(self.table.columnCount()):
                 item=self.table.item(row,column)
                 if item:item.setBackground(QBrush(color) if selected else QBrush())
+            name_item=self.table.item(row,self.NAME_COLUMN)
+            if name_item and logical is not None:
+                marker="▌" if logical.id==primary_id else "•" if selected else " ";name_item.setText(marker+" "+str(name_item.data(Qt.ItemDataRole.UserRole+1) or generated.name));font=name_item.font();font.setBold(logical.id==primary_id);name_item.setFont(font)
 
     def _update_selection_label(self, layer_index: int, frame_index: int) -> None:
         if self._project is None:

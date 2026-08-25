@@ -320,6 +320,13 @@ EN.update({
     "tooltip.group.solo":"Previews the visible layers in this group on the Canvas. Solo does not affect PNG, Sequence, or Bake output.",
     "tooltip.group.lock":"Protects the group and its layers from editing. Selection, visibility, Solo, and duplicate remain available.",
     "tooltip.group.delete":"Deletes the group and all layers inside it. Ungroup first to keep the layers.",
+    "hierarchy.empty":"Empty","hierarchy.expand_all":"Expand All","hierarchy.collapse_all":"Collapse All","hierarchy.toggle_group":"Expand / Collapse Group",
+    "hierarchy.group_tooltip":"Groups organize the layer list. They are separate from Transform Parenting.",
+    "hierarchy.parent_tooltip":"Parent: {name}\nInherits the parent's Position X/Y, Rotation Z, and Scale X/Y transform.",
+    "hierarchy.own_lock":"This layer itself is locked.","hierarchy.inherited_lock":"Editing is disabled because its containing group is locked.",
+    "hierarchy.front":"Move Layers to Front","hierarchy.back":"Move Layers to Back","hierarchy.effect_layers":"Effect Resource Layer Hierarchy",
+    "hierarchy.drop_before":"Move before","hierarchy.drop_after":"Move after","hierarchy.drop_into":"Move into group","hierarchy.drop_invalid":"This hierarchy drop target is not available.",
+    "resource_layer.mode_particle":"Particle","resource_layer.mode_single":"Single",
 })
 
 EN.update({
@@ -424,6 +431,13 @@ KO.update({
     "tooltip.group.solo":"이 그룹의 보이는 레이어만 Canvas에서 함께 미리봅니다. Solo는 PNG, Sequence, Bake 출력에는 영향을 주지 않습니다.",
     "tooltip.group.lock":"그룹과 그룹 안의 레이어 편집을 보호합니다. 선택, 표시/숨김, Solo, 복제는 계속 사용할 수 있습니다.",
     "tooltip.group.delete":"그룹과 안의 모든 레이어를 삭제합니다. 레이어를 유지하려면 먼저 그룹 해제를 사용하세요.",
+    "hierarchy.empty":"비어 있음","hierarchy.expand_all":"모두 펼치기","hierarchy.collapse_all":"모두 접기","hierarchy.toggle_group":"그룹 펼치기 / 접기",
+    "hierarchy.group_tooltip":"그룹은 레이어 목록을 정리합니다. Transform Parenting과는 별개입니다.",
+    "hierarchy.parent_tooltip":"부모: {name}\n이 레이어는 부모의 Position X/Y, Rotation Z, Scale X/Y Transform을 상속합니다.",
+    "hierarchy.own_lock":"이 레이어 자체가 잠겨 있습니다.","hierarchy.inherited_lock":"상위 그룹이 잠겨 있어 편집할 수 없습니다.",
+    "hierarchy.front":"레이어 맨 앞으로","hierarchy.back":"레이어 맨 뒤로","hierarchy.effect_layers":"Effect 리소스 레이어 계층",
+    "hierarchy.drop_before":"앞에 이동","hierarchy.drop_after":"뒤에 이동","hierarchy.drop_into":"그룹 안으로 이동","hierarchy.drop_invalid":"이 계층 위치로 이동할 수 없습니다.",
+    "resource_layer.mode_particle":"파티클","resource_layer.mode_single":"단일",
 })
 
 KO.update({

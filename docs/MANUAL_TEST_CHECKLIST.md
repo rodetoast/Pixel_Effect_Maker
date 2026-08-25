@@ -742,3 +742,27 @@ The deterministic model/service and offscreen QTest paths are automated. The fol
 - [ ] Effect modes: repeat with Single, Particle Linear, Orbit and Helix; confirm generated IDs, Surface Transform and playback settings do not change.
 - [ ] Output: compare Canvas, PNG, PNG Sequence and Bake after Multi Move/Rotate/Scale; confirm Selection Pivot and highlights are editor overlays only.
 - [ ] UI: verify handle hit targets, mixed fields, help text and Ctrl+A text selection in Korean/English at Windows 100/125/150% DPI.
+
+## v0.0.10 Hierarchy UX Polish
+
+- [ ] Resource Timeline과 Effect Resource Layer 목록에서 Group row, disclosure, Group child indentation, Property track `└`, Parent `[P: …]` badge를 구분한다.
+- [ ] own Lock `L`, inherited Group Lock `L*`, Solo, Visibility, Primary `▌`, selected non-primary `•`가 toolbar 및 모델 상태와 즉시 동기화된다.
+- [ ] Empty Group이 `(비어 있음)` / `(Empty)`으로 표시되고 fake child row가 생기지 않는다.
+- [ ] 긴 Group/Layer/Parent 이름이 상태 영역을 밀어내지 않고 elide되며 hover tooltip에는 전체 이름과 Parent/Lock 이유가 표시된다.
+- [ ] Group row 상단/중앙/하단과 Leaf row 상단/하단 drag가 Before/Into/After indicator와 실제 drop 결과에서 일치한다.
+- [ ] Empty Group Into, same-parent multi-drag, Group 간 이동을 확인하고 nested Group, locked subtree, mixed-parent target은 금지 피드백과 함께 거부된다.
+- [ ] Leaf, Group, multi-select, parented/no-parent, locked 선택의 context menu section과 enable/disable 상태를 확인한다.
+- [ ] 단일 disclosure, 모두 펼치기, 모두 접기 후 selection repair가 일치하고 Save 데이터 및 Undo/Dirty 상태가 변하지 않는다.
+- [ ] Parent rename과 Group A→B 이동 직후 badge와 indentation이 갱신되고 `parent_id`/`parent_offset`은 유지된다.
+- [ ] 한국어/English 및 Windows 100%/125%/150% DPI에서 L/S/앞/뒤 accessible text, tooltip, focus/selection 표시를 확인한다.
+
+## v0.0.10 Editor Layout & Density Polish
+
+- [ ] 1280×720, 1600×900, 1920×1080에서 Resource Browser, Canvas, Inspector, Timeline을 확인하고 겹침·음수 geometry·필수 조작 잘림이 없는지 확인한다.
+- [ ] Resource Browser가 약 205 px, Inspector가 약 320 px, Effect Library가 약 250 px, Effect Inspector가 약 340 px로 시작하고 splitter drag 및 재시작 후 유효한 사용자 폭이 유지되는지 확인한다.
+- [ ] 창을 좁힐 때 Canvas가 먼저 줄고 Resource/Effect 좌우 패널의 이름, 핵심 입력 및 vertical scrollbar가 계속 사용 가능한지 확인한다.
+- [ ] Resource Timeline 높이와 220 px hierarchy label lane에서 긴 Group/Layer/Parent 이름, L/L*/S/Visibility/Primary 표시가 읽히며 tooltip으로 전체 이름을 확인할 수 있는지 확인한다.
+- [ ] Resource Timeline의 Create/Edit, Hierarchy, State, Order 구분과 30 px L/S/앞/뒤 버튼의 hover, focus, click, accessible name/description을 확인한다.
+- [ ] Resource Inspector의 metadata label 정렬, 동일 높이 2열 Transform 버튼, 구분된 보조 action, compact property card와 세로 스크롤을 한국어/English에서 확인한다.
+- [ ] Effect Timeline의 220 px Layer name column과 증가한 높이에서 긴 Resource Layer 이름, Group child, Parent badge 및 frame cells가 겹치지 않는지 확인한다.
+- [ ] Windows 100%/125%/150% DPI에서 위 항목을 반복하고 기존 Create/Delete/Group/Lock/Solo/Reorder/Transform/Keyframe 동작과 Undo/Redo 의미가 바뀌지 않았는지 확인한다.

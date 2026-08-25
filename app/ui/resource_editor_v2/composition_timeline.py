@@ -1,21 +1,32 @@
 from PySide6.QtCore import QEvent, QMimeData, Qt, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QDrag
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QHBoxLayout, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction, QBrush, QColor, QDrag, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 from app.models.layer_group import LayerGroup
 from app.models.layer_parenting import would_create_parent_cycle
+from app.ui.hierarchy_display import (
+    DROP_AFTER, DROP_BEFORE, DROP_INTO, build_hierarchy_rows, classify_drop_zone,
+    context_action_states, drop_is_allowed, elide_text, layer_display_labels, resolve_drop_target,
+)
+from app.ui.layout_metrics import COMPACT_TOOL_BUTTON_SIZE, HIERARCHY_LABEL_WIDTH
+
+
+def _toolbar_separator(parent):
+    separator=QFrame(parent);separator.setFrameShape(QFrame.Shape.VLine);separator.setFrameShadow(QFrame.Shadow.Sunken)
+    return separator
 
 
 class LayerOrderTable(QTableWidget):
     """Timeline table that commits a layer move only when a drop completes."""
     layer_drop_requested=Signal(object,int)
+    hierarchy_drop_requested=Signal(object,object,int)
     duplicate_requested=Signal()
     delete_requested=Signal();select_all_layers_requested=Signal()
     MIME="application/x-pixel-effect-resource-layer"
 
     def __init__(self,parent=None):
-        super().__init__(parent);self.layer_rows=[];self.locked_ids=set();self.selected_layer_ids=set();self.setDragEnabled(True);self.setAcceptDrops(True);self.viewport().setAcceptDrops(True);self.setDropIndicatorShown(True);self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop);self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        super().__init__(parent);self.layer_rows=[];self.locked_ids=set();self.selected_layer_ids=set();self.node_kind={};self.node_parent={};self.sibling_order={};self.row_node_ids={};self._drop_feedback=None;self.setDragEnabled(True);self.setAcceptDrops(True);self.viewport().setAcceptDrops(True);self.setDropIndicatorShown(False);self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop);self.setDefaultDropAction(Qt.DropAction.MoveAction)
 
     def startDrag(self,supported_actions):
         row=self.currentRow();record=next((value for value in self.layer_rows if value[0]==row),None)
@@ -29,18 +40,42 @@ class LayerOrderTable(QTableWidget):
         else:super().dragEnterEvent(event)
 
     def dragMoveEvent(self,event):
-        if event.mimeData().hasFormat(self.MIME):super().dragMoveEvent(event);event.acceptProposedAction();self.viewport().update()
+        if event.mimeData().hasFormat(self.MIME):
+            self._update_drop_feedback(event)
+            self.viewport().setCursor(Qt.CursorShape.ArrowCursor if self._drop_feedback and self._drop_feedback[3] else Qt.CursorShape.ForbiddenCursor);self.viewport().update();event.acceptProposedAction()
         else:super().dragMoveEvent(event)
 
     def dropEvent(self,event):
         if not event.mimeData().hasFormat(self.MIME):super().dropEvent(event);return
-        identifiers=[value for value in bytes(event.mimeData().data(self.MIME)).decode().split(",") if value];positions=[row for row,_identifier in self.layer_rows];y=event.position().y();target=len(positions)
-        for index,row in enumerate(positions):
-            rect=self.visualRect(self.model().index(row,0))
-            if y<rect.center().y():target=index;break
-        selected_positions=[index for index,(_row,value) in enumerate(self.layer_rows) if value in identifiers]
-        target-=sum(1 for value in selected_positions if value<target)
-        self.layer_drop_requested.emit(identifiers,max(0,min(target,max(0,len(positions)-len(identifiers)))));event.setDropAction(Qt.DropAction.MoveAction);event.accept()
+        identifiers=self._drag_identifiers(event)
+        if self._drop_feedback is None:self._update_drop_feedback(event)
+        feedback=self._drop_feedback;self._clear_drop_feedback()
+        if feedback and feedback[3] and feedback[2] is not None:
+            parent_id,target=feedback[2];self.hierarchy_drop_requested.emit(identifiers,parent_id,target);event.setDropAction(Qt.DropAction.MoveAction);event.accept();return
+        event.ignore()
+
+    def dragLeaveEvent(self,event):
+        self._clear_drop_feedback();super().dragLeaveEvent(event)
+
+    def _drag_identifiers(self,event):
+        return [value for value in bytes(event.mimeData().data(self.MIME)).decode().split(",") if value]
+
+    def _update_drop_feedback(self,event):
+        identifiers=self._drag_identifiers(event);point=event.position().toPoint();index=self.indexAt(point);target_id=self.row_node_ids.get(index.row()) if index.isValid() else None
+        if target_id:
+            rect=self.visualRect(self.model().index(index.row(),0));zone=classify_drop_zone(self.node_kind.get(target_id,"leaf"),point.y()-rect.top(),rect.height());allowed=drop_is_allowed(identifiers,target_id,zone,self.node_kind,self.node_parent,self.locked_ids);resolved=resolve_drop_target(target_id,zone,self.node_kind,self.node_parent,self.sibling_order,identifiers) if allowed else None;self._drop_feedback=(index.row(),zone,resolved,allowed)
+        else:self._drop_feedback=None
+
+    def _clear_drop_feedback(self):
+        self._drop_feedback=None;self.viewport().unsetCursor();self.viewport().update()
+
+    def paintEvent(self,event):
+        super().paintEvent(event)
+        if not self._drop_feedback:return
+        row,zone,_resolved,allowed=self._drop_feedback;rect=self.visualRect(self.model().index(row,0));painter=QPainter(self.viewport());color=QColor("#74c0fc") if allowed else QColor("#fa5252");painter.setPen(QPen(color,2))
+        if zone==DROP_INTO:painter.drawRect(1,rect.top()+1,self.viewport().width()-3,max(1,rect.height()-3))
+        else:
+            y=rect.top() if zone==DROP_BEFORE else rect.bottom();painter.drawLine(1,y,self.viewport().width()-2,y)
 
     def keyPressEvent(self,event):
         if event.key()==Qt.Key.Key_D and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.duplicate_requested.emit();event.accept();return
@@ -67,23 +102,26 @@ class CompositionTimeline(QWidget):
     solo_requested = Signal(str,bool)
     selection_requested=Signal(str,object);select_all_requested=Signal();batch_command_requested=Signal(str)
     group_expanded_requested=Signal(str,bool)
+    expand_all_requested=Signal();collapse_all_requested=Signal()
+    hierarchy_drop_requested=Signal(object,object,int)
     parent_requested=Signal(str,object)
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]); layout=QVBoxLayout(self); controls=QHBoxLayout()
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]); layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         self.add_layer=QPushButton();self.add_layer.setObjectName("resourceV2AddLayerButton");self.add_layer_menu=QMenu(self.add_layer);self.add_layer.setMenu(self.add_layer_menu)
         self.remove_layer=QPushButton();self.remove_layer.setObjectName("resourceV2RemoveLayerButton");self.duplicate_layer=QPushButton();self.duplicate_layer.setObjectName("resourceV2DuplicateLayerButton");self.group_layer=QPushButton("Group");self.group_layer.setObjectName("resourceV2GroupButton");self.ungroup_layer=QPushButton("Ungroup");self.ungroup_layer.setObjectName("resourceV2UngroupButton");self.lock_layer=QPushButton("L");self.lock_layer.setCheckable(True);self.solo_layer=QPushButton("S");self.solo_layer.setCheckable(True);self.move_up=QPushButton("↑");self.move_up.setObjectName("resourceV2MoveLayerUpButton");self.move_down=QPushButton("↓");self.move_down.setObjectName("resourceV2MoveLayerDownButton")
         for widget in (self.previous,self.play,self.next,self.delete_keyframe): controls.addWidget(widget)
         controls.addStretch(); layout.addLayout(controls)
-        layer_controls=QHBoxLayout();layer_controls.addWidget(self.add_layer);layer_controls.addWidget(self.duplicate_layer);layer_controls.addWidget(self.remove_layer);layer_controls.addWidget(self.group_layer);layer_controls.addWidget(self.ungroup_layer);layer_controls.addWidget(self.lock_layer);layer_controls.addWidget(self.solo_layer);layer_controls.addWidget(self.move_up);layer_controls.addWidget(self.move_down);layer_controls.addStretch();layout.addLayout(layer_controls)
+        for widget in (self.lock_layer,self.solo_layer,self.move_up,self.move_down):widget.setFixedSize(COMPACT_TOOL_BUTTON_SIZE,COMPACT_TOOL_BUTTON_SIZE)
+        layer_controls=QHBoxLayout();layer_controls.setSpacing(4);layer_controls.addWidget(self.add_layer);layer_controls.addWidget(self.duplicate_layer);layer_controls.addWidget(self.remove_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.group_layer);layer_controls.addWidget(self.ungroup_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.lock_layer);layer_controls.addWidget(self.solo_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.move_up);layer_controls.addWidget(self.move_down);layer_controls.addStretch();layout.addLayout(layer_controls)
         self.selection_status=QPushButton();self.selection_status.setObjectName("resourceLayerSelectionStatus");self.selection_status.setFlat(True);self.selection_status.setEnabled(False);layer_controls.addWidget(self.selection_status)
-        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width); layout.addWidget(self.table)
+        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents); layout.addWidget(self.table)
         self.table.cellClicked.connect(self._clicked); self.table.verticalHeader().sectionClicked.connect(self._header_clicked)
         self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self._key_drag=None;self.table.viewport().installEventFilter(self)
         self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete)
-        self.remove_layer.clicked.connect(self._remove_selected_layer);self.duplicate_layer.clicked.connect(self._duplicate_selected_layer);self.group_layer.clicked.connect(lambda:self.batch_command_requested.emit("group"));self.ungroup_layer.clicked.connect(lambda:self.batch_command_requested.emit("ungroup"));self.lock_layer.clicked.connect(self._toggle_lock);self.solo_layer.clicked.connect(self._toggle_solo);self.move_up.clicked.connect(lambda:self._move_selected_layer(1));self.move_down.clicked.connect(lambda:self._move_selected_layer(-1));self.table.layer_drop_requested.connect(self.reorder_layer_requested);self.table.duplicate_requested.connect(self._duplicate_selected_layer);self.table.delete_requested.connect(lambda:self.batch_command_requested.emit("delete"));self.table.select_all_layers_requested.connect(self.select_all_requested);self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.table.customContextMenuRequested.connect(self._context_menu)
+        self.remove_layer.clicked.connect(self._remove_selected_layer);self.duplicate_layer.clicked.connect(self._duplicate_selected_layer);self.group_layer.clicked.connect(lambda:self.batch_command_requested.emit("group"));self.ungroup_layer.clicked.connect(lambda:self.batch_command_requested.emit("ungroup"));self.lock_layer.clicked.connect(self._toggle_lock);self.solo_layer.clicked.connect(self._toggle_solo);self.move_up.clicked.connect(lambda:self._move_selected_layer(1));self.move_down.clicked.connect(lambda:self._move_selected_layer(-1));self.table.layer_drop_requested.connect(self.reorder_layer_requested);self.table.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.table.duplicate_requested.connect(self._duplicate_selected_layer);self.table.delete_requested.connect(lambda:self.batch_command_requested.emit("delete"));self.table.select_all_layers_requested.connect(self.select_all_requested);self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.table.customContextMenuRequested.connect(self._context_menu)
 
     def set_available_sources(self,project):
         self.add_layer_menu.clear()
@@ -118,30 +156,30 @@ class CompositionTimeline(QWidget):
         composition.repair_hierarchy();self._composition=composition;primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
         # The renderer composites later model entries over earlier ones. Reverse
         # the UI rows so list top means Canvas Front / Top.
-        expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups}
-        for node in reversed(composition.root_order):
-            if node["type"]=="layer":nodes=[(layer_by_id[node["id"]],False)]
-            else:
-                group=group_by_id[node["id"]];nodes=[(group,False)]+([(layer_by_id[value],True) for value in reversed(group.children)] if group.id in expanded_ids else [])
-            for value,child in nodes:
-                row=len(self.rows);self.rows.append((value,None))
-                if child:self._child_rows.add(row)
-                if not isinstance(value,LayerGroup):
-                    for property_id in value.tracks:
-                        row=len(self.rows);self.rows.append((value,property_id))
-                        if child:self._child_rows.add(row)
+        expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups};selected_ids=set(selected_ids or ({selected_layer.id} if selected_layer else set()))
+        display_rows=build_hierarchy_rows(composition.layers,composition.groups,composition.root_order,expanded_ids,selected_ids,primary_id,effective_locked=composition.effective_locked);display_by_id={value.identifier:value for value in display_rows}
+        for display in display_rows:
+            value=group_by_id.get(display.identifier) if display.kind=="group" else layer_by_id[display.identifier];row=len(self.rows);self.rows.append((value,None))
+            if display.depth:self._child_rows.add(row)
+            if display.kind=="leaf":
+                for property_id in value.tracks:
+                    row=len(self.rows);self.rows.append((value,property_id))
+                    if display.depth:self._child_rows.add(row)
         self.table.blockSignals(True); self.table.clear(); self.table.setRowCount(len(self.rows)); self.table.setColumnCount(composition.frame_count); self.table.setHorizontalHeaderLabels([str(index+1) for index in range(composition.frame_count)])
         self.table.layer_rows=[(row,layer.id) for row,(layer,property_id) in enumerate(self.rows) if property_id is None]
-        self.table.locked_ids={layer.id for layer in composition.layers if composition.effective_locked(layer)}|{group.id for group in composition.groups if group.locked or any(composition.effective_locked(layer_by_id[value]) for value in group.children)}
-        selected_ids=set(selected_ids or ({selected_layer.id} if selected_layer else set()));self.table.selected_layer_ids=selected_ids
+        self.table.locked_ids={layer.id for layer in composition.layers if composition.effective_locked(layer)}|{group.id for group in composition.groups if group.locked or any(composition.effective_locked(layer_by_id[value]) for value in group.children)};self.table.selected_layer_ids=selected_ids
+        self.table.node_kind={value.identifier:value.kind for value in display_rows};self.table.node_parent={value.identifier:value.group_id for value in display_rows};self.table.sibling_order={None:[node["id"] for node in reversed(composition.root_order)]}|{group.id:list(reversed(group.children)) for group in composition.groups};self.table.row_node_ids={row:layer.id for row,(layer,_property) in enumerate(self.rows)}
         headers=[]
         for row,(layer,property_id) in enumerate(self.rows):
             child=row in self._child_rows
             property_name=self.localization.text("property."+property_id) if self.localization and property_id else property_id
-            if isinstance(layer,LayerGroup):headers.append(("▼ " if layer.id in expanded_ids else "▶ ")+("☑ " if layer.visible else "☐ ")+("🔒 " if layer.locked else "")+("S " if layer.solo else "")+f"📁 {layer.name}  {len(layer.children)}")
+            display=display_by_id[layer.id]
+            marker="▌" if display.primary else "•" if display.selected else " ";visible="●" if display.visible else "○";lock="L" if display.own_locked else "L*" if display.inherited_locked else " ";solo="S" if display.solo else " ";metrics=self.table.verticalHeader().fontMetrics()
+            if isinstance(layer,LayerGroup):
+                name=elide_text(metrics,layer.name,150);empty=(self.localization.text("hierarchy.empty") if self.localization else "Empty") if not display.child_count else str(display.child_count);headers.append(f"{'▼' if display.expanded else '▶'} {visible} {lock:2} {solo} {marker} [G] {name}  ({empty})")
             else:
-                parent=layer_by_id.get(layer.parent_id);relation=f"  ↳ {parent.name}" if parent else ""
-                headers.append((("    " if child else "")+("☑ " if layer.visible else "☐ ")+("🔒 " if layer.locked else "")+("S " if layer.solo else "")+layer.name+relation) if property_id is None else ("      ↳ " if child else "  ↳ ")+property_name)
+                relation=f"  [P: {elide_text(metrics,display.parent_label,80)}]" if display.parent_label else "";name=elide_text(metrics,layer.name,135 if relation else 205)
+                headers.append((("    " if child else "")+f"{visible} {lock:2} {solo} {marker} {name}{relation}") if property_id is None else ("        └ " if child else "    └ ")+property_name)
             for column in range(composition.frame_count):
                 marker="" if isinstance(layer,LayerGroup) else "◆" if property_id and any(key.frame==column for key in layer.tracks[property_id].keyframes) else "■" if property_id is None and layer.start_frame<=column<=layer.end_frame else "·"
                 item=QTableWidgetItem(marker); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter); self.table.setItem(row,column,item)
@@ -150,7 +188,13 @@ class CompositionTimeline(QWidget):
         if self.localization:
             for row,(layer,property_id) in enumerate(self.rows):
                 header=self.table.verticalHeaderItem(row)
-                if header and property_id is None:header.setToolTip(self.localization.text("tooltip.visibility.hide" if layer.visible else "tooltip.visibility.show"))
+                if header and property_id is None:
+                    display=display_by_id[layer.id];parts=[layer.name]
+                    if isinstance(layer,LayerGroup):parts.append(self.localization.text("hierarchy.group_tooltip"))
+                    if display.parent_label:parts.append(self.localization.text("hierarchy.parent_tooltip").format(name=display.parent_label))
+                    if display.own_locked:parts.append(self.localization.text("hierarchy.own_lock"))
+                    elif display.inherited_locked:parts.append(self.localization.text("hierarchy.inherited_lock"))
+                    header.setToolTip("\n".join(parts));font=header.font();font.setBold(isinstance(layer,LayerGroup) or display.primary);header.setFont(font)
         target=next((index for index,value in enumerate(self.rows) if value[0].id==primary_id),0) if self.rows else -1
         if target>=0: self.table.setCurrentCell(target,frame); self.table.scrollToItem(self.table.item(target,frame))
         self.table.blockSignals(False)
@@ -214,18 +258,25 @@ class CompositionTimeline(QWidget):
                 self.selection_requested.emit(clicked,Qt.KeyboardModifier.NoModifier)
         layer=self._selected_layer()
         if not layer:return
-        keys=("duplicate","lock","unlock","solo","unsolo","show","hide","front","back","delete");menu=QMenu(self);actions={key:menu.addAction(self.localization.text("layer.batch."+key)) for key in keys};actions["group"]=menu.addAction(self.localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self.localization.text("group.ungroup"))
+        selected_count=len(self.table.selected_layer_ids);locked=any(value in self.table.locked_ids for value in self.table.selected_layer_ids);states=context_action_states("group" if isinstance(layer,LayerGroup) else "leaf",selected_count,locked,bool(getattr(layer,"parent_id",None)));menu=QMenu(self);actions={};actions["duplicate"]=menu.addAction(self.localization.text("layer.batch.duplicate"));actions["delete"]=menu.addAction(self.localization.text("layer.batch.delete"));menu.addSeparator();actions["group"]=menu.addAction(self.localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self.localization.text("group.ungroup"));menu.addSeparator()
+        actions["group"].setEnabled(states["group"]);actions["ungroup"].setEnabled(states["ungroup"]);actions["delete"].setEnabled(states["delete"])
         parent_actions={}
         if not isinstance(layer,LayerGroup):
-            parent_menu=menu.addMenu(self.localization.text("parent.set"));clear=menu.addAction(self.localization.text("parent.clear"));clear.setEnabled(layer.parent_id is not None);parent_actions[clear]=None
+            parent_menu=menu.addMenu(self.localization.text("parent.set"));clear=menu.addAction(self.localization.text("parent.clear"));clear.setEnabled(states["clear_parent"]);parent_actions[clear]=None
             composition=getattr(self,"_composition",None)
+            labels=layer_display_labels(composition.layers,composition.groups) if composition else {}
             for candidate in composition.layers if composition else ():
                 if candidate.id!=layer.id and not would_create_parent_cycle(composition.layers,layer.id,candidate.id):
-                    action=parent_menu.addAction(candidate.name);parent_actions[action]=candidate.id
+                    action=parent_menu.addAction(labels.get(candidate.id,candidate.name));action.setEnabled(states["set_parent"]);parent_actions[action]=candidate.id
+        menu.addSeparator();state_key="show" if not layer.visible else "hide";lock_key="unlock" if layer.locked else "lock";solo_key="unsolo" if layer.solo else "solo"
+        for key in (state_key,lock_key,solo_key):actions[key]=menu.addAction(self.localization.text("layer.batch."+key))
+        menu.addSeparator();actions["front"]=menu.addAction(self.localization.text("layer.batch.front"));actions["back"]=menu.addAction(self.localization.text("layer.batch.back"));actions["front"].setEnabled(states["reorder"]);actions["back"].setEnabled(states["reorder"]);menu.addSeparator();actions["expand_all"]=menu.addAction(self.localization.text("hierarchy.expand_all"));actions["collapse_all"]=menu.addAction(self.localization.text("hierarchy.collapse_all"))
         chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
         if chosen in parent_actions:self.parent_requested.emit(layer.id,parent_actions[chosen]);return
         command=next((key for key,value in actions.items() if value is chosen),None)
-        if command:self.batch_command_requested.emit(command)
+        if command=="expand_all":self.expand_all_requested.emit()
+        elif command=="collapse_all":self.collapse_all_requested.emit()
+        elif command:self.batch_command_requested.emit(command)
 
     def _sync_layer_controls(self):
         layer=self._selected_layer();enabled=layer is not None;selected=[value for _row,value in self.table.layer_rows if value in self.table.selected_layer_ids];any_locked=any(value in self.table.locked_ids for value in selected);all_locked=bool(selected) and all(value in self.table.locked_ids for value in selected);self.remove_layer.setEnabled(enabled and not any_locked);self.duplicate_layer.setEnabled(enabled);self.lock_layer.setEnabled(enabled);self.solo_layer.setEnabled(enabled);self.lock_layer.setChecked(all_locked);self.solo_layer.setChecked(bool(layer and layer.solo));self.delete_keyframe.setEnabled(enabled and not isinstance(layer,LayerGroup) and not layer.locked);self.group_layer.setEnabled(len(selected)>=2 and all(not isinstance(value,LayerGroup) for value in selected));self.ungroup_layer.setEnabled(len(selected)==1 and isinstance(layer,LayerGroup))
@@ -250,4 +301,4 @@ class CompositionTimeline(QWidget):
         apply_tooltip(self.table,self.localization,"tooltip.timeline.table",status=False)
 
     def retranslate(self,localization):
-        self.localization=localization;self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self._update_tooltips()
+        self.localization=localization;self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self.lock_layer.setAccessibleName(localization.text("layer.lock"));self.solo_layer.setAccessibleName(localization.text("layer.solo"));self.move_up.setAccessibleName(localization.text("hierarchy.front"));self.move_down.setAccessibleName(localization.text("hierarchy.back"));self._update_tooltips();[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.add_layer,self.duplicate_layer,self.remove_layer,self.group_layer,self.ungroup_layer,self.lock_layer,self.solo_layer,self.move_up,self.move_down)]

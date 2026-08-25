@@ -108,6 +108,10 @@ from .interactive_proxy_prewarm import InteractiveProxyPrewarmManager
 from .preview_build_notice_dialog import PreviewBuildNoticeDialog
 from .layer_selection_state import LayerSelectionState
 from .group_inspector import GroupInspector
+from .layout_metrics import (
+    EFFECT_INSPECTOR_DEFAULT_WIDTH, EFFECT_INSPECTOR_MIN_WIDTH,
+    EFFECT_LIBRARY_DEFAULT_WIDTH, EFFECT_LIBRARY_MIN_WIDTH,
+)
 from app.models.layer_group import LayerGroup,group_node,layer_node
 
 
@@ -218,7 +222,7 @@ class MainWindow(QMainWindow):
         self.particle_properties = ParticlePropertiesPanel()
         self.composition_layer_properties = CompositionLayerPropertiesPanel()
         self.effect_group_inspector=GroupInspector()
-        self.properties_stack = QStackedWidget(); self.properties_stack.setMinimumWidth(280);self.properties_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding)
+        self.properties_stack = QStackedWidget(); self.properties_stack.setMinimumWidth(EFFECT_INSPECTOR_MIN_WIDTH);self.properties_stack.setMaximumWidth(540);self.properties_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding)
         self.properties_stack.addWidget(self.effect_properties); self.properties_stack.addWidget(self.particle_properties); self.properties_stack.addWidget(self.composition_layer_properties);self.properties_stack.addWidget(self.effect_group_inspector)
         self.editor_splitter.addWidget(self.properties_stack)
         self.editor_splitter.setStretchFactor(0, 0)
@@ -259,13 +263,13 @@ class MainWindow(QMainWindow):
             sizes = [int(item) for item in value] if isinstance(value, (list, tuple)) else []
         except (TypeError, ValueError):
             sizes = []
-        if len(sizes) != 3 or min(sizes) < 100 or sizes[2] < 280:
-            sizes = [230, 700, 300]
+        if len(sizes) != 3 or sizes[0] < EFFECT_LIBRARY_MIN_WIDTH or sizes[1] < 260 or sizes[2] < EFFECT_INSPECTOR_MIN_WIDTH:
+            sizes = [EFFECT_LIBRARY_DEFAULT_WIDTH, 700, EFFECT_INSPECTOR_DEFAULT_WIDTH]
         self.editor_splitter.setSizes(sizes)
 
     def _save_splitter_sizes(self, *args) -> None:
         sizes = self.editor_splitter.sizes()
-        if len(sizes) == 3 and sizes[2] >= 280:
+        if len(sizes) == 3 and sizes[0] >= EFFECT_LIBRARY_MIN_WIDTH and sizes[2] >= EFFECT_INSPECTOR_MIN_WIDTH:
             self.settings_service.settings.setValue("ui/editor_splitter_sizes", sizes)
 
     def _build_menus(self) -> None:
@@ -541,6 +545,7 @@ class MainWindow(QMainWindow):
         self.effect_library.batch_resource_layer_requested.connect(self.batch_effect_layers)
         self.effect_library.parent_requested.connect(self.set_effect_layer_parent)
         self.effect_library.group_expanded_requested.connect(self.toggle_effect_group_expanded)
+        self.effect_library.expand_all_requested.connect(lambda:self.set_all_effect_groups_expanded(True));self.effect_library.collapse_all_requested.connect(lambda:self.set_all_effect_groups_expanded(False));self.effect_library.hierarchy_drop_requested.connect(self.move_effect_hierarchy_nodes)
         self.effect_library.resource_open_requested.connect(self.open_resource_editor)
         self.effect_properties.generate_requested.connect(self.generate_effect)
         self.effect_properties.reset_requested.connect(self.reset_generator_settings)
@@ -1335,6 +1340,17 @@ class MainWindow(QMainWindow):
         else:
             self.effect_expanded_group_ids.discard(identifier);self._effect_collapsed_group_ids.add(identifier)
             if any(child in self.effect_layer_selection.selected_ids for child in group.children):self.effect_layer_selection.restore({"selected_ids":[identifier],"primary_id":identifier,"anchor_id":identifier},self._effect_ui_ids(False))
+        self._refresh_effect_panels();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count());return True
+
+    def set_all_effect_groups_expanded(self,expanded):
+        group_ids={group.id for group in self.project.effect_layer_groups};expanded=bool(expanded)
+        if expanded:
+            self.effect_expanded_group_ids|=group_ids;self._effect_collapsed_group_ids-=group_ids
+        else:
+            self.effect_expanded_group_ids-=group_ids;self._effect_collapsed_group_ids|=group_ids
+            primary=self.effect_layer_selection.primary_id;target=next((group for group in self.project.effect_layer_groups if primary in group.children),None)
+            if target is None:target=next((group for group in self.project.effect_layer_groups if any(child in self.effect_layer_selection.selected_ids for child in group.children)),None)
+            if target is not None:self.effect_layer_selection.restore({"selected_ids":[target.id],"primary_id":target.id,"anchor_id":target.id},self._effect_ui_ids(False))
         self._refresh_effect_panels();self.timeline.refresh(self.project,self.layer_index,self.frame_index,display_frame_count=self._display_frame_count());return True
 
     def ungroup_effect(self,identifier=None):

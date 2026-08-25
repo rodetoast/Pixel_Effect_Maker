@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.10 - 2026-08-14
+
+- Rebalanced Resource and Effect workspace side panels so hierarchy names and inspectors remain readable while the Canvas keeps the flexible center space.
+- Increased both Timeline work areas and standardized a 220 px hierarchy/name lane for clearer long Layer, Group, Parent, and state labels.
+- Grouped Resource Timeline actions into Create/Edit, Hierarchy, State, and Order clusters with 30 px compact state/order controls and accessibility descriptions.
+- Compacted Resource Inspector forms and property cards while preserving two-column transform controls and vertical scrolling.
+- Improved Group and Parent relationship visibility with separate indentation and compact parent badges.
+- Added clearer primary/multi-selection, own/inherited Lock, Solo, Visibility, and empty-Group row states.
+- Added distinct Before, After, Into Group, and invalid hierarchy drag feedback.
+- Added runtime-only Expand All / Collapse All actions, long-name elision, full-name tooltips, and localized accessibility text.
+
 ## v0.0.09 - 2026-08-14
 
 - Added world-space Multi-Transform Move, Rotation Z, and Scale X/Y for Resource and Effect Leaf selections.

@@ -117,4 +117,4 @@ def test_effect_inspector_keeps_vertical_scrolling(tmp_path):
 @pytest.mark.parametrize("size",[(1024,768),(1280,800),(1308,1176),(1600,900)])
 def test_effect_inspector_does_not_force_main_window_width(tmp_path,size):
     settings=QSettings(str(tmp_path/f"{size[0]}.ini"),QSettings.Format.IniFormat);window=MainWindow(ShortcutSettingsService(settings));window.resize(*size);window.show();window.editor_splitter.setSizes([210,max(300,size[0]-500),280]);APP.processEvents()
-    assert 280<=window.properties_stack.width()<=320;assert window.canvas.width()>window.properties_stack.width();window.dirty=False;window.close()
+    assert (window.width(),window.height())==size;assert 280<=window.properties_stack.width()<=320;assert window.canvas.width()>window.properties_stack.width();assert window.effect_library.scroll_area.horizontalScrollBar().maximum()==0;window.dirty=False;window.close()

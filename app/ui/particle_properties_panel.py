@@ -10,6 +10,7 @@ from app.models.layer_parenting import would_create_parent_cycle
 from .focus_wheel_widgets import FocusWheelComboBox, ScrollSafeDoubleSpinBox, ScrollSafeSpinBox
 from .tooltip_helper import apply_tooltip
 from .resource_layer_transform_panel import ResourceLayerTransformPanel
+from .hierarchy_display import layer_display_labels
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
@@ -90,8 +91,9 @@ class ParticlePropertiesPanel(QScrollArea):
         self._loading=True
         if layer is not None:
             self.parent_layer.clear();self.parent_layer.addItem("None",None)
+            labels=layer_display_labels(project.effect_resource_layers,project.effect_layer_groups)
             for item in project.effect_resource_layers:
-                if item.id!=layer.id and not would_create_parent_cycle(project.effect_resource_layers,layer.id,item.id):self.parent_layer.addItem(item.name,item.id)
+                if item.id!=layer.id and not would_create_parent_cycle(project.effect_resource_layers,layer.id,item.id):self.parent_layer.addItem(labels.get(item.id,item.name),item.id)
             self.parent_layer.setCurrentIndex(max(0,self.parent_layer.findData(layer.parent_id)))
             self.mode.setCurrentIndex(max(0,self.mode.findData(layer.placement_mode)))
             if layer.resource_composition_id:

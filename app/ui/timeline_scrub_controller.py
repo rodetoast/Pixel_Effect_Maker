@@ -63,7 +63,9 @@ class TimelineScrubController(QObject):
             self.scrubbing = False
             self.finish()
         if event.type() == QEvent.Type.MouseButtonRelease and self.scrubbing:
-            self._select(event.position())
+            # The preceding move already selected the endpoint. Re-resolving the
+            # same viewport coordinate after setCurrentCell() scrolls a wide
+            # timeline can incorrectly advance by one column.
             self.scrubbing = False
             self.finish()
             event.accept()
