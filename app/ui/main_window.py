@@ -112,7 +112,7 @@ from .layout_metrics import (
     EFFECT_INSPECTOR_DEFAULT_WIDTH, EFFECT_INSPECTOR_MIN_WIDTH,
     EFFECT_LIBRARY_DEFAULT_WIDTH, EFFECT_LIBRARY_MIN_WIDTH,
 )
-from .timeline_multi_key import TimelineKey, PASTE_COLLISION, PASTE_OUT_OF_RANGE, build_timeline_clipboard_payload, delete_keys, move_keys_atomic, paste_timeline_keys_atomic, read_timeline_clipboard_payload, set_keys_easing, write_timeline_clipboard_payload
+from .timeline_multi_key import TimelineKey, PASTE_COLLISION, PASTE_OUT_OF_RANGE, build_timeline_clipboard_payload, delete_keys, duplicate_timeline_keys_atomic, move_keys_atomic, paste_timeline_keys_atomic, read_timeline_clipboard_payload, set_keys_easing, write_timeline_clipboard_payload
 from app.models.layer_group import LayerGroup,group_node,layer_node
 
 
@@ -524,6 +524,7 @@ class MainWindow(QMainWindow):
         self.timeline.fps_changed.connect(self.set_fps)
         self.timeline.layer_visibility_requested.connect(self.set_layer_visibility)
         self.timeline.multi_key_move_requested.connect(self.move_effect_selected_keys)
+        self.timeline.multi_key_duplicate_requested.connect(self.duplicate_effect_selected_keys)
         self.timeline.multi_key_delete_requested.connect(self.delete_effect_selected_keys)
         self.timeline.multi_key_easing_requested.connect(self.set_effect_selected_keys_easing)
         self.timeline.multi_key_copy_requested.connect(self.copy_effect_selected_keys)
@@ -1846,6 +1847,13 @@ class MainWindow(QMainWindow):
             if actual:self.statusBar().showMessage(self.localization.text("timeline.key_collision"),3000)
             return False
         self._touch_effect_key_scopes(after,identities);old_primary=self.timeline.key_selection.primary;old_anchor=self.timeline.key_selection.anchor;self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Move Selected Effect Keys"));selection=self.timeline.key_selection;selection.selected={key.at_frame(key.frame+actual) for key in identities};selection.primary=old_primary.at_frame(old_primary.frame+actual) if old_primary in identities else None;selection.anchor=old_anchor.at_frame(old_anchor.frame+actual) if old_anchor in identities else selection.primary;selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();return True
+
+    def duplicate_effect_selected_keys(self,keys,delta):
+        identities,before,payload=self._effect_multi_key_values(keys)
+        if payload is None or int(delta)==0:return False
+        after,tracks=payload;old_primary=self.timeline.key_selection.primary;issue,selected,primary=duplicate_timeline_keys_atomic(tracks,identities,int(delta),self._display_frame_count(),old_primary)
+        if issue:self._report_effect_paste_issue(issue);return False
+        self._touch_effect_key_scopes(after,selected);self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Duplicate Selected Effect Keys"));selection=self.timeline.key_selection;selection.selected=selected;selection.primary=primary;selection.anchor=primary;selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();return True
 
     def delete_effect_selected_keys(self,keys):
         identities,before,payload=self._effect_multi_key_values(keys)

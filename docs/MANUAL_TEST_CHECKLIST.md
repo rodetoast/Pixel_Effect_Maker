@@ -1,4 +1,13 @@
-# Pixel Effect Maker v0.0.13 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.14 수동 테스트 체크리스트
+
+## v0.0.14 Alt-drag Multi-Key Duplicate
+
+- Resource와 Effect Timeline에서 단일 Key 및 여러 Track/Layer의 선택 Key를 `Alt+Drag`하여 원본은 유지되고 복제본만 생성되는지 확인한다.
+- 복제 직후 새 Key 묶음과 Primary counterpart가 선택되어 같은 delta로 연속 복제가 가능한지 확인한다.
+- Value, mixed Easing, 720°/1080°/-450° Rotation 값과 상대 Frame 간격이 정확히 유지되는지 확인한다.
+- Destination existing/source collision, 최소/최대 Frame 초과, delta 0이 모두 전체 거부되고 Undo/Dirty가 추가되지 않는지 확인한다.
+- Drag 중 Alt를 놓아도 Duplicate 모드가 유지되고, Escape가 ghost만 제거하며 Clipboard payload와 Layer selection을 바꾸지 않는지 확인한다.
+- 8/64/160 px-per-frame에서 frame delta가 같고, Middle Pan, Marquee, Ctrl+Wheel Zoom, Fit Selected, Previous/Next 및 Reveal이 유지되는지 확인한다.
 
 ## v0.0.13 Timeline Navigation & Reveal
 

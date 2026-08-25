@@ -8,7 +8,7 @@ import json
 from math import isfinite
 from typing import Iterable, Mapping
 
-from app.models.resource_composition import AnimationTrack, EASINGS
+from app.models.resource_composition import AnimationTrack, EASINGS, Keyframe
 
 
 TIMELINE_KEY_MIME = "application/x-pixel-effect-maker-timeline-keys"
@@ -148,14 +148,14 @@ def _clipboard_value_is_valid(value) -> bool:
     return False
 
 
-def build_timeline_clipboard_payload(
+def build_timeline_key_snapshot(
     timeline_kind: str,
     context_id: str,
     keys: Iterable[TimelineKey],
     tracks: Mapping[tuple[str,str,str],AnimationTrack],
     primary: TimelineKey | None = None,
-) -> bytes | None:
-    """Snapshot selected keys into a versioned, relative-frame JSON payload."""
+) -> dict | None:
+    """Snapshot selected keys into the shared relative-frame payload model."""
 
     kind=str(timeline_kind);context=str(context_id);selected=sorted(set(keys),key=lambda key:(key.frame,key.track_id))
     if kind not in TIMELINE_KINDS or not context or not selected:return None
@@ -166,7 +166,20 @@ def build_timeline_clipboard_payload(
         entry={"layer_id":key.layer_id,"scope":key.scope,"property_id":key.property_id,"relative_frame":key.frame-anchor,"value":deepcopy(item.value),"easing":item.easing}
         if key==primary:primary_index=len(entries)
         entries.append(entry)
-    payload={"version":TIMELINE_CLIPBOARD_VERSION,"timeline_kind":kind,"context_id":context,"anchor_frame":anchor,"primary_index":primary_index,"entries":entries}
+    return {"version":TIMELINE_CLIPBOARD_VERSION,"timeline_kind":kind,"context_id":context,"anchor_frame":anchor,"primary_index":primary_index,"entries":entries}
+
+
+def build_timeline_clipboard_payload(
+    timeline_kind: str,
+    context_id: str,
+    keys: Iterable[TimelineKey],
+    tracks: Mapping[tuple[str,str,str],AnimationTrack],
+    primary: TimelineKey | None = None,
+) -> bytes | None:
+    """Encode the common key snapshot for the system clipboard."""
+
+    payload=build_timeline_key_snapshot(timeline_kind,context_id,keys,tracks,primary)
+    if payload is None:return None
     try:return json.dumps(payload,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
     except (TypeError,ValueError):return None
 
@@ -242,6 +255,29 @@ def paste_timeline_keys_atomic(
         if track.keyframe_at(frame) is not None:return PASTE_COLLISION,set(),None
         destinations.append((key,track,entry))
     if len({key for key,_track,_entry in destinations})!=len(destinations):return PASTE_INVALID,set(),None
-    for key,track,entry in destinations:track.set_keyframe(key.frame,deepcopy(entry["value"]),entry["easing"])
+    changed_tracks=set()
+    for key,track,entry in destinations:track.keyframes.append(Keyframe(key.frame,deepcopy(entry["value"]),entry["easing"]));changed_tracks.add(key.track_id)
+    for track_id in changed_tracks:tracks[track_id]._normalize()
     selected={key for key,_track,_entry in destinations};primary_index=payload.get("primary_index");primary=destinations[primary_index][0] if primary_index is not None else min(selected,key=lambda key:(key.frame,key.track_id))
     return None,selected,primary
+
+
+def duplicate_timeline_keys_atomic(
+    tracks: Mapping[tuple[str,str,str],AnimationTrack],
+    keys: Iterable[TimelineKey],
+    delta: int,
+    frame_count: int,
+    primary: TimelineKey | None = None,
+) -> tuple[str | None,set[TimelineKey],TimelineKey | None]:
+    """Duplicate a key group through the same snapshot and insertion path as Paste."""
+
+    selected=set(keys);offset=int(delta)
+    if not selected or offset==0:return None,set(),None
+    scopes={key.scope for key in selected}
+    kind="resource" if scopes=={"resource"} else "effect" if scopes<= {"effect_transform","effect_motion"} else ""
+    if not kind:return PASTE_INCOMPATIBLE,set(),None
+    context=f"runtime-duplicate:{kind}"
+    payload=build_timeline_key_snapshot(kind,context,selected,tracks,primary)
+    if payload is None:return PASTE_INVALID,set(),None
+    destination_anchor=int(payload["anchor_frame"])+offset
+    return paste_timeline_keys_atomic(tracks,payload,kind,context,destination_anchor,frame_count)

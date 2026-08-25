@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.14 - 2026-08-25
+
+- Added Alt-drag duplication for single and multi-key selections in Resource and Effect Timelines, with Alt latched when the drag threshold is crossed.
+- Duplicates preserve logical Layer/Property identity, relative timing, values, mixed easing, and total-degree rotations while leaving every source key untouched.
+- Duplicate insertion reuses the Clipboard/Paste snapshot and atomic insertion path; collision with any existing/source key or any out-of-range destination rejects the whole gesture.
+- Successful duplicates replace key selection with the new keys and map Primary to its duplicate counterpart in one Undo command; preview, Escape, no-op, and invalid drops do not mutate project state or the system clipboard.
+
 ## v0.0.13 - 2026-08-25
 
 - Added cursor-anchored `Ctrl+Wheel` time zoom, middle-drag horizontal pan, and adaptive frame-label stride to Resource and Effect Timelines.

@@ -6,9 +6,11 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v12. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.13`.
+New saves use project format v12. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.14`.
 
 Resource and Effect Timelines support runtime-only multi-key editing. Click a key for a single selection, use `Ctrl+Click` to toggle keys, `Shift+Click` for a same-track key range, or drag a marquee across visible Property rows. Drag selected keys horizontally, use `Alt+Left/Right` to nudge, Delete to remove, or the key context menu to batch easing. Timing edits preserve relative spacing and reject the entire operation when an unselected key occupies any destination frame.
+
+Hold `Alt` as a selected-key drag begins to duplicate the complete visible key selection horizontally. Sources remain unchanged and the duplicates become the new selection for fast repeated duplication. The drop is one Undo step and is rejected atomically for source/existing-key collisions or timeline overflow; it never overwrites keys, extends duration, remaps tracks, or touches the clipboard.
 
 With a Timeline table focused, `Ctrl+C` copies the selected keys and `Ctrl+V` places their earliest key at the current playhead. Copy/Paste preserves original logical Layer/Property tracks, relative timing, values, mixed easing and rotation revolutions. Paste is one Undo step and is rejected atomically for collisions, range overflow, stale projects, missing tracks, or Resource/Effect cross-type payloads; text fields retain native clipboard shortcuts.
 
@@ -30,7 +32,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.13**입니다. Resource/Effect Timeline에서 Multi-Key 편집과 Copy/Paste에 더해 시간축 Zoom/Pan, Fit, 이전/다음 Key 이동, All/Animated/Selected Reveal을 사용할 수 있습니다. 모든 viewport/filter 상태는 런타임 전용이며 프로젝트 형식은 v12를 유지합니다.
+현재 버전은 **v0.0.14**입니다. Resource/Effect Timeline에서 선택한 Key 묶음을 `Alt+Drag`로 원본을 유지한 채 복제하고, 새 복제본을 곧바로 다시 복제할 수 있습니다. 기존 Multi-Key 편집, Copy/Paste, Zoom/Pan, Fit, Navigation, Reveal은 유지되며 프로젝트 형식은 v12입니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 
