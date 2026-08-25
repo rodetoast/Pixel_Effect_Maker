@@ -1,6 +1,6 @@
-from PySide6.QtCore import QEvent, QMimeData, Qt, Signal
+from PySide6.QtCore import QEvent, QMimeData, QRect, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QDrag, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu, QPushButton, QRubberBand, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.ui.timeline_scrub_controller import TimelineScrubController
 from app.ui.tooltip_helper import apply_tooltip
 from app.models.layer_group import LayerGroup
@@ -10,6 +10,7 @@ from app.ui.hierarchy_display import (
     context_action_states, drop_is_allowed, elide_text, layer_display_labels, resolve_drop_target,
 )
 from app.ui.layout_metrics import COMPACT_TOOL_BUTTON_SIZE, HIERARCHY_LABEL_WIDTH
+from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta
 
 
 def _toolbar_separator(parent):
@@ -93,6 +94,9 @@ class CompositionTimeline(QWidget):
     next_requested = Signal()
     delete_keyframe_requested = Signal(object)
     move_keyframe_requested = Signal(str,int,int)
+    multi_key_move_requested=Signal(object,int)
+    multi_key_delete_requested=Signal(object)
+    multi_key_easing_requested=Signal(object,str)
     add_layer_requested = Signal(str,str)
     remove_layer_requested = Signal(str)
     move_layer_requested = Signal(str,int)
@@ -108,7 +112,7 @@ class CompositionTimeline(QWidget):
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]); layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         self.add_layer=QPushButton();self.add_layer.setObjectName("resourceV2AddLayerButton");self.add_layer_menu=QMenu(self.add_layer);self.add_layer.setMenu(self.add_layer_menu)
         self.remove_layer=QPushButton();self.remove_layer.setObjectName("resourceV2RemoveLayerButton");self.duplicate_layer=QPushButton();self.duplicate_layer.setObjectName("resourceV2DuplicateLayerButton");self.group_layer=QPushButton("Group");self.group_layer.setObjectName("resourceV2GroupButton");self.ungroup_layer=QPushButton("Ungroup");self.ungroup_layer.setObjectName("resourceV2UngroupButton");self.lock_layer=QPushButton("L");self.lock_layer.setCheckable(True);self.solo_layer=QPushButton("S");self.solo_layer.setCheckable(True);self.move_up=QPushButton("↑");self.move_up.setObjectName("resourceV2MoveLayerUpButton");self.move_down=QPushButton("↓");self.move_down.setObjectName("resourceV2MoveLayerDownButton")
@@ -116,10 +120,10 @@ class CompositionTimeline(QWidget):
         controls.addStretch(); layout.addLayout(controls)
         for widget in (self.lock_layer,self.solo_layer,self.move_up,self.move_down):widget.setFixedSize(COMPACT_TOOL_BUTTON_SIZE,COMPACT_TOOL_BUTTON_SIZE)
         layer_controls=QHBoxLayout();layer_controls.setSpacing(4);layer_controls.addWidget(self.add_layer);layer_controls.addWidget(self.duplicate_layer);layer_controls.addWidget(self.remove_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.group_layer);layer_controls.addWidget(self.ungroup_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.lock_layer);layer_controls.addWidget(self.solo_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.move_up);layer_controls.addWidget(self.move_down);layer_controls.addStretch();layout.addLayout(layer_controls)
-        self.selection_status=QPushButton();self.selection_status.setObjectName("resourceLayerSelectionStatus");self.selection_status.setFlat(True);self.selection_status.setEnabled(False);layer_controls.addWidget(self.selection_status)
+        self.key_selection_status=QLabel();self.key_selection_status.setObjectName("resourceKeySelectionStatus");layer_controls.addWidget(self.key_selection_status);self.selection_status=QPushButton();self.selection_status.setObjectName("resourceLayerSelectionStatus");self.selection_status.setFlat(True);self.selection_status.setEnabled(False);layer_controls.addWidget(self.selection_status)
         self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents); layout.addWidget(self.table)
         self.table.cellClicked.connect(self._clicked); self.table.verticalHeader().sectionClicked.connect(self._header_clicked)
-        self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self._key_drag=None;self.table.viewport().installEventFilter(self)
+        self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self.table.viewport().installEventFilter(self);self.table.installEventFilter(self)
         self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete)
         self.remove_layer.clicked.connect(self._remove_selected_layer);self.duplicate_layer.clicked.connect(self._duplicate_selected_layer);self.group_layer.clicked.connect(lambda:self.batch_command_requested.emit("group"));self.ungroup_layer.clicked.connect(lambda:self.batch_command_requested.emit("ungroup"));self.lock_layer.clicked.connect(self._toggle_lock);self.solo_layer.clicked.connect(self._toggle_solo);self.move_up.clicked.connect(lambda:self._move_selected_layer(1));self.move_down.clicked.connect(lambda:self._move_selected_layer(-1));self.table.layer_drop_requested.connect(self.reorder_layer_requested);self.table.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.table.duplicate_requested.connect(self._duplicate_selected_layer);self.table.delete_requested.connect(lambda:self.batch_command_requested.emit("delete"));self.table.select_all_layers_requested.connect(self.select_all_requested);self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.table.customContextMenuRequested.connect(self._context_menu)
 
@@ -134,26 +138,73 @@ class CompositionTimeline(QWidget):
         self.table.setCurrentCell(row,column);self._clicked(row,column)
 
     def eventFilter(self,watched,event):
+        if watched is self.table and event.type()==QEvent.Type.KeyPress and self.key_selection.selected:
+            if event.key()==Qt.Key.Key_Delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return True
+            if event.modifiers()&Qt.KeyboardModifier.AltModifier and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:
+                self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
+            if event.key()==Qt.Key.Key_Escape:self._cancel_key_gesture();return True
         if watched is self.table.viewport():
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
-                index=self.table.indexAt(event.position().toPoint());row=index.row();column=index.column()
-                if index.isValid() and 0<=row<len(self.rows) and not self.rows[row][0].locked and self.rows[row][1] is not None and self.table.item(row,column).text()=="◆":
-                    self._key_drag=(row,column,event.position().toPoint(),False);self.table.setCurrentCell(row,column);self._clicked(row,column);event.accept();return True
+                point=event.position().toPoint();index=self.table.indexAt(point);row=index.row();column=index.column();item=self.table.item(row,column) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole) if item else None
+                if isinstance(key,TimelineKey) and not self._row_locked(row):
+                    modifiers=event.modifiers();track_keys=[value for value in self._visible_keys if value.track_id==key.track_id];self.key_selection.click(key,ctrl=bool(modifiers&Qt.KeyboardModifier.ControlModifier),shift=bool(modifiers&Qt.KeyboardModifier.ShiftModifier),track_keys=track_keys);self._key_drag=(key,column,point,False);self.table.setCurrentCell(row,column);self.frame_selected.emit(column);self._apply_key_visuals();event.accept();return True
+                if index.isValid() and self._row_is_property(row):
+                    self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
             elif event.type()==QEvent.Type.MouseMove and self._key_drag and event.buttons()&Qt.MouseButton.LeftButton:
-                row,column,start,_=self._key_drag;dragged=(event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance();self._key_drag=(row,column,start,dragged);event.accept();return True
+                key,column,start,_=self._key_drag;dragged=(event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance();self._key_drag=(key,column,start,dragged)
+                if dragged:self._preview_key_drag(column,event.position().x())
+                event.accept();return True
+            elif event.type()==QEvent.Type.MouseMove and self._marquee and event.buttons()&Qt.MouseButton.LeftButton:
+                self._marquee.setGeometry(QRect(self._marquee_origin,event.position().toPoint()).normalized());event.accept();return True
             elif event.type()==QEvent.Type.MouseButtonRelease and self._key_drag:
-                row,source,_,dragged=self._key_drag;self._key_drag=None
+                key,source,_,dragged=self._key_drag;self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
                 if dragged:
                     target=self.table.columnAt(int(event.position().x()))
                     if target<0:target=0 if event.position().x()<0 else self.table.columnCount()-1
                     target=max(0,min(self.table.columnCount()-1,target))
                     if target>=0 and target!=source:
-                        property_id=self.rows[row][1];self.move_keyframe_requested.emit(property_id,source,target)
+                        selected=list(self.key_selection.selected);self.multi_key_move_requested.emit(selected,target-source)
+                        if len(selected)==1:self.move_keyframe_requested.emit(selected[0].property_id,selected[0].frame,target)
                 event.accept();return True
+            elif event.type()==QEvent.Type.MouseButtonRelease and self._marquee:
+                rect=self._marquee.geometry();self._marquee.hide();self._marquee.deleteLater();self._marquee=None;keys=[]
+                for row in range(self.table.rowCount()):
+                    if not self._row_is_property(row):continue
+                    for column in range(self.table.columnCount()):
+                        item=self.table.item(row,column);key=item.data(Qt.ItemDataRole.UserRole) if item else None
+                        if isinstance(key,TimelineKey) and rect.intersects(self.table.visualItemRect(item)):keys.append(key)
+                self.key_selection.marquee(keys,ctrl=self._marquee_ctrl);self._apply_key_visuals();event.accept();return True
         return super().eventFilter(watched,event)
 
+    def _row_is_property(self,row):return 0<=row<len(self.rows) and self.rows[row][1] is not None
+
+    def _row_locked(self,row):
+        return not 0<=row<len(self.rows) or bool(getattr(self.rows[row][0],"locked",False))
+
+    def _cancel_key_gesture(self):
+        self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
+        if self._marquee:self._marquee.hide();self._marquee.deleteLater();self._marquee=None
+
+    def _apply_key_visuals(self):
+        palette=self.table.palette();selected_brush=palette.highlight();primary=self.key_selection.primary
+        for row in range(self.table.rowCount()):
+            for column in range(self.table.columnCount()):
+                item=self.table.item(row,column);key=item.data(Qt.ItemDataRole.UserRole) if item else None
+                if item is not None and self._row_is_property(row):item.setText("◆" if isinstance(key,TimelineKey) else "·");item.setBackground(self.table.palette().alternateBase() if column==getattr(self,"_current_frame",-1) else self.table.palette().base())
+                if not isinstance(key,TimelineKey):continue
+                chosen=key in self.key_selection.selected;item.setBackground(selected_brush if chosen else self.table.palette().base());font=item.font();font.setBold(key==primary);item.setFont(font);item.setText("⬥" if key==primary else "◆")
+        count=len(self.key_selection.selected);self.key_selection_status.setText((self.localization.text("timeline.keys_selected").format(count=count) if self.localization else f"{count} Keys Selected") if count else "")
+
+    def _preview_key_drag(self,source_column,x):
+        target=self.table.columnAt(int(x));target=(0 if x<0 else self.table.columnCount()-1) if target<0 else target;requested=target-source_column;delta=clamp_group_delta(self.key_selection.selected,requested,self.table.columnCount());destinations={key.at_frame(key.frame+delta) for key in self.key_selection.selected};invalid=bool((destinations&self._visible_keys)-self.key_selection.selected);self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.SizeHorCursor)
+        for key in self.key_selection.selected:
+            row=next((index for index,(layer,prop) in enumerate(self.rows) if getattr(layer,"id",None)==key.layer_id and prop==key.property_id),-1);source=self.table.item(row,key.frame) if row>=0 else None;destination=self.table.item(row,key.frame+delta) if row>=0 and 0<=key.frame+delta<self.table.columnCount() else None
+            if source:source.setText("◇")
+            if destination:destination.setText("×" if invalid else "⬥");destination.setBackground(self.table.palette().alternateBase())
+        count=len(self.key_selection.selected);self.key_selection_status.setText(f"{count} Keys · Δ {delta:+d}"+(" · Collision" if invalid else ""))
+
     def refresh(self, composition, selected_layer, frame, selected_ids=None, primary_id=None, expanded_ids=None):
-        composition.repair_hierarchy();self._composition=composition;primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
+        composition.repair_hierarchy();self._composition=composition;self._current_frame=int(frame);primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
         # The renderer composites later model entries over earlier ones. Reverse
         # the UI rows so list top means Canvas Front / Top.
         expanded_ids=set(expanded_ids or ());self._expanded_ids=expanded_ids;layer_by_id={layer.id:layer for layer in composition.layers};group_by_id={group.id:group for group in composition.groups};selected_ids=set(selected_ids or ({selected_layer.id} if selected_layer else set()))
@@ -165,7 +216,7 @@ class CompositionTimeline(QWidget):
                 for property_id in value.tracks:
                     row=len(self.rows);self.rows.append((value,property_id))
                     if display.depth:self._child_rows.add(row)
-        self.table.blockSignals(True); self.table.clear(); self.table.setRowCount(len(self.rows)); self.table.setColumnCount(composition.frame_count); self.table.setHorizontalHeaderLabels([str(index+1) for index in range(composition.frame_count)])
+        self._visible_keys=set();self.table.blockSignals(True); self.table.clear(); self.table.setRowCount(len(self.rows)); self.table.setColumnCount(composition.frame_count); self.table.setHorizontalHeaderLabels([str(index+1) for index in range(composition.frame_count)])
         self.table.layer_rows=[(row,layer.id) for row,(layer,property_id) in enumerate(self.rows) if property_id is None]
         self.table.locked_ids={layer.id for layer in composition.layers if composition.effective_locked(layer)}|{group.id for group in composition.groups if group.locked or any(composition.effective_locked(layer_by_id[value]) for value in group.children)};self.table.selected_layer_ids=selected_ids
         self.table.node_kind={value.identifier:value.kind for value in display_rows};self.table.node_parent={value.identifier:value.group_id for value in display_rows};self.table.sibling_order={None:[node["id"] for node in reversed(composition.root_order)]}|{group.id:list(reversed(group.children)) for group in composition.groups};self.table.row_node_ids={row:layer.id for row,(layer,_property) in enumerate(self.rows)}
@@ -182,7 +233,9 @@ class CompositionTimeline(QWidget):
                 headers.append((("    " if child else "")+f"{visible} {lock:2} {solo} {marker} {name}{relation}") if property_id is None else ("        └ " if child else "    └ ")+property_name)
             for column in range(composition.frame_count):
                 marker="" if isinstance(layer,LayerGroup) else "◆" if property_id and any(key.frame==column for key in layer.tracks[property_id].keyframes) else "■" if property_id is None and layer.start_frame<=column<=layer.end_frame else "·"
-                item=QTableWidgetItem(marker); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter); self.table.setItem(row,column,item)
+                item=QTableWidgetItem(marker); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if marker=="◆":key_id=TimelineKey(layer.id,"resource",property_id,column);item.setData(Qt.ItemDataRole.UserRole,key_id);self._visible_keys.add(key_id)
+                self.table.setItem(row,column,item)
                 if layer.id in selected_ids:item.setBackground(QBrush(QColor("#315a78" if layer.id==primary_id else "#29465b")))
         self.table.setVerticalHeaderLabels(headers)
         if self.localization:
@@ -197,7 +250,7 @@ class CompositionTimeline(QWidget):
                     header.setToolTip("\n".join(parts));font=header.font();font.setBold(isinstance(layer,LayerGroup) or display.primary);header.setFont(font)
         target=next((index for index,value in enumerate(self.rows) if value[0].id==primary_id),0) if self.rows else -1
         if target>=0: self.table.setCurrentCell(target,frame); self.table.scrollToItem(self.table.item(target,frame))
-        self.table.blockSignals(False)
+        self.key_selection.repair(self._visible_keys);self.table.blockSignals(False);self._apply_key_visuals()
         count=len(selected_ids);self.selection_status.setText((self.localization.text("layer.selection_count").format(count=count) if self.localization else f"{count} layers selected") if count>1 else "")
         self._sync_layer_controls()
 
@@ -218,6 +271,7 @@ class CompositionTimeline(QWidget):
             elif property_id is None:self.visibility_requested.emit(layer.id)
 
     def _delete(self):
+        if self.key_selection.selected:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return
         row=self.table.currentRow()
         if 0<=row<len(self.rows) and not self.rows[row][0].locked:self.delete_keyframe_requested.emit(self.rows[row][1])
 
@@ -252,6 +306,13 @@ class CompositionTimeline(QWidget):
 
     def _context_menu(self,pos):
         index=self.table.indexAt(pos)
+        item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole) if item else None
+        if isinstance(key,TimelineKey):
+            if key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
+            menu=QMenu(self);delete=menu.addAction(self.localization.text("timeline.delete_selected_keys") if self.localization else "Delete Selected Keys");easing_menu=menu.addMenu(self.localization.text("property.easing") if self.localization else "Easing");easing_actions={easing_menu.addAction(self.localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if self.localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
+            if chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
+            elif chosen in easing_actions:self.multi_key_easing_requested.emit(list(self.key_selection.selected),easing_actions[chosen])
+            return
         if index.isValid():
             clicked=next((value for row,value in self.table.layer_rows if row==index.row()),None)
             if clicked and clicked not in self.table.selected_layer_ids:

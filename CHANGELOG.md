@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.11 - 2026-08-25
+
+- Added runtime-only Timeline key selection with single click, Ctrl toggle, same-track Shift range, cross-track additive Shift, and visible-row marquee selection.
+- Added atomic horizontal multi-key move, Alt+Left/Right nudge, multi-delete, and heterogeneous batch easing for Resource and logical Effect Transform/Motion tracks.
+- Multi-key moves clamp as one group and reject every destination when any selected track collides with an unselected key; one edit creates one Undo command.
+- Preserved last-key static values, exact rotation revolutions, Parenting offsets, Layer selection, Conditional Auto-Key behavior, generated Effect layer mapping, and project format v12.
+
 ## v0.0.10 - 2026-08-14
 
 - Rebalanced Resource and Effect workspace side panels so hierarchy names and inspectors remain readable while the Canvas keeps the flexible center space.

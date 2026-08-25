@@ -112,6 +112,7 @@ from .layout_metrics import (
     EFFECT_INSPECTOR_DEFAULT_WIDTH, EFFECT_INSPECTOR_MIN_WIDTH,
     EFFECT_LIBRARY_DEFAULT_WIDTH, EFFECT_LIBRARY_MIN_WIDTH,
 )
+from .timeline_multi_key import TimelineKey, delete_keys, move_keys_atomic, set_keys_easing
 from app.models.layer_group import LayerGroup,group_node,layer_node
 
 
@@ -521,6 +522,9 @@ class MainWindow(QMainWindow):
         self.timeline.play_requested.connect(self.play_action.trigger)
         self.timeline.fps_changed.connect(self.set_fps)
         self.timeline.layer_visibility_requested.connect(self.set_layer_visibility)
+        self.timeline.multi_key_move_requested.connect(self.move_effect_selected_keys)
+        self.timeline.multi_key_delete_requested.connect(self.delete_effect_selected_keys)
+        self.timeline.multi_key_easing_requested.connect(self.set_effect_selected_keys_easing)
         self.effect_library.import_requested.connect(self.import_source_asset)
         self.effect_library.add_emitter_requested.connect(self.add_transform_emitter)
         self.effect_library.asset_selected.connect(self.select_source_asset)
@@ -676,7 +680,12 @@ class MainWindow(QMainWindow):
         self.redo_action.setText(t("action.redo") if not self.application_undo_stack.redoText() else t("action.redo_named").format(name=self.application_undo_stack.redoText()))
 
     def apply_undo_value(self,target_id,field,value) -> None:
-        if field=="effect_multi_transforms":
+        if field=="effect_multi_keys":
+            by_id={item.id:item for item in self.project.effect_resource_layers}
+            for identifier,snapshot in value.items():
+                if identifier in by_id:by_id[identifier].__dict__.update(deepcopy(snapshot).__dict__);invalidate_effect_resource_layer_base(identifier);apply_effect_resource_layer(self.project,by_id[identifier])
+            self._sync_resource_layer_adapters();self._refresh_all();self.select_resource_layer(self.effect_layer_selection.primary_id,preserve_selection=True)
+        elif field=="effect_multi_transforms":
             by_id={item.id:item for item in self.project.effect_resource_layers}
             for identifier,transform in value.items():
                 if identifier in by_id:by_id[identifier].layer_transform=deepcopy(transform)
@@ -1809,6 +1818,48 @@ class MainWindow(QMainWindow):
     def finalize_resource_layer_transform(self,identifier=None) -> None:
         if identifier is not None and identifier not in self._pending_resource_transforms:return
         self.resource_transform_finalize_timer.stop();self._flush_resource_transform_final()
+
+    def _effect_multi_key_values(self,keys):
+        identities={key for key in keys if isinstance(key,TimelineKey) and key.scope in {"effect_transform","effect_motion"}};by_id={item.id:item for item in self.project.effect_resource_layers};layer_ids={key.layer_id for key in identities}
+        if not identities or any(identifier not in by_id or self._effect_layer_locked(by_id[identifier]) for identifier in layer_ids):return None,None,None
+        before={identifier:deepcopy(by_id[identifier]) for identifier in layer_ids};after=deepcopy(before);tracks={}
+        for identifier,layer in after.items():
+            tracks.update({(identifier,"effect_transform",property_id):track for property_id,track in layer.layer_transform.tracks.items()})
+            if layer.placement_mode==PLACEMENT_PARTICLE:tracks.update({(identifier,"effect_motion",property_id):track for property_id,track in layer.particle_settings.motion.tracks.items()})
+        return identities,before,(after,tracks)
+
+    @staticmethod
+    def _touch_effect_key_scopes(after,identities):
+        for identifier in {key.layer_id for key in identities}:
+            layer=after[identifier]
+            if any(key.layer_id==identifier and key.scope=="effect_transform" for key in identities):layer.layer_transform.revision+=1
+            if any(key.layer_id==identifier and key.scope=="effect_motion" for key in identities):layer.particle_settings.motion.revision+=1
+
+    def move_effect_selected_keys(self,keys,delta):
+        identities,before,payload=self._effect_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload;changed,actual=move_keys_atomic(tracks,identities,int(delta),self._display_frame_count())
+        if not changed:
+            if actual:self.statusBar().showMessage(self.localization.text("timeline.key_collision"),3000)
+            return False
+        self._touch_effect_key_scopes(after,identities);old_primary=self.timeline.key_selection.primary;old_anchor=self.timeline.key_selection.anchor;self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Move Selected Effect Keys"));selection=self.timeline.key_selection;selection.selected={key.at_frame(key.frame+actual) for key in identities};selection.primary=old_primary.at_frame(old_primary.frame+actual) if old_primary in identities else None;selection.anchor=old_anchor.at_frame(old_anchor.frame+actual) if old_anchor in identities else selection.primary;selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();return True
+
+    def delete_effect_selected_keys(self,keys):
+        identities,before,payload=self._effect_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload
+        if not delete_keys(tracks,identities):return False
+        for key in identities:
+            layer=after[key.layer_id];owner=layer.layer_transform if key.scope=="effect_transform" else layer.particle_settings.motion;track=owner.tracks.get(key.property_id)
+            if track is not None and not track.keyframes:setattr(owner,key.property_id,float(track.default_value));owner.tracks.pop(key.property_id,None)
+        self._touch_effect_key_scopes(after,identities);self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Delete Selected Effect Keys"));self.timeline.key_selection.clear();self.timeline._apply_key_visuals();return True
+
+    def set_effect_selected_keys_easing(self,keys,easing):
+        identities,before,payload=self._effect_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload
+        if not set_keys_easing(tracks,identities,str(easing)):return False
+        self._touch_effect_key_scopes(after,identities);selected=set(identities);primary=self.timeline.key_selection.primary;anchor=self.timeline.key_selection.anchor;self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Change Selected Effect Key Easing"));self.timeline.key_selection.selected=selected;self.timeline.key_selection.primary=primary;self.timeline.key_selection.anchor=anchor;self.timeline.key_selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();return True
 
     def add_resource_layer_transform_keyframe(self,identifier,property_id,frame,value,easing) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)

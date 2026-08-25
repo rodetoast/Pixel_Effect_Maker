@@ -766,3 +766,16 @@ The deterministic model/service and offscreen QTest paths are automated. The fol
 - [ ] Resource Inspector의 metadata label 정렬, 동일 높이 2열 Transform 버튼, 구분된 보조 action, compact property card와 세로 스크롤을 한국어/English에서 확인한다.
 - [ ] Effect Timeline의 220 px Layer name column과 증가한 높이에서 긴 Resource Layer 이름, Group child, Parent badge 및 frame cells가 겹치지 않는지 확인한다.
 - [ ] Windows 100%/125%/150% DPI에서 위 항목을 반복하고 기존 Create/Delete/Group/Lock/Solo/Reorder/Transform/Keyframe 동작과 Undo/Redo 의미가 바뀌지 않았는지 확인한다.
+
+## v0.0.11 Timeline Multi-Key Editing
+
+- [ ] Resource의 여러 Property row에서 Click, Ctrl toggle, same-track Shift range와 cross-track additive Shift가 Primary Key를 명확히 표시하는지 확인한다.
+- [ ] 빈 Property cell에서 marquee를 드래그해 보이는 Key만 선택하고 frame scrub, Layer selection 및 current playhead와 충돌하지 않는지 확인한다.
+- [ ] 선택한 Key를 +3/-2 frame 수평 이동하고 상대 간격, 값, Easing과 0°/720°/1080° Rotation 값이 그대로인지 확인한다.
+- [ ] 같은 Track의 unselected destination Key와 충돌할 때 전체 이동이 거부되고 부분 이동, Dirty 또는 Undo가 생기지 않는지 확인한다.
+- [ ] Alt+Left/Right nudge의 boundary clamp, collision과 키 입력당 Undo 하나를 확인한다.
+- [ ] 여러 Track의 Key를 Delete하고 Track별 마지막 Key 값이 static 값으로 보존되며 Undo/Redo 한 번으로 exact 복원되는지 확인한다.
+- [ ] 서로 다른 Resource/Effect Transform/Motion Key에 Linear, Ease In, Ease Out, Ease In/Out을 batch 적용하고 no-op은 Undo를 만들지 않는지 확인한다.
+- [ ] Resource Group collapse가 숨겨진 Key selection만 제거하며 Key 데이터와 Layer multi-selection은 유지하는지 확인한다.
+- [ ] Effect Single/Particle/Orbit/Helix logical Layer의 System/Motion Key를 함께 편집하고 generated ID 또는 fake Group이 생기지 않는지 확인한다.
+- [ ] Save/Reload 후 frame/value/easing이 exact하고 runtime Key selection은 저장되지 않으며 FORMAT_VERSION 12가 유지되는지 확인한다.

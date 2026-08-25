@@ -6,7 +6,9 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v11. Format v10 projects load as a flat root hierarchy without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.07`.
+New saves use project format v12. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.11`.
+
+Resource and Effect Timelines support runtime-only multi-key editing. Click a key for a single selection, use `Ctrl+Click` to toggle keys, `Shift+Click` for a same-track key range, or drag a marquee across visible Property rows. Drag selected keys horizontally, use `Alt+Left/Right` to nudge, Delete to remove, or the key context menu to batch easing. Timing edits preserve relative spacing and reject the entire operation when an unselected key occupies any destination frame.
 
 Resource and Effect editors now support one-level Layer Groups. Select contiguous layers at the same hierarchy level to group them, then collapse, rename, duplicate, reorder, lock, Solo, hide, delete, or ungroup them as one unit. Groups are organization metadata only: they add no transform, keyframe, parent-space math, or Generated Layer, and preserve the existing `List Top = Canvas Front` render order. See [Layer Group Hierarchy](docs/LAYER_GROUP_HIERARCHY.md).
 
@@ -24,7 +26,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.07**입니다. Resource/Effect Layer를 한 단계 그룹으로 정리하고 접기, 이름 변경, 복제, 재정렬, 잠금, Solo, 표시/숨김, 삭제 및 그룹 해제를 할 수 있습니다. 그룹에는 Transform이나 Keyframe이 없으며 기존 렌더 순서를 바꾸지 않습니다.
+현재 버전은 **v0.0.11**입니다. Resource/Effect Timeline에서 여러 Key를 선택해 시간축으로 함께 이동·삭제하고 Easing을 일괄 적용할 수 있습니다. 선택은 런타임 전용이며 프로젝트 형식은 v12를 유지합니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 
@@ -38,6 +40,7 @@ Pixel Effect Maker의 장기적인 목적은 Aseprite를 대체하는 범용 픽
 - 전역 Undo/Redo(`Ctrl+Z`, `Ctrl+Shift+Z`, `Ctrl+Y`)와 축 제한 Move/Scale·2D Rotate 기즈모
 - 설정에서 20~96px로 조절하고 재시작 후 복원되는 공통 Timeline Frame Width
 - 레이어를 행, 프레임 번호를 열로 표시하고 클릭 드래그 스크러빙을 지원하는 통합 타임라인
+- Ctrl/Shift/Marquee 선택, 수평 Drag, Alt+Arrow Nudge, Delete와 Batch Easing을 지원하는 Timeline Multi-Key 편집
 - 통합 타임라인 안에서 레이어·프레임 추가 및 삭제
 - 프레임 애니메이션 재생/정지와 1–120 FPS 설정
 - 일반 실행 시 먼저 표시되며 이름, 캔버스 크기, FPS, 초기 프레임 수, 반복 재생 또는 기존 프로젝트 열기를 선택하는 시작 대화상자

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMenu,
     QPushButton,
+    QRubberBand,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,6 +26,7 @@ from app.ui.tooltip_helper import apply_tooltip
 from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 from app.ui.hierarchy_display import parent_display_labels
 from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MIN_HEIGHT, HIERARCHY_LABEL_WIDTH
+from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta
 
 
 class TimelineWidget(QWidget):
@@ -42,6 +45,9 @@ class TimelineWidget(QWidget):
     layer_visibility_requested = Signal(int, bool)
     scrub_started = Signal()
     scrub_finished = Signal()
+    multi_key_move_requested=Signal(object,int)
+    multi_key_delete_requested=Signal(object)
+    multi_key_easing_requested=Signal(object,str)
     VISIBILITY_COLUMN = 0
     NAME_COLUMN = 1
     FRAME_COLUMN_OFFSET = 2
@@ -56,6 +62,7 @@ class TimelineWidget(QWidget):
         self._play_shortcuts = []
         self._previous_shortcuts = []
         self._next_shortcuts = []
+        self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
         layout = QVBoxLayout(self)
         status_toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
@@ -102,6 +109,7 @@ class TimelineWidget(QWidget):
         self.table.setMinimumHeight(EFFECT_TIMELINE_MIN_HEIGHT)
         self.table.setMaximumHeight(EFFECT_TIMELINE_MAX_HEIGHT)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.table.horizontalHeader().setMinimumSectionSize(20)
         self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width)
         self.table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
@@ -115,6 +123,7 @@ class TimelineWidget(QWidget):
         )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.installEventFilter(self)
+        self.table.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
 
@@ -132,7 +141,9 @@ class TimelineWidget(QWidget):
 
     def _toggle_visibility(self, row: int) -> None:
         if self._project is None:return
-        index=len(self._project.layers)-1-row
+        descriptor=self.rows[row] if 0<=row<len(self.rows) else None
+        if not descriptor or descriptor["kind"]!="layer":return
+        index=descriptor["layer_index"]
         if 0<=index<len(self._project.layers):
             layer=self._project.layers[index]; self.layer_visibility_requested.emit(index,not layer.visible)
 
@@ -144,9 +155,13 @@ class TimelineWidget(QWidget):
         if self._project is None:
             return
         index = self.table.indexAt(position)
+        item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
+        if isinstance(key,TimelineKey):self._key_context_menu(key,position);return
         if not index.isValid() or index.column() != self.NAME_COLUMN:
             return
-        layer_index = len(self._project.layers) - 1 - index.row()
+        descriptor=self.rows[index.row()] if 0<=index.row()<len(self.rows) else None
+        if not descriptor or descriptor["kind"]!="layer":return
+        layer_index=descriptor["layer_index"]
         self.table.setCurrentCell(index.row(), self.NAME_COLUMN)
         localization = getattr(self, "_localization", None)
         label = localization.text("action.delete_layer") if localization else "Delete Selected Effect Layer"
@@ -250,7 +265,9 @@ class TimelineWidget(QWidget):
     ) -> None:
         if self._project is None or row < 0 or column < 0:
             return
-        layer_index = len(self._project.layers) - 1 - row
+        descriptor=self.rows[row] if 0<=row<len(self.rows) else None
+        if descriptor is None:return
+        layer_index=descriptor["layer_index"]
         if not (0 <= layer_index < len(self._project.layers)):
             return
         if not (0 <= column < self.table.columnCount()):
@@ -267,9 +284,75 @@ class TimelineWidget(QWidget):
 
     def eventFilter(self,watched,event):
         if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            if self.key_selection.selected:
+                if event.key()==Qt.Key.Key_Delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return True
+                if event.modifiers()&Qt.KeyboardModifier.AltModifier and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
+                if event.key()==Qt.Key.Key_Escape:self._cancel_key_gesture();return True
             if event.key()==Qt.Key.Key_A and event.modifiers()&Qt.KeyboardModifier.ControlModifier:self.select_all_layers_requested.emit();return True
             if event.key()==Qt.Key.Key_Delete:self.delete_layer_requested.emit();return True
+        if watched is self.table.viewport():
+            if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
+                point=event.position().toPoint();index=self.table.indexAt(point);item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
+                if isinstance(key,TimelineKey) and not self._effect_key_locked(key):
+                    modifiers=event.modifiers();track_keys=[value for value in self._visible_keys if value.track_id==key.track_id];self.key_selection.click(key,ctrl=bool(modifiers&Qt.KeyboardModifier.ControlModifier),shift=bool(modifiers&Qt.KeyboardModifier.ShiftModifier),track_keys=track_keys);self._key_drag=(key,index.column(),point,False);self.table.blockSignals(True);self.table.setCurrentCell(index.row(),index.column());self.table.blockSignals(False);self._current_frame=key.frame;self._apply_key_visuals();event.accept();return True
+                if index.isValid() and self._row_is_property(index.row()):
+                    self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
+            elif event.type()==QEvent.Type.MouseMove and self._key_drag and event.buttons()&Qt.MouseButton.LeftButton:
+                key,column,start,_=self._key_drag;dragged=(event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance();self._key_drag=(key,column,start,dragged)
+                if dragged:self._preview_key_drag(column,event.position().x())
+                event.accept();return True
+            elif event.type()==QEvent.Type.MouseMove and self._marquee and event.buttons()&Qt.MouseButton.LeftButton:
+                self._marquee.setGeometry(QRect(self._marquee_origin,event.position().toPoint()).normalized());event.accept();return True
+            elif event.type()==QEvent.Type.MouseButtonRelease and self._key_drag:
+                key,source,_,dragged=self._key_drag;self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
+                if dragged:
+                    target=self.table.columnAt(int(event.position().x()));target=(self.FRAME_COLUMN_OFFSET if event.position().x()<0 else self.table.columnCount()-1) if target<0 else target;target=max(self.FRAME_COLUMN_OFFSET,min(self.table.columnCount()-1,target));delta=target-source
+                    if delta:self.multi_key_move_requested.emit(list(self.key_selection.selected),delta)
+                event.accept();return True
+            elif event.type()==QEvent.Type.MouseButtonRelease and self._marquee:
+                rect=self._marquee.geometry();self._marquee.hide();self._marquee.deleteLater();self._marquee=None;keys=[]
+                for row in range(self.table.rowCount()):
+                    if not self._row_is_property(row):continue
+                    for column in range(self.FRAME_COLUMN_OFFSET,self.table.columnCount()):
+                        item=self.table.item(row,column);key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
+                        if isinstance(key,TimelineKey) and rect.intersects(self.table.visualItemRect(item)):keys.append(key)
+                self.key_selection.marquee(keys,ctrl=self._marquee_ctrl);self._apply_key_visuals();event.accept();return True
         return super().eventFilter(watched,event)
+
+    def _row_is_property(self,row):return 0<=row<len(self.rows) and self.rows[row]["kind"]=="property"
+
+    def _effect_key_locked(self,key):
+        layer=next((item for item in self._project.effect_resource_layers if item.id==key.layer_id),None) if self._project else None
+        return layer is None or self._project.effect_effective_locked(layer)
+
+    def _cancel_key_gesture(self):
+        self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
+        if self._marquee:self._marquee.hide();self._marquee.deleteLater();self._marquee=None
+
+    def _apply_key_visuals(self):
+        selected_brush=self.table.palette().highlight();base_brush=self.table.palette().base();primary=self.key_selection.primary
+        for row in range(self.table.rowCount()):
+            for column in range(self.FRAME_COLUMN_OFFSET,self.table.columnCount()):
+                item=self.table.item(row,column);key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
+                if item is not None and self._row_is_property(row):item.setText("◆" if isinstance(key,TimelineKey) else "");item.setBackground(self.table.palette().alternateBase() if column==self._current_frame+self.FRAME_COLUMN_OFFSET else base_brush)
+                if not isinstance(key,TimelineKey):continue
+                item.setBackground(selected_brush if key in self.key_selection.selected else base_brush);font=item.font();font.setBold(key==primary);item.setFont(font);item.setText("⬥" if key==primary else "◆")
+        count=len(self.key_selection.selected)
+        if count:self.selection_label.setText((self._localization.text("timeline.keys_selected") if hasattr(self,"_localization") else "{count} Keys Selected").format(count=count))
+
+    def _preview_key_drag(self,source_column,x):
+        target=self.table.columnAt(int(x));target=(self.FRAME_COLUMN_OFFSET if x<0 else self.table.columnCount()-1) if target<0 else target;requested=target-source_column;delta=clamp_group_delta(self.key_selection.selected,requested,self._display_frame_count);destinations={key.at_frame(key.frame+delta) for key in self.key_selection.selected};invalid=bool((destinations&self._visible_keys)-self.key_selection.selected);self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.SizeHorCursor)
+        for key in self.key_selection.selected:
+            row=next((index for index,value in enumerate(self.rows) if value.get("kind")=="property" and value.get("logical") is not None and value["logical"].id==key.layer_id and value.get("scope")==key.scope and value.get("property_id")==key.property_id),-1);source=self.table.item(row,key.frame+self.FRAME_COLUMN_OFFSET) if row>=0 else None;destination=self.table.item(row,key.frame+delta+self.FRAME_COLUMN_OFFSET) if row>=0 and 0<=key.frame+delta<self._display_frame_count else None
+            if source:source.setText("◇")
+            if destination:destination.setText("×" if invalid else "⬥");destination.setBackground(self.table.palette().alternateBase())
+        count=len(self.key_selection.selected);self.selection_label.setText(f"{count} Keys · Δ {delta:+d}"+(" · Collision" if invalid else ""))
+
+    def _key_context_menu(self,key,position):
+        if key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
+        localization=getattr(self,"_localization",None);menu=QMenu(self.table);delete=menu.addAction(localization.text("timeline.delete_selected_keys") if localization else "Delete Selected Keys");easing_menu=menu.addMenu(localization.text("property.easing") if localization else "Easing");actions={easing_menu.addAction(localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(position))
+        if chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
+        elif chosen in actions:self.multi_key_easing_requested.emit(list(self.key_selection.selected),actions[chosen])
 
     def refresh(
         self,
@@ -280,60 +363,43 @@ class TimelineWidget(QWidget):
         preview: bool = False,
     ) -> None:
         """Rebuild the table while preserving a valid model selection."""
-        self._project = project
-        self.table.blockSignals(True)
-        self.table.clear()
-        self.table.setRowCount(len(project.layers))
-        frame_count = display_frame_count or len(project.frames)
-        self._display_frame_count = frame_count
-        self._preview = preview
-        localization = getattr(self, "_localization", None)
-        parent_labels=parent_display_labels(project.effect_resource_layers,project.effect_layer_groups)
-        self.table.setColumnCount(frame_count + self.FRAME_COLUMN_OFFSET)
-        self.table.setHorizontalHeaderLabels(
-            ["", localization.text("timeline.layer") if localization else "Layer"] + [str(index) for index in range(1, frame_count + 1)]
-        )
-        for display_row, layer in enumerate(reversed(project.layers)):
-            resource_layer=next((item for item in project.effect_resource_layers if item.generated_layer_id==layer.id),None)
-            visibility = QTableWidgetItem()
-            visibility.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            visibility.setIcon(self.style().standardIcon(
-                QStyle.StandardPixmap.SP_DialogYesButton if layer.visible
-                else QStyle.StandardPixmap.SP_DialogNoButton
-            ))
-            if localization:
-                visibility.setToolTip(localization.text(
-                    "tooltip.visibility.hide" if layer.visible else "tooltip.visibility.show"
-                ))
-            self.table.setItem(display_row, self.VISIBILITY_COLUMN, visibility)
-            lock="L" if resource_layer and resource_layer.locked else "L*" if resource_layer and project.effect_effective_locked(resource_layer) else " ";solo="S" if resource_layer and resource_layer.solo else " ";parent_label=parent_labels.get(resource_layer.id,"") if resource_layer else "";base=f"{lock:2} {solo} {layer.name}{f' [P: {parent_label}]' if parent_label else ''}";name_item = QTableWidgetItem("  "+base);name_item.setData(Qt.ItemDataRole.UserRole,resource_layer.id if resource_layer else None);name_item.setData(Qt.ItemDataRole.UserRole+1,base)
-            tooltip=[layer.name]
-            if parent_label and localization:tooltip.append(localization.text("hierarchy.parent_tooltip").format(name=parent_label))
-            if resource_layer and localization:
-                if resource_layer.locked:tooltip.append(localization.text("hierarchy.own_lock"))
-                elif project.effect_effective_locked(resource_layer):tooltip.append(localization.text("hierarchy.inherited_lock"))
-            name_item.setToolTip("\n".join(tooltip))
-            self.table.setItem(display_row, self.NAME_COLUMN, name_item)
+        self._project=project;self.table.blockSignals(True);self.table.clear();frame_count=display_frame_count or len(project.frames);self._display_frame_count=frame_count;self._preview=preview;localization=getattr(self,"_localization",None);parent_labels=parent_display_labels(project.effect_resource_layers,project.effect_layer_groups);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers};main_rows=[];property_rows=[]
+        for layer_index in reversed(range(len(project.layers))):
+            generated=project.layers[layer_index];logical=logical_by_generated.get(generated.id);main_rows.append({"kind":"layer","layer_index":layer_index,"generated":generated,"logical":logical})
+            if logical:
+                for property_id,track in sorted(logical.layer_transform.tracks.items()):
+                    if track.keyframes:property_rows.append({"kind":"property","layer_index":layer_index,"generated":generated,"logical":logical,"scope":"effect_transform","property_id":property_id,"track":track})
+                if logical.placement_mode=="particle":
+                    for property_id,track in sorted(logical.particle_settings.motion.tracks.items()):
+                        if track.keyframes:property_rows.append({"kind":"property","layer_index":layer_index,"generated":generated,"logical":logical,"scope":"effect_motion","property_id":property_id,"track":track})
+        self.rows=main_rows+property_rows
+        self.table.setRowCount(len(self.rows));self.table.setColumnCount(frame_count+self.FRAME_COLUMN_OFFSET);self.table.setHorizontalHeaderLabels(["",localization.text("timeline.layer") if localization else "Layer"]+[str(index) for index in range(1,frame_count+1)]);self._visible_keys=set()
+        for display_row,descriptor in enumerate(self.rows):
+            generated=descriptor["generated"];logical=descriptor["logical"]
+            if descriptor["kind"]=="layer":
+                visibility=QTableWidgetItem();visibility.setTextAlignment(Qt.AlignmentFlag.AlignCenter);visibility.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogYesButton if generated.visible else QStyle.StandardPixmap.SP_DialogNoButton))
+                if localization:visibility.setToolTip(localization.text("tooltip.visibility.hide" if generated.visible else "tooltip.visibility.show"))
+                self.table.setItem(display_row,self.VISIBILITY_COLUMN,visibility);lock="L" if logical and logical.locked else "L*" if logical and project.effect_effective_locked(logical) else " ";solo="S" if logical and logical.solo else " ";parent_label=parent_labels.get(logical.id,"") if logical else "";base=f"{lock:2} {solo} {generated.name}{f' [P: {parent_label}]' if parent_label else ''}";name_item=QTableWidgetItem("  "+base);name_item.setData(Qt.ItemDataRole.UserRole,logical.id if logical else None);name_item.setData(Qt.ItemDataRole.UserRole+1,base);tooltip=[generated.name]
+                if parent_label and localization:tooltip.append(localization.text("hierarchy.parent_tooltip").format(name=parent_label))
+                if logical and localization:tooltip.append(localization.text("hierarchy.own_lock") if logical.locked else localization.text("hierarchy.inherited_lock") if project.effect_effective_locked(logical) else "")
+                name_item.setToolTip("\n".join(value for value in tooltip if value));self.table.setItem(display_row,self.NAME_COLUMN,name_item)
+            else:
+                self.table.setItem(display_row,self.VISIBILITY_COLUMN,QTableWidgetItem());label_key="property."+descriptor["property_id"];label=localization.text(label_key) if localization else label_key
+                if label==label_key:label=descriptor["property_id"].replace("_"," ").title()
+                name_item=QTableWidgetItem(f"    └ {generated.name} · {label}");name_item.setToolTip(f"{generated.name} · {label}");self.table.setItem(display_row,self.NAME_COLUMN,name_item)
             for frame_index in range(frame_count):
-                frame = (
-                    project.frames[frame_index]
-                    if frame_index < len(project.frames)
-                    else None
-                )
-                pixels = None if frame is None else frame.layer_pixels.get(layer.id)
-                transform_keys=[] if resource_layer is None else [name for name,track in resource_layer.layer_transform.tracks.items() if track.has_keyframe(frame_index)]
-                motion_keys=[] if resource_layer is None or resource_layer.placement_mode!="particle" else [name for name,track in resource_layer.particle_settings.motion.tracks.items() if track.has_keyframe(frame_index)]
-                marker = "◆" if transform_keys or motion_keys else "■" if pixels is not None and pixels[..., 3].any() else "·"
-                item = QTableWidgetItem(marker)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                key_detail=(" · Keys: "+", ".join(transform_keys+motion_keys)) if transform_keys or motion_keys else ""
-                item.setToolTip(f"{layer.name} · Frame {frame_index + 1}{key_detail}")
-                self.table.setItem(display_row, frame_index + self.FRAME_COLUMN_OFFSET, item)
+                column=frame_index+self.FRAME_COLUMN_OFFSET
+                if descriptor["kind"]=="property":
+                    key=descriptor["track"].keyframe_at(frame_index);item=QTableWidgetItem("◆" if key else "");item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    if key:key_id=TimelineKey(logical.id,descriptor["scope"],descriptor["property_id"],frame_index);item.setData(Qt.ItemDataRole.UserRole+2,key_id);item.setToolTip(f"{generated.name} · {descriptor['property_id']} · Frame {frame_index+1} · {key.easing}");self._visible_keys.add(key_id)
+                else:
+                    frame=project.frames[frame_index] if frame_index<len(project.frames) else None;pixels=None if frame is None else frame.layer_pixels.get(generated.id);transform_keys=[] if logical is None else [name for name,track in logical.layer_transform.tracks.items() if track.has_keyframe(frame_index)];motion_keys=[] if logical is None or logical.placement_mode!="particle" else [name for name,track in logical.particle_settings.motion.tracks.items() if track.has_keyframe(frame_index)];marker="◆" if transform_keys or motion_keys else "■" if pixels is not None and pixels[...,3].any() else "·";item=QTableWidgetItem(marker);item.setTextAlignment(Qt.AlignmentFlag.AlignCenter);key_detail=(" · Keys: "+", ".join(transform_keys+motion_keys)) if transform_keys or motion_keys else "";item.setToolTip(f"{generated.name} · Frame {frame_index+1}{key_detail}")
+                self.table.setItem(display_row,column,item)
         self.table.setColumnWidth(self.VISIBILITY_COLUMN, 26)
         self.table.setColumnWidth(self.NAME_COLUMN, HIERARCHY_LABEL_WIDTH)
         for column in range(self.FRAME_COLUMN_OFFSET, self.table.columnCount()):
             self.table.setColumnWidth(column, self.frame_cell_width)
-        self.table.blockSignals(False)
+        self.key_selection.repair(self._visible_keys);self.table.blockSignals(False)
         self.set_current_cell(
             project,
             selected_layer,
@@ -343,6 +409,7 @@ class TimelineWidget(QWidget):
         self.fps_spin.blockSignals(True)
         self.fps_spin.setValue(project.fps)
         self.fps_spin.blockSignals(False)
+        self._apply_key_visuals()
 
     def set_current_cell(
         self,
@@ -357,7 +424,7 @@ class TimelineWidget(QWidget):
         layer_index = max(0, min(layer_index, len(project.layers) - 1))
         frame_count = display_frame_count or len(project.frames)
         frame_index = max(0, min(frame_index, frame_count - 1))
-        display_row = len(project.layers) - 1 - layer_index
+        display_row=next((row for row,value in enumerate(self.rows) if value["kind"]=="layer" and value["layer_index"]==layer_index),0)
         self.table.blockSignals(True)
         self._current_frame = frame_index
         self.table.setCurrentCell(display_row, frame_index + self.FRAME_COLUMN_OFFSET)
@@ -381,7 +448,7 @@ class TimelineWidget(QWidget):
         """Refresh one transient Effect key marker without committing the drag model."""
         generated=next((layer for layer in project.layers if layer.id==resource_layer.generated_layer_id),None)
         if generated is None or not 0<=int(frame_index)<self._display_frame_count:return
-        layer_index=project.layers.index(generated);row=len(project.layers)-1-layer_index;column=int(frame_index)+self.FRAME_COLUMN_OFFSET;item=self.table.item(row,column)
+        layer_index=project.layers.index(generated);row=next((index for index,value in enumerate(self.rows) if value["kind"]=="layer" and value["layer_index"]==layer_index),-1);column=int(frame_index)+self.FRAME_COLUMN_OFFSET;item=self.table.item(row,column) if row>=0 else None
         if item is None:return
         transform_keys=[name for name,track in resource_layer.layer_transform.tracks.items() if track.has_keyframe(frame_index)]
         motion_keys=[] if resource_layer.placement_mode!="particle" else [name for name,track in resource_layer.particle_settings.motion.tracks.items() if track.has_keyframe(frame_index)]
@@ -392,14 +459,15 @@ class TimelineWidget(QWidget):
 
     def set_effect_selection(self,project,selected_ids,primary_id):
         selected_ids=set(selected_ids);logical_by_generated={item.generated_layer_id:item for item in project.effect_resource_layers}
-        for row,generated in enumerate(reversed(project.layers)):
-            logical=logical_by_generated.get(generated.id);selected=logical is not None and logical.id in selected_ids;color=QColor("#315a78" if logical is not None and logical.id==primary_id else "#29465b")
+        for row,descriptor in enumerate(self.rows):
+            generated=descriptor["generated"];logical=logical_by_generated.get(generated.id);selected=logical is not None and logical.id in selected_ids;color=QColor("#315a78" if logical is not None and logical.id==primary_id else "#29465b")
             for column in range(self.table.columnCount()):
                 item=self.table.item(row,column)
                 if item:item.setBackground(QBrush(color) if selected else QBrush())
             name_item=self.table.item(row,self.NAME_COLUMN)
-            if name_item and logical is not None:
+            if name_item and logical is not None and descriptor["kind"]=="layer":
                 marker="▌" if logical.id==primary_id else "•" if selected else " ";name_item.setText(marker+" "+str(name_item.data(Qt.ItemDataRole.UserRole+1) or generated.name));font=name_item.font();font.setBold(logical.id==primary_id);name_item.setFont(font)
+        self._apply_key_visuals()
 
     def _update_selection_label(self, layer_index: int, frame_index: int) -> None:
         if self._project is None:
@@ -418,3 +486,4 @@ class TimelineWidget(QWidget):
                     item.setBackground(
                         highlight if column == frame_index + self.FRAME_COLUMN_OFFSET else clear
                     )
+        self._apply_key_visuals()

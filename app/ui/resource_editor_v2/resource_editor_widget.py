@@ -35,6 +35,7 @@ from app.ui.layout_metrics import (
     RESOURCE_INSPECTOR_DEFAULT_WIDTH, RESOURCE_INSPECTOR_MIN_WIDTH,
     RESOURCE_TIMELINE_DEFAULT_HEIGHT, RESOURCE_TIMELINE_MIN_HEIGHT,
 )
+from app.ui.timeline_multi_key import TimelineKey, delete_keys, move_keys_atomic, set_keys_easing
 
 
 class ResourceStartPanel(QWidget):
@@ -58,8 +59,9 @@ class ResourceEditorWidget(QWidget):
         self.asset_fit.clicked.connect(self.asset_canvas.fit_to_view);self.asset_actual.clicked.connect(self.asset_canvas.actual_pixels)
         self.empty.import_button.clicked.connect(lambda:self.import_requested.emit(None));self.empty.blank_button.clicked.connect(self._create_blank_dialog)
         self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.parent_changed.connect(lambda parent_id:self.set_layer_parent(self.selected_layer.id,parent_id) if self.selected_layer else None);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.batch_property_value_requested.connect(self._batch_property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
-        self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.selection_requested.connect(self.select_layer_with_modifiers);self.composition_timeline.select_all_requested.connect(self.select_all_layers);self.composition_timeline.batch_command_requested.connect(self.batch_command);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe);self.composition_timeline.move_keyframe_requested.connect(self._move_keyframe)
+        self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.selection_requested.connect(self.select_layer_with_modifiers);self.composition_timeline.select_all_requested.connect(self.select_all_layers);self.composition_timeline.batch_command_requested.connect(self.batch_command);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe)
         self.composition_timeline.add_layer_requested.connect(self.add_asset_layer);self.composition_timeline.duplicate_layer_requested.connect(self.duplicate_layer);self.composition_timeline.remove_layer_requested.connect(self.remove_layer);self.composition_timeline.move_layer_requested.connect(self.move_layer);self.composition_timeline.reorder_layer_requested.connect(self.reorder_layers)
+        self.composition_timeline.multi_key_move_requested.connect(self.move_selected_keys);self.composition_timeline.multi_key_delete_requested.connect(self.delete_selected_keys);self.composition_timeline.multi_key_easing_requested.connect(self.set_selected_keys_easing)
         self.composition_timeline.lock_requested.connect(self.set_layer_locked);self.composition_timeline.solo_requested.connect(self.set_layer_solo)
         self.composition_timeline.group_expanded_requested.connect(self.toggle_group_expanded);self.composition_timeline.expand_all_requested.connect(lambda:self.set_all_groups_expanded(True));self.composition_timeline.collapse_all_requested.connect(lambda:self.set_all_groups_expanded(False));self.composition_timeline.hierarchy_drop_requested.connect(self.move_hierarchy_nodes)
         self.composition_timeline.parent_requested.connect(self.set_layer_parent)
@@ -297,6 +299,39 @@ class ResourceEditorWidget(QWidget):
         if after.move_keyframe(source_frame,target_frame,self.composition.frame_count):
             self._push_value(self.selected_layer.id,"track:"+property_id,before,after,"Move Keyframe")
             self.set_frame(max(0,min(int(target_frame),self.composition.frame_count-1)))
+
+    def _resource_multi_key_values(self,keys):
+        if not self.composition:return None,None,None
+        layer_by_id={layer.id:layer for layer in self.composition.layers};identities={key for key in keys if isinstance(key,TimelineKey) and key.scope=="resource"};layer_ids={key.layer_id for key in identities}
+        if not identities or any(identifier not in layer_by_id or self._layer_effectively_locked(layer_by_id[identifier]) for identifier in layer_ids):return None,None,None
+        before={identifier:deepcopy(layer_by_id[identifier].tracks) for identifier in layer_ids};after=deepcopy(before);tracks={(identifier,"resource",property_id):track for identifier,values in after.items() for property_id,track in values.items()};return identities,before,(after,tracks)
+
+    def move_selected_keys(self,keys,delta):
+        identities,before,payload=self._resource_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload;changed,actual=move_keys_atomic(tracks,identities,int(delta),self.composition.frame_count)
+        if not changed:
+            if actual:self._report_key_collision()
+            return False
+        old_primary=self.composition_timeline.key_selection.primary;old_anchor=self.composition_timeline.key_selection.anchor;self._push_value(self.composition.id,"multi_tracks",before,after,"Move Selected Keys");selection=self.composition_timeline.key_selection;selection.selected={key.at_frame(key.frame+actual) for key in identities};selection.primary=old_primary.at_frame(old_primary.frame+actual) if old_primary in identities else None;selection.anchor=old_anchor.at_frame(old_anchor.frame+actual) if old_anchor in identities else selection.primary;selection.repair(self.composition_timeline._visible_keys);self.composition_timeline._apply_key_visuals();self.set_frame(max(0,min(self.frame_index+actual,self.composition.frame_count-1)));return True
+
+    def delete_selected_keys(self,keys):
+        identities,before,payload=self._resource_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload
+        if not delete_keys(tracks,identities):return False
+        self._push_value(self.composition.id,"multi_tracks",before,after,"Delete Selected Keys");self.composition_timeline.key_selection.clear();self.composition_timeline._apply_key_visuals();return True
+
+    def set_selected_keys_easing(self,keys,easing):
+        identities,before,payload=self._resource_multi_key_values(keys)
+        if payload is None:return False
+        after,tracks=payload
+        if not set_keys_easing(tracks,identities,str(easing)):return False
+        selected=set(identities);primary=self.composition_timeline.key_selection.primary;anchor=self.composition_timeline.key_selection.anchor;self._push_value(self.composition.id,"multi_tracks",before,after,"Change Selected Key Easing");self.composition_timeline.key_selection.selected=selected;self.composition_timeline.key_selection.primary=primary;self.composition_timeline.key_selection.anchor=anchor;self.composition_timeline.key_selection.repair(self.composition_timeline._visible_keys);self.composition_timeline._apply_key_visuals();return True
+
+    def _report_key_collision(self):
+        window=self.window();message=self.localization.text("timeline.key_collision") if self.localization else "Key move blocked by a key on the destination frame."
+        if hasattr(window,"statusBar"):window.statusBar().showMessage(message,3000)
 
     def _remove_property(self,property_id):
         if not self.selected_layer or self._layer_effectively_locked(self.selected_layer):return
