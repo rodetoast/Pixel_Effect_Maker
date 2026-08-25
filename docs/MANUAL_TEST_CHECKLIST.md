@@ -1,4 +1,15 @@
-# Pixel Effect Maker v0.0.06 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.12 수동 테스트 체크리스트
+
+## Timeline Multi-Key Copy / Paste
+
+- [ ] Resource의 여러 Layer/Property에서 6개 이상 Key를 선택하고 Ctrl+C 후 Playhead를 옮겨 Ctrl+V 했을 때 earliest Key가 Playhead에 정렬되고 상대 간격이 유지되는지 확인한다.
+- [ ] 붙여넣기 한 번을 Ctrl+Z/Ctrl+Y 한 번으로 전체 제거·복원하고, Redo 전에 시스템 Clipboard를 바꿔도 결과가 같음을 확인한다.
+- [ ] Rotation 0°/720°/1080°와 서로 다른 Easing을 함께 Copy/Paste해 값과 Easing이 정확히 유지되는지 확인한다.
+- [ ] 대상 중 하나에 기존 Key가 있거나 Timeline 끝을 넘을 때 부분 생성 없이 non-modal 상태만 표시되는지 확인한다.
+- [ ] Effect의 System Rotation, Position, Orbit Radius, Helix Axis Key를 함께 Copy/Paste하고 logical Layer identity와 Generated Layer 연결이 유지되는지 확인한다.
+- [ ] Resource payload를 Effect에, Effect payload를 Resource에 붙여넣을 때 안전하게 거부되는지 확인한다.
+- [ ] Copy 뒤 Layer/Track 삭제, Group collapse, Project New/Open 후 Paste가 crash 없이 일관된 정책으로 처리되는지 확인한다.
+- [ ] Timeline 밖의 이름 입력, SpinBox, editable ComboBox에서 Ctrl+C/V가 일반 텍스트 편집으로 동작하는지 확인한다.
 
 ## Rotation Revolutions / Advanced Bypass / Ctrl+Wheel
 

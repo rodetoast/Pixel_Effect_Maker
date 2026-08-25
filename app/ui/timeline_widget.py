@@ -26,7 +26,7 @@ from app.ui.tooltip_helper import apply_tooltip
 from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 from app.ui.hierarchy_display import parent_display_labels
 from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MIN_HEIGHT, HIERARCHY_LABEL_WIDTH
-from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta
+from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
 
 
 class TimelineWidget(QWidget):
@@ -48,6 +48,8 @@ class TimelineWidget(QWidget):
     multi_key_move_requested=Signal(object,int)
     multi_key_delete_requested=Signal(object)
     multi_key_easing_requested=Signal(object,str)
+    multi_key_copy_requested=Signal(object)
+    multi_key_paste_requested=Signal()
     VISIBILITY_COLUMN = 0
     NAME_COLUMN = 1
     FRAME_COLUMN_OFFSET = 2
@@ -156,7 +158,8 @@ class TimelineWidget(QWidget):
             return
         index = self.table.indexAt(position)
         item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole+2) if item else None
-        if isinstance(key,TimelineKey):self._key_context_menu(key,position);return
+        descriptor=self.rows[index.row()] if index.isValid() and 0<=index.row()<len(self.rows) else None
+        if isinstance(key,TimelineKey) or descriptor and descriptor.get("kind")=="property":self._key_context_menu(key if isinstance(key,TimelineKey) else None,position);return
         if not index.isValid() or index.column() != self.NAME_COLUMN:
             return
         descriptor=self.rows[index.row()] if 0<=index.row()<len(self.rows) else None
@@ -284,6 +287,9 @@ class TimelineWidget(QWidget):
 
     def eventFilter(self,watched,event):
         if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            control=event.modifiers()==Qt.KeyboardModifier.ControlModifier
+            if control and event.key()==Qt.Key.Key_C and self.key_selection.selected:self.multi_key_copy_requested.emit(list(self.key_selection.selected));return True
+            if control and event.key()==Qt.Key.Key_V and read_timeline_clipboard_payload() is not None:self.multi_key_paste_requested.emit();return True
             if self.key_selection.selected:
                 if event.key()==Qt.Key.Key_Delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return True
                 if event.modifiers()&Qt.KeyboardModifier.AltModifier and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
@@ -348,10 +354,14 @@ class TimelineWidget(QWidget):
             if destination:destination.setText("×" if invalid else "⬥");destination.setBackground(self.table.palette().alternateBase())
         count=len(self.key_selection.selected);self.selection_label.setText(f"{count} Keys · Δ {delta:+d}"+(" · Collision" if invalid else ""))
 
+    def _clipboard_context_id(self):return f"effect:{id(self._project):x}" if self._project is not None else ""
+
     def _key_context_menu(self,key,position):
-        if key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
-        localization=getattr(self,"_localization",None);menu=QMenu(self.table);delete=menu.addAction(localization.text("timeline.delete_selected_keys") if localization else "Delete Selected Keys");easing_menu=menu.addMenu(localization.text("property.easing") if localization else "Easing");actions={easing_menu.addAction(localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(position))
-        if chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
+        if isinstance(key,TimelineKey) and key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
+        localization=getattr(self,"_localization",None);menu=QMenu(self.table);copy_action=menu.addAction(localization.text("timeline.copy_keys") if localization else "Copy Keys");paste_action=menu.addAction(localization.text("timeline.paste_keys") if localization else "Paste Keys");copy_action.setEnabled(bool(self.key_selection.selected));paste_action.setEnabled(timeline_clipboard_matches("effect",self._clipboard_context_id()));menu.addSeparator();delete=menu.addAction(localization.text("timeline.delete_selected_keys") if localization else "Delete Selected Keys");delete.setEnabled(bool(self.key_selection.selected));easing_menu=menu.addMenu(localization.text("property.easing") if localization else "Easing");easing_menu.setEnabled(bool(self.key_selection.selected));actions={easing_menu.addAction(localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(position))
+        if chosen is copy_action:self.multi_key_copy_requested.emit(list(self.key_selection.selected))
+        elif chosen is paste_action:self.multi_key_paste_requested.emit()
+        elif chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
         elif chosen in actions:self.multi_key_easing_requested.emit(list(self.key_selection.selected),actions[chosen])
 
     def refresh(

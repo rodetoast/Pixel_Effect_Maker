@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import json
+from math import isfinite
 from typing import Iterable, Mapping
 
 from app.models.resource_composition import AnimationTrack, EASINGS
+
+
+TIMELINE_KEY_MIME = "application/x-pixel-effect-maker-timeline-keys"
+TIMELINE_CLIPBOARD_VERSION = 1
+TIMELINE_KINDS = {"resource", "effect"}
+PASTE_INVALID = "invalid"
+PASTE_INCOMPATIBLE = "incompatible"
+PASTE_MISSING_TRACK = "missing_track"
+PASTE_OUT_OF_RANGE = "out_of_range"
+PASTE_COLLISION = "collision"
 
 
 @dataclass(frozen=True, order=True)
@@ -126,3 +138,110 @@ def set_keys_easing(tracks: Mapping[tuple[str,str,str],AnimationTrack],keys: Ite
         track=tracks.get(key.track_id);item=track.keyframe_at(key.frame) if track else None
         if item is not None and item.easing!=easing:item.easing=easing;changed+=1
     return changed
+
+
+def _clipboard_value_is_valid(value) -> bool:
+    if value is None or isinstance(value,(str,bool)):return True
+    if isinstance(value,(int,float)):return not isinstance(value,bool) and isfinite(float(value))
+    if isinstance(value,(list,tuple)):return all(_clipboard_value_is_valid(part) for part in value)
+    if isinstance(value,dict):return all(isinstance(key,str) and _clipboard_value_is_valid(part) for key,part in value.items())
+    return False
+
+
+def build_timeline_clipboard_payload(
+    timeline_kind: str,
+    context_id: str,
+    keys: Iterable[TimelineKey],
+    tracks: Mapping[tuple[str,str,str],AnimationTrack],
+    primary: TimelineKey | None = None,
+) -> bytes | None:
+    """Snapshot selected keys into a versioned, relative-frame JSON payload."""
+
+    kind=str(timeline_kind);context=str(context_id);selected=sorted(set(keys),key=lambda key:(key.frame,key.track_id))
+    if kind not in TIMELINE_KINDS or not context or not selected:return None
+    anchor=min(key.frame for key in selected);entries=[];primary_index=None
+    for key in selected:
+        track=tracks.get(key.track_id);item=track.keyframe_at(key.frame) if track else None
+        if item is None or item.easing not in EASINGS or not _clipboard_value_is_valid(item.value):return None
+        entry={"layer_id":key.layer_id,"scope":key.scope,"property_id":key.property_id,"relative_frame":key.frame-anchor,"value":deepcopy(item.value),"easing":item.easing}
+        if key==primary:primary_index=len(entries)
+        entries.append(entry)
+    payload={"version":TIMELINE_CLIPBOARD_VERSION,"timeline_kind":kind,"context_id":context,"anchor_frame":anchor,"primary_index":primary_index,"entries":entries}
+    try:return json.dumps(payload,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
+    except (TypeError,ValueError):return None
+
+
+def decode_timeline_clipboard_payload(data) -> dict | None:
+    """Strictly validate untrusted custom clipboard bytes."""
+
+    try:
+        raw=bytes(data);payload=json.loads(raw.decode("utf-8"))
+    except (TypeError,ValueError,UnicodeDecodeError,json.JSONDecodeError):return None
+    if not isinstance(payload,dict) or payload.get("version")!=TIMELINE_CLIPBOARD_VERSION:return None
+    kind=payload.get("timeline_kind");context=payload.get("context_id");anchor=payload.get("anchor_frame");primary=payload.get("primary_index");entries=payload.get("entries")
+    if kind not in TIMELINE_KINDS or not isinstance(context,str) or not context or not isinstance(anchor,int) or isinstance(anchor,bool) or anchor<0:return None
+    if not isinstance(entries,list) or not entries:return None
+    if primary is not None and (not isinstance(primary,int) or isinstance(primary,bool) or not 0<=primary<len(entries)):return None
+    seen=set();minimum=None
+    for entry in entries:
+        if not isinstance(entry,dict) or set(entry)!={"layer_id","scope","property_id","relative_frame","value","easing"}:return None
+        layer_id=entry["layer_id"];scope=entry["scope"];property_id=entry["property_id"];relative=entry["relative_frame"]
+        if not all(isinstance(value,str) and value for value in (layer_id,scope,property_id)):return None
+        if kind=="resource" and scope!="resource":return None
+        if kind=="effect" and scope not in {"effect_transform","effect_motion"}:return None
+        if not isinstance(relative,int) or isinstance(relative,bool) or relative<0:return None
+        if entry["easing"] not in EASINGS or not _clipboard_value_is_valid(entry["value"]):return None
+        identity=(layer_id,scope,property_id,relative)
+        if identity in seen:return None
+        seen.add(identity);minimum=relative if minimum is None else min(minimum,relative)
+    if minimum!=0:return None
+    return deepcopy(payload)
+
+
+def read_timeline_clipboard_payload() -> dict | None:
+    from PySide6.QtWidgets import QApplication
+    mime=QApplication.clipboard().mimeData()
+    return decode_timeline_clipboard_payload(mime.data(TIMELINE_KEY_MIME)) if mime and mime.hasFormat(TIMELINE_KEY_MIME) else None
+
+
+def write_timeline_clipboard_payload(data: bytes) -> bool:
+    from PySide6.QtCore import QMimeData
+    from PySide6.QtWidgets import QApplication
+    if decode_timeline_clipboard_payload(data) is None:return False
+    mime=QMimeData();mime.setData(TIMELINE_KEY_MIME,data);QApplication.clipboard().setMimeData(mime);return True
+
+
+def timeline_clipboard_matches(timeline_kind: str,context_id: str | None=None) -> bool:
+    payload=read_timeline_clipboard_payload()
+    return bool(payload and payload["timeline_kind"]==timeline_kind and (context_id is None or payload["context_id"]==context_id))
+
+
+def paste_timeline_keys_atomic(
+    tracks: Mapping[tuple[str,str,str],AnimationTrack],
+    payload: dict | None,
+    timeline_kind: str,
+    context_id: str,
+    playhead_frame: int,
+    frame_count: int,
+) -> tuple[str | None,set[TimelineKey],TimelineKey | None]:
+    """Validate then create all destination keys, or leave every track untouched."""
+
+    if not isinstance(payload,dict):return PASTE_INVALID,set(),None
+    try:validated=decode_timeline_clipboard_payload(json.dumps(payload,allow_nan=False).encode("utf-8"))
+    except (TypeError,ValueError):validated=None
+    if validated is None:return PASTE_INVALID,set(),None
+    payload=validated
+    if payload["timeline_kind"]!=timeline_kind or payload["context_id"]!=context_id:return PASTE_INCOMPATIBLE,set(),None
+    anchor=int(playhead_frame);count=int(frame_count)
+    destinations=[]
+    for entry in payload["entries"]:
+        frame=anchor+entry["relative_frame"]
+        if frame<0 or frame>=count:return PASTE_OUT_OF_RANGE,set(),None
+        key=TimelineKey(entry["layer_id"],entry["scope"],entry["property_id"],frame);track=tracks.get(key.track_id)
+        if track is None:return PASTE_MISSING_TRACK,set(),None
+        if track.keyframe_at(frame) is not None:return PASTE_COLLISION,set(),None
+        destinations.append((key,track,entry))
+    if len({key for key,_track,_entry in destinations})!=len(destinations):return PASTE_INVALID,set(),None
+    for key,track,entry in destinations:track.set_keyframe(key.frame,deepcopy(entry["value"]),entry["easing"])
+    selected={key for key,_track,_entry in destinations};primary_index=payload.get("primary_index");primary=destinations[primary_index][0] if primary_index is not None else min(selected,key=lambda key:(key.frame,key.track_id))
+    return None,selected,primary

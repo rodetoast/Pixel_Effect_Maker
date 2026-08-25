@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.12 - 2026-08-25
+
+- Added focus-scoped `Ctrl+C` / `Ctrl+V` and key context-menu Copy/Paste for runtime-only Resource and Effect Timeline multi-key selections.
+- Added a versioned application MIME payload that preserves logical Layer/Track identity, relative timing, values, mixed easing, primary key mapping, and total-degree rotations.
+- Paste aligns the earliest copied key to the playhead, selects pasted visible keys, creates one Undo command, and rejects cross-context, missing-track, collision, malformed, or out-of-range payloads atomically.
+- Clipboard data remains outside project serialization; Group, Parenting, Multi-Transform, Conditional Auto-Key, generated Effect mapping, and project format v12 are unchanged.
+
 ## v0.0.11 - 2026-08-25
 
 - Added runtime-only Timeline key selection with single click, Ctrl toggle, same-track Shift range, cross-track additive Shift, and visible-row marquee selection.

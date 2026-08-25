@@ -10,7 +10,7 @@ from app.ui.hierarchy_display import (
     context_action_states, drop_is_allowed, elide_text, layer_display_labels, resolve_drop_target,
 )
 from app.ui.layout_metrics import COMPACT_TOOL_BUTTON_SIZE, HIERARCHY_LABEL_WIDTH
-from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta
+from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
 
 
 def _toolbar_separator(parent):
@@ -97,6 +97,8 @@ class CompositionTimeline(QWidget):
     multi_key_move_requested=Signal(object,int)
     multi_key_delete_requested=Signal(object)
     multi_key_easing_requested=Signal(object,str)
+    multi_key_copy_requested=Signal(object)
+    multi_key_paste_requested=Signal()
     add_layer_requested = Signal(str,str)
     remove_layer_requested = Signal(str)
     move_layer_requested = Signal(str,int)
@@ -112,7 +114,7 @@ class CompositionTimeline(QWidget):
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self.clipboard_context_id="";self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         self.add_layer=QPushButton();self.add_layer.setObjectName("resourceV2AddLayerButton");self.add_layer_menu=QMenu(self.add_layer);self.add_layer.setMenu(self.add_layer_menu)
         self.remove_layer=QPushButton();self.remove_layer.setObjectName("resourceV2RemoveLayerButton");self.duplicate_layer=QPushButton();self.duplicate_layer.setObjectName("resourceV2DuplicateLayerButton");self.group_layer=QPushButton("Group");self.group_layer.setObjectName("resourceV2GroupButton");self.ungroup_layer=QPushButton("Ungroup");self.ungroup_layer.setObjectName("resourceV2UngroupButton");self.lock_layer=QPushButton("L");self.lock_layer.setCheckable(True);self.solo_layer=QPushButton("S");self.solo_layer.setCheckable(True);self.move_up=QPushButton("↑");self.move_up.setObjectName("resourceV2MoveLayerUpButton");self.move_down=QPushButton("↓");self.move_down.setObjectName("resourceV2MoveLayerDownButton")
@@ -138,11 +140,15 @@ class CompositionTimeline(QWidget):
         self.table.setCurrentCell(row,column);self._clicked(row,column)
 
     def eventFilter(self,watched,event):
-        if watched is self.table and event.type()==QEvent.Type.KeyPress and self.key_selection.selected:
-            if event.key()==Qt.Key.Key_Delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return True
-            if event.modifiers()&Qt.KeyboardModifier.AltModifier and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:
-                self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
-            if event.key()==Qt.Key.Key_Escape:self._cancel_key_gesture();return True
+        if watched is self.table and event.type()==QEvent.Type.KeyPress:
+            control=event.modifiers()==Qt.KeyboardModifier.ControlModifier
+            if control and event.key()==Qt.Key.Key_C and self.key_selection.selected:self.multi_key_copy_requested.emit(list(self.key_selection.selected));return True
+            if control and event.key()==Qt.Key.Key_V and read_timeline_clipboard_payload() is not None:self.multi_key_paste_requested.emit();return True
+            if self.key_selection.selected:
+                if event.key()==Qt.Key.Key_Delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected));return True
+                if event.modifiers()&Qt.KeyboardModifier.AltModifier and event.key() in {Qt.Key.Key_Left,Qt.Key.Key_Right}:
+                    self.multi_key_move_requested.emit(list(self.key_selection.selected),-1 if event.key()==Qt.Key.Key_Left else 1);return True
+                if event.key()==Qt.Key.Key_Escape:self._cancel_key_gesture();return True
         if watched is self.table.viewport():
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
                 point=event.position().toPoint();index=self.table.indexAt(point);row=index.row();column=index.column();item=self.table.item(row,column) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole) if item else None
@@ -307,10 +313,12 @@ class CompositionTimeline(QWidget):
     def _context_menu(self,pos):
         index=self.table.indexAt(pos)
         item=self.table.item(index.row(),index.column()) if index.isValid() else None;key=item.data(Qt.ItemDataRole.UserRole) if item else None
-        if isinstance(key,TimelineKey):
-            if key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
-            menu=QMenu(self);delete=menu.addAction(self.localization.text("timeline.delete_selected_keys") if self.localization else "Delete Selected Keys");easing_menu=menu.addMenu(self.localization.text("property.easing") if self.localization else "Easing");easing_actions={easing_menu.addAction(self.localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if self.localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
-            if chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
+        if isinstance(key,TimelineKey) or index.isValid() and self._row_is_property(index.row()):
+            if isinstance(key,TimelineKey) and key not in self.key_selection.selected:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]);self._apply_key_visuals()
+            menu=QMenu(self);copy_action=menu.addAction(self.localization.text("timeline.copy_keys") if self.localization else "Copy Keys");paste_action=menu.addAction(self.localization.text("timeline.paste_keys") if self.localization else "Paste Keys");copy_action.setEnabled(bool(self.key_selection.selected));paste_action.setEnabled(timeline_clipboard_matches("resource",self.clipboard_context_id));menu.addSeparator();delete=menu.addAction(self.localization.text("timeline.delete_selected_keys") if self.localization else "Delete Selected Keys");delete.setEnabled(bool(self.key_selection.selected));easing_menu=menu.addMenu(self.localization.text("property.easing") if self.localization else "Easing");easing_menu.setEnabled(bool(self.key_selection.selected));easing_actions={easing_menu.addAction(self.localization.text("easing."+name.lower().replace(" ","_").replace("/","_")) if self.localization else name):name for name in ("Linear","Ease In","Ease Out","Ease In/Out")};chosen=menu.exec(self.table.viewport().mapToGlobal(pos))
+            if chosen is copy_action:self.multi_key_copy_requested.emit(list(self.key_selection.selected))
+            elif chosen is paste_action:self.multi_key_paste_requested.emit()
+            elif chosen is delete:self.multi_key_delete_requested.emit(list(self.key_selection.selected))
             elif chosen in easing_actions:self.multi_key_easing_requested.emit(list(self.key_selection.selected),easing_actions[chosen])
             return
         if index.isValid():

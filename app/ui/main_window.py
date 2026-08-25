@@ -112,7 +112,7 @@ from .layout_metrics import (
     EFFECT_INSPECTOR_DEFAULT_WIDTH, EFFECT_INSPECTOR_MIN_WIDTH,
     EFFECT_LIBRARY_DEFAULT_WIDTH, EFFECT_LIBRARY_MIN_WIDTH,
 )
-from .timeline_multi_key import TimelineKey, delete_keys, move_keys_atomic, set_keys_easing
+from .timeline_multi_key import TimelineKey, PASTE_COLLISION, PASTE_OUT_OF_RANGE, build_timeline_clipboard_payload, delete_keys, move_keys_atomic, paste_timeline_keys_atomic, read_timeline_clipboard_payload, set_keys_easing, write_timeline_clipboard_payload
 from app.models.layer_group import LayerGroup,group_node,layer_node
 
 
@@ -525,6 +525,8 @@ class MainWindow(QMainWindow):
         self.timeline.multi_key_move_requested.connect(self.move_effect_selected_keys)
         self.timeline.multi_key_delete_requested.connect(self.delete_effect_selected_keys)
         self.timeline.multi_key_easing_requested.connect(self.set_effect_selected_keys_easing)
+        self.timeline.multi_key_copy_requested.connect(self.copy_effect_selected_keys)
+        self.timeline.multi_key_paste_requested.connect(self.paste_effect_copied_keys)
         self.effect_library.import_requested.connect(self.import_source_asset)
         self.effect_library.add_emitter_requested.connect(self.add_transform_emitter)
         self.effect_library.asset_selected.connect(self.select_source_asset)
@@ -1860,6 +1862,32 @@ class MainWindow(QMainWindow):
         after,tracks=payload
         if not set_keys_easing(tracks,identities,str(easing)):return False
         self._touch_effect_key_scopes(after,identities);selected=set(identities);primary=self.timeline.key_selection.primary;anchor=self.timeline.key_selection.anchor;self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Change Selected Effect Key Easing"));self.timeline.key_selection.selected=selected;self.timeline.key_selection.primary=primary;self.timeline.key_selection.anchor=anchor;self.timeline.key_selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();return True
+
+    def _effect_clipboard_context(self):return f"effect:{id(self.project):x}"
+
+    @staticmethod
+    def _effect_track_map(layers):
+        tracks={}
+        for layer in layers:
+            tracks.update({(layer.id,"effect_transform",property_id):track for property_id,track in layer.layer_transform.tracks.items()})
+            if layer.placement_mode==PLACEMENT_PARTICLE:tracks.update({(layer.id,"effect_motion",property_id):track for property_id,track in layer.particle_settings.motion.tracks.items()})
+        return tracks
+
+    def copy_effect_selected_keys(self,keys=None):
+        identities={key for key in (keys if keys is not None else self.timeline.key_selection.selected) if isinstance(key,TimelineKey) and key.scope in {"effect_transform","effect_motion"}}
+        data=build_timeline_clipboard_payload("effect",self._effect_clipboard_context(),identities,self._effect_track_map(self.project.effect_resource_layers),self.timeline.key_selection.primary)
+        if data is None or not write_timeline_clipboard_payload(data):return False
+        self.statusBar().showMessage(self.localization.text("timeline.keys_copied").format(count=len(identities)),3000);return True
+
+    def paste_effect_copied_keys(self):
+        payload=read_timeline_clipboard_payload();by_id={layer.id:layer for layer in self.project.effect_resource_layers};layer_ids={entry.get("layer_id") for entry in payload.get("entries",[])} if isinstance(payload,dict) else set()
+        if not layer_ids or any(identifier not in by_id or self._effect_layer_locked(by_id[identifier]) for identifier in layer_ids):self._report_effect_paste_issue(None);return False
+        before={identifier:deepcopy(by_id[identifier]) for identifier in layer_ids};after=deepcopy(before);tracks=self._effect_track_map(after.values());issue,selected,primary=paste_timeline_keys_atomic(tracks,payload,"effect",self._effect_clipboard_context(),self.frame_index,self._display_frame_count())
+        if issue:self._report_effect_paste_issue(issue);return False
+        self._touch_effect_key_scopes(after,selected);self.application_undo_stack.push(EditorValueCommand(self,"effect_multi_keys","effect_multi_keys",before,after,"Paste Effect Timeline Keys"));selection=self.timeline.key_selection;selection.selected=selected;selection.primary=primary;selection.anchor=primary;selection.repair(self.timeline._visible_keys);self.timeline._apply_key_visuals();self.statusBar().showMessage(self.localization.text("timeline.keys_pasted").format(count=len(selected)),3000);return True
+
+    def _report_effect_paste_issue(self,issue):
+        key="timeline.paste_collision" if issue==PASTE_COLLISION else "timeline.paste_out_of_range" if issue==PASTE_OUT_OF_RANGE else "timeline.paste_incompatible";self.statusBar().showMessage(self.localization.text(key),3000)
 
     def add_resource_layer_transform_keyframe(self,identifier,property_id,frame,value,easing) -> None:
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)

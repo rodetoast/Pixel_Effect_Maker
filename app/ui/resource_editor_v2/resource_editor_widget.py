@@ -35,7 +35,7 @@ from app.ui.layout_metrics import (
     RESOURCE_INSPECTOR_DEFAULT_WIDTH, RESOURCE_INSPECTOR_MIN_WIDTH,
     RESOURCE_TIMELINE_DEFAULT_HEIGHT, RESOURCE_TIMELINE_MIN_HEIGHT,
 )
-from app.ui.timeline_multi_key import TimelineKey, delete_keys, move_keys_atomic, set_keys_easing
+from app.ui.timeline_multi_key import TimelineKey, PASTE_COLLISION, PASTE_OUT_OF_RANGE, build_timeline_clipboard_payload, delete_keys, move_keys_atomic, paste_timeline_keys_atomic, read_timeline_clipboard_payload, set_keys_easing, write_timeline_clipboard_payload
 
 
 class ResourceStartPanel(QWidget):
@@ -61,7 +61,7 @@ class ResourceEditorWidget(QWidget):
         self.composition_inspector.changed.connect(self._composition_meta);self.composition_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.changed.connect(self._layer_meta);self.layer_inspector.parent_changed.connect(lambda parent_id:self.set_layer_parent(self.selected_layer.id,parent_id) if self.selected_layer else None);self.layer_inspector.mode_changed.connect(self.set_gizmo);self.layer_inspector.add_property_requested.connect(self._property_dialog);self.layer_inspector.full_rotation_requested.connect(self._full_rotation_click);self.layer_inspector.center_pivot_requested.connect(self._center_layer_pivot);self.layer_inspector.use_requested.connect(self._use_in_effect);self.layer_inspector.keyframe_requested.connect(self.set_keyframe);self.layer_inspector.keyframe_delete_requested.connect(self._delete_keyframe);self.layer_inspector.property_value_requested.connect(self._property_value);self.layer_inspector.batch_property_value_requested.connect(self._batch_property_value);self.layer_inspector.remove_property_requested.connect(self._remove_property)
         self.composition_timeline.frame_selected.connect(self.set_frame);self.composition_timeline.selection_requested.connect(self.select_layer_with_modifiers);self.composition_timeline.select_all_requested.connect(self.select_all_layers);self.composition_timeline.batch_command_requested.connect(self.batch_command);self.composition_timeline.visibility_requested.connect(self._toggle_visibility);self.composition_timeline.play_requested.connect(self.toggle_play);self.composition_timeline.previous_requested.connect(self.previous_frame);self.composition_timeline.next_requested.connect(self.next_frame);self.composition_timeline.delete_keyframe_requested.connect(self._delete_keyframe)
         self.composition_timeline.add_layer_requested.connect(self.add_asset_layer);self.composition_timeline.duplicate_layer_requested.connect(self.duplicate_layer);self.composition_timeline.remove_layer_requested.connect(self.remove_layer);self.composition_timeline.move_layer_requested.connect(self.move_layer);self.composition_timeline.reorder_layer_requested.connect(self.reorder_layers)
-        self.composition_timeline.multi_key_move_requested.connect(self.move_selected_keys);self.composition_timeline.multi_key_delete_requested.connect(self.delete_selected_keys);self.composition_timeline.multi_key_easing_requested.connect(self.set_selected_keys_easing)
+        self.composition_timeline.multi_key_move_requested.connect(self.move_selected_keys);self.composition_timeline.multi_key_delete_requested.connect(self.delete_selected_keys);self.composition_timeline.multi_key_easing_requested.connect(self.set_selected_keys_easing);self.composition_timeline.multi_key_copy_requested.connect(self.copy_selected_keys);self.composition_timeline.multi_key_paste_requested.connect(self.paste_copied_keys)
         self.composition_timeline.lock_requested.connect(self.set_layer_locked);self.composition_timeline.solo_requested.connect(self.set_layer_solo)
         self.composition_timeline.group_expanded_requested.connect(self.toggle_group_expanded);self.composition_timeline.expand_all_requested.connect(lambda:self.set_all_groups_expanded(True));self.composition_timeline.collapse_all_requested.connect(lambda:self.set_all_groups_expanded(False));self.composition_timeline.hierarchy_drop_requested.connect(self.move_hierarchy_nodes)
         self.composition_timeline.parent_requested.connect(self.set_layer_parent)
@@ -137,7 +137,7 @@ class ResourceEditorWidget(QWidget):
             if state.layer_id is None and self.layer_selection.primary_id and composition.group_by_id(self.layer_selection.primary_id) is None:self.layer_selection.clear()
             if state.layer_id in ui_ids and state.layer_id!=self.layer_selection.primary_id:self.layer_selection.restore({"selected_ids":[state.layer_id],"primary_id":state.layer_id,"anchor_id":state.layer_id},ui_ids)
             preferred=self.layer_selection.primary_id or state.layer_id;primary=self.layer_selection.repair(ui_ids,preferred,allow_empty=state.layer_id is None and not self.layer_selection.selected_ids);state.layer_id=primary if any(item.id==primary for item in composition.layers) else None;layer=self.controller.layer
-            self.composition_timeline.set_available_sources(self.project)
+            self.composition_timeline.set_available_sources(self.project);self.composition_timeline.clipboard_context_id=self._resource_clipboard_context()
             group=composition.group_by_id(primary);self.inspector_stack.setCurrentWidget(self.group_inspector if group else self.layer_inspector if layer else self.composition_inspector);self.group_inspector.set_group(group);source=self._layer_source(layer);selected_leaves,reason=validate_multi_transform_selection(composition.layers,self.layer_selection.selected_ids,group_ids=[item.id for item in composition.groups],effectively_locked=composition.effective_locked);multi_context=None
             if selected_leaves and reason is None:
                 try:multi_context=build_resource_multi_transform_context(composition,self.layer_selection.selected_ids,state.frame)
@@ -328,6 +328,35 @@ class ResourceEditorWidget(QWidget):
         after,tracks=payload
         if not set_keys_easing(tracks,identities,str(easing)):return False
         selected=set(identities);primary=self.composition_timeline.key_selection.primary;anchor=self.composition_timeline.key_selection.anchor;self._push_value(self.composition.id,"multi_tracks",before,after,"Change Selected Key Easing");self.composition_timeline.key_selection.selected=selected;self.composition_timeline.key_selection.primary=primary;self.composition_timeline.key_selection.anchor=anchor;self.composition_timeline.key_selection.repair(self.composition_timeline._visible_keys);self.composition_timeline._apply_key_visuals();return True
+
+    def _resource_clipboard_context(self):return f"resource:{id(self.project):x}:{self.composition.id}" if self.project is not None and self.composition is not None else ""
+
+    @staticmethod
+    def _resource_track_map(layers):return {(layer.id,"resource",property_id):track for layer in layers for property_id,track in layer.tracks.items()}
+
+    def copy_selected_keys(self,keys=None):
+        if not self.composition:return False
+        identities={key for key in (keys if keys is not None else self.composition_timeline.key_selection.selected) if isinstance(key,TimelineKey) and key.scope=="resource"}
+        data=build_timeline_clipboard_payload("resource",self._resource_clipboard_context(),identities,self._resource_track_map(self.composition.layers),self.composition_timeline.key_selection.primary)
+        if data is None or not write_timeline_clipboard_payload(data):return False
+        self._report_timeline_clipboard("timeline.keys_copied",count=len(identities));return True
+
+    def paste_copied_keys(self):
+        if not self.composition:return False
+        payload=read_timeline_clipboard_payload();layer_by_id={layer.id:layer for layer in self.composition.layers};layer_ids={entry.get("layer_id") for entry in payload.get("entries",[])} if isinstance(payload,dict) else set()
+        if not layer_ids or any(identifier not in layer_by_id or self._layer_effectively_locked(layer_by_id[identifier]) for identifier in layer_ids):self._report_timeline_paste_issue(None);return False
+        before={identifier:deepcopy(layer_by_id[identifier].tracks) for identifier in layer_ids};after=deepcopy(before);tracks={(identifier,"resource",property_id):track for identifier,values in after.items() for property_id,track in values.items()}
+        issue,selected,primary=paste_timeline_keys_atomic(tracks,payload,"resource",self._resource_clipboard_context(),self.frame_index,self.composition.frame_count)
+        if issue:self._report_timeline_paste_issue(issue);return False
+        self._push_value(self.composition.id,"multi_tracks",before,after,"Paste Timeline Keys");selection=self.composition_timeline.key_selection;selection.selected=selected;selection.primary=primary;selection.anchor=primary;selection.repair(self.composition_timeline._visible_keys);self.composition_timeline._apply_key_visuals();self._report_timeline_clipboard("timeline.keys_pasted",count=len(selected));return True
+
+    def _report_timeline_clipboard(self,key,**values):
+        fallback={"timeline.keys_copied":f"{values.get('count',0)} keys copied.","timeline.keys_pasted":f"{values.get('count',0)} keys pasted.","timeline.paste_collision":"Paste blocked: a destination frame already contains a key.","timeline.paste_out_of_range":"Paste blocked: keys would be outside the timeline.","timeline.paste_incompatible":"These keys cannot be pasted into the current timeline."}
+        message=self.localization.text(key).format(**values) if self.localization else fallback.get(key,key);window=self.window()
+        if hasattr(window,"statusBar"):window.statusBar().showMessage(message,3000)
+
+    def _report_timeline_paste_issue(self,issue):
+        key="timeline.paste_collision" if issue==PASTE_COLLISION else "timeline.paste_out_of_range" if issue==PASTE_OUT_OF_RANGE else "timeline.paste_incompatible";self._report_timeline_clipboard(key)
 
     def _report_key_collision(self):
         window=self.window();message=self.localization.text("timeline.key_collision") if self.localization else "Key move blocked by a key on the destination frame."
