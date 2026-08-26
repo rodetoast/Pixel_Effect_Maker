@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
         self.particle_preview_manager = ParticlePreviewManager(self)
         self.active_preview_generator_id: str | None = None
         self._effect_guide_before = None
+        self._effect_guide_target_id = None
         try:
             self.shortcuts = self.settings_service.load()
         except SettingsError:
@@ -2028,7 +2029,14 @@ class MainWindow(QMainWindow):
 
     def _effect_guide_started(self,identifier):
         layer=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
-        if layer is None or self._effect_layer_locked(layer):return
+        if layer is None:
+            legacy=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
+            if legacy is None:
+                emitter=next((item for item in self.project.particle_emitters if item.id==identifier),None);draft=None if emitter is None else self.particle_preview_manager.ensure_draft(emitter);legacy=None if draft is None else draft.settings
+            if legacy is not None:self._effect_guide_target_id=identifier;self._effect_guide_before=deepcopy(legacy)
+            return
+        if self._effect_layer_locked(layer):return
+        self._effect_guide_target_id=identifier;self._effect_guide_before=deepcopy(layer)
         self._begin_effect_gizmo_interaction()
         base_key=effect_resource_layer_base_frame_key(self.project,layer,self.frame_index)
         if self.canvas.activate_proxy_prewarm(layer,base_key):return
@@ -2067,10 +2075,11 @@ class MainWindow(QMainWindow):
             self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"particle_settings",before,settings,"Particle Settings",700))
 
     def _effect_guide_changed(self, identifier: str, settings, final: bool) -> None:
+        if self._effect_guide_target_id is not None and self._effect_guide_target_id!=identifier:return
         unified=next((item for item in self.project.effect_resource_layers if item.id==identifier),None)
         if unified is not None:
             if self._effect_layer_locked(unified):return
-            if self._effect_guide_before is None:self._effect_guide_before=deepcopy(unified)
+            if self._effect_guide_before is None:self._effect_guide_before=deepcopy(unified);self._effect_guide_target_id=identifier
             transient=deepcopy(unified)
             if isinstance(settings,EffectCompositionLayer):transient.single_settings=deepcopy(settings);transient.start_frame=settings.start_frame;transient.end_frame=settings.end_frame
             else:transient.particle_settings=deepcopy(settings)
@@ -2078,10 +2087,11 @@ class MainWindow(QMainWindow):
             self._pending_guide_inspector=(transient,deepcopy(settings));self._queue_particle_motion_render(transient,final=False)
             if not self.guide_inspector_timer.isActive():self.guide_inspector_timer.start(33)
             if final:
-                self.particle_motion_render_timer.stop();self.guide_inspector_timer.stop();self._pending_guide_inspector=None;before=self._effect_guide_before;self._effect_guide_before=None
+                self.particle_motion_render_timer.stop();self.guide_inspector_timer.stop();self._pending_guide_inspector=None;before=self._effect_guide_before;self._effect_guide_before=None;self._effect_guide_target_id=None
                 self.application_undo_stack.push(EditorValueCommand(self,identifier,"resource_layer_interaction",before,transient,"Resource Layer Content Guide"));self._sync_guide_inspector(transient,settings)
             return
         if self._effect_guide_before is None:
+            self._effect_guide_target_id=identifier
             if isinstance(settings,EffectCompositionLayer):
                 current=next((item for item in self.project.effect_composition_layers if item.id==identifier),None)
                 self._effect_guide_before=deepcopy(current)
@@ -2101,12 +2111,13 @@ class MainWindow(QMainWindow):
                 draft=self.particle_preview_manager.ensure_draft(emitter);draft.settings=deepcopy(settings)
                 self.particle_properties.set_settings(settings)
         if final and self._effect_guide_before is not None:
-            before=self._effect_guide_before;self._effect_guide_before=None
+            before=self._effect_guide_before;self._effect_guide_before=None;self._effect_guide_target_id=None
             field="composition_layer_settings" if isinstance(settings,EffectCompositionLayer) else "particle_settings"
             self.application_undo_stack.push(EditorValueCommand(self,identifier,field,before,settings,"Effect Guide"))
 
     def _effect_guide_cancelled(self, identifier: str, before) -> None:
-        stored=self._effect_guide_before;self._effect_guide_before=None
+        if self._effect_guide_target_id is not None and self._effect_guide_target_id!=identifier:return
+        stored=self._effect_guide_before;self._effect_guide_before=None;self._effect_guide_target_id=None
         if isinstance(stored,EffectResourceLayer):
             self.particle_motion_render_timer.stop();self.particle_motion_finalize_timer.stop();self.guide_inspector_timer.stop();self._pending_guide_inspector=None;self._pending_particle_motion.clear();self._pending_particle_motion_layers.clear();self._dirty_particle_motion_layers.discard(identifier);self.interactive_gizmo_renderer.cancel();self.canvas.finish_interactive_motion_proxy(identifier)
             self._sync_guide_inspector(stored,stored.particle_settings if stored.placement_mode==PLACEMENT_PARTICLE else stored.single_settings);self.timeline.set_resource_layer_key_marker(self.project,stored,self.frame_index)

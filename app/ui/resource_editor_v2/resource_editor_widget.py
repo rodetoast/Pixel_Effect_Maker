@@ -49,7 +49,7 @@ class ResourceEditorWidget(QWidget):
     import_requested=Signal(object);pivot_changed=Signal(str,str,float,float);create_emitter_requested=Signal(str,str);add_to_effect_requested=Signal(str,str,str);reimport_requested=Signal(str,str);delete_requested=Signal(str,str);resource_selected=Signal(str,str);composition_changed=Signal(str)
 
     def __init__(self,settings,parent=None):
-        super().__init__(parent);self.setAcceptDrops(True);self.settings=settings;self.localization=None;self.undo_stack=None;self._applying_command=False;self.controller=ResourceEditorController(self);self.layer_selection=LayerSelectionState();self.expanded_group_ids=set();self._collapsed_group_ids=set();self.project=None;self._playing=False;self._last_asset=None;self._gizmo_before={};self._multi_gizmo_context=None;self._multi_gizmo_before=None;root=QVBoxLayout(self);self.vertical_splitter=QSplitter(Qt.Orientation.Vertical);self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False);self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setStretchFactor(2,0)
+        super().__init__(parent);self.setAcceptDrops(True);self.settings=settings;self.localization=None;self.undo_stack=None;self._applying_command=False;self.controller=ResourceEditorController(self);self.layer_selection=LayerSelectionState();self.expanded_group_ids=set();self._collapsed_group_ids=set();self.project=None;self._playing=False;self._last_asset=None;self._gizmo_before={};self._gizmo_targets={};self._multi_gizmo_context=None;self._multi_gizmo_before=None;root=QVBoxLayout(self);self.vertical_splitter=QSplitter(Qt.Orientation.Vertical);self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False);self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setStretchFactor(2,0)
         self.browser=AssetBrowserPanel();self.center_stack=QStackedWidget();self.empty=ResourceStartPanel();self.asset_canvas=AssetPreviewCanvas();self.asset_strip=AssetFrameStrip();asset_center=QWidget();asset_layout=QVBoxLayout(asset_center);asset_layout.addWidget(self.asset_canvas,1);asset_tools=QHBoxLayout();self.asset_fit=QPushButton();self.asset_actual=QPushButton();asset_tools.addStretch();asset_tools.addWidget(self.asset_fit);asset_tools.addWidget(self.asset_actual);asset_layout.addLayout(asset_tools);asset_layout.addWidget(self.asset_strip);self.composition_canvas=CompositionCanvas();self.center_stack.addWidget(self.empty);self.center_stack.addWidget(asset_center);self.center_stack.addWidget(self.composition_canvas)
         self.browser.setMinimumWidth(RESOURCE_BROWSER_MIN_WIDTH);self.browser.setMaximumWidth(340);self.browser.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);self.center_stack.setMinimumWidth(260);self.inspector_stack=QStackedWidget();self.empty_inspector=QWidget();self.asset_inspector=AssetInspectorWidget();self.composition_inspector=CompositionInspector();self.layer_inspector=LayerInspector();self.group_inspector=GroupInspector();[self.inspector_stack.addWidget(widget) for widget in (self.empty_inspector,self.asset_inspector,self.composition_inspector,self.layer_inspector,self.group_inspector)];self.inspector_stack.setMinimumWidth(RESOURCE_INSPECTOR_MIN_WIDTH);self.inspector_stack.setMaximumWidth(520);self.inspector_stack.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Expanding);[self.splitter.addWidget(widget) for widget in (self.browser,self.center_stack,self.inspector_stack)];self.vertical_splitter.setChildrenCollapsible(False);self.vertical_splitter.setStretchFactor(0,1);self.vertical_splitter.setStretchFactor(1,0);self.vertical_splitter.addWidget(self.splitter)
         self.composition_timeline=CompositionTimeline();self.composition_timeline.set_frame_cell_width(timeline_frame_width(settings));self.composition_timeline.setMinimumHeight(RESOURCE_TIMELINE_MIN_HEIGHT);self.vertical_splitter.addWidget(self.composition_timeline);root.addWidget(self.vertical_splitter,1);self.timeline=QTableWidget(self);self.timeline.hide();self.splitter.splitterMoved.connect(self._save_horizontal_splitter);self.vertical_splitter.splitterMoved.connect(self._save_vertical_splitter);QTimer.singleShot(0,self._restore_splitters)
@@ -403,41 +403,44 @@ class ResourceEditorWidget(QWidget):
     def _gizmo_change(self,property_id,value,final):
         if self.composition_canvas.multi_transform_enabled and property_id in {"position","rotation","scale"}:
             return self._multi_gizmo_change(property_id,value,final)
-        layer=self.selected_layer
-        if layer is None or self._layer_effectively_locked(layer):return
         had_change=property_id in self._gizmo_before
-        if not had_change:self._gizmo_before[property_id]=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))
+        if had_change:
+            composition_id,layer_id,frame=self._gizmo_targets[property_id];composition=next((item for item in self.project.resource_compositions if item.id==composition_id),None);layer=None if composition is None else next((item for item in composition.layers if item.id==layer_id),None)
+        else:
+            composition=self.composition;layer=self.selected_layer;frame=self.frame_index
+        if layer is None or (not had_change and self._layer_effectively_locked(layer)):return
+        if not had_change:self._gizmo_before[property_id]=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id));self._gizmo_targets[property_id]=(composition.id,layer.id,frame)
         if property_id=="pivot":
             if [layer.pivot_x,layer.pivot_y]==list(value):
                 if not final or not had_change:
-                    if final:self._gizmo_before.pop(property_id,None)
+                    if final:self._gizmo_before.pop(property_id,None);self._gizmo_targets.pop(property_id,None)
                     return
             layer.pivot_x,layer.pivot_y=value
         else:
-            track=layer.add_property(property_id);current=track.evaluate(self.frame_index)
+            track=layer.add_property(property_id);current=track.evaluate(frame)
             if current==value:
                 if not final or not had_change:
-                    if final:self._gizmo_before.pop(property_id,None)
+                    if final:self._gizmo_before.pop(property_id,None);self._gizmo_targets.pop(property_id,None)
                     return
-            key=track.keyframe_at(self.frame_index)
+            key=track.keyframe_at(frame)
             if key is not None:key.value=value
-            elif track.keyframes:track.set_keyframe(self.frame_index,value,"Linear")
+            elif track.keyframes:track.set_keyframe(frame,value,"Linear")
             else:track.default_value=value
-        self.composition.touch();invalidate_composition_cache(self.composition.id);self._apply_state(self.controller.state)
+        composition.touch();invalidate_composition_cache(composition.id);self._apply_state(self.controller.state)
         if final:
-            before=self._gizmo_before.pop(property_id,None);after=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))
+            before=self._gizmo_before.pop(property_id,None);self._gizmo_targets.pop(property_id,None);after=deepcopy([layer.pivot_x,layer.pivot_y] if property_id=="pivot" else layer.tracks.get(property_id))
             if before!=after:self.apply_undo_value(layer.id,"pivot" if property_id=="pivot" else "track:"+property_id,before);self._push_value(layer.id,"pivot" if property_id=="pivot" else "track:"+property_id,before,after,"Gizmo "+property_id.title())
-            self.composition_changed.emit(self.composition.id)
+            self.composition_changed.emit(composition.id)
 
     def _gizmo_cancel(self,property_id,value):
         if self._multi_gizmo_before is not None:
             self._apply_multi_tracks(self._multi_gizmo_before);self._multi_gizmo_before=None;self._multi_gizmo_context=None;self._apply_state(self.controller.state);return
-        before=self._gizmo_before.pop(property_id,None);layer=self.selected_layer
-        if layer is None or self._layer_effectively_locked(layer):return
+        before=self._gizmo_before.pop(property_id,None);target=self._gizmo_targets.pop(property_id,None);composition=None if target is None else next((item for item in self.project.resource_compositions if item.id==target[0]),None);layer=None if composition is None else next((item for item in composition.layers if item.id==target[1]),None)
+        if layer is None:return
         if property_id=="pivot":layer.pivot_x,layer.pivot_y=before or value
         elif before is None:layer.tracks.pop(property_id,None)
         else:layer.tracks[property_id]=before
-        self.composition.touch();invalidate_composition_cache(self.composition.id);self._apply_state(self.controller.state)
+        composition.touch();invalidate_composition_cache(composition.id);self._apply_state(self.controller.state)
 
     def _multi_gizmo_change(self,property_id,value,final):
         layers,reason=validate_multi_transform_selection(self.composition.layers,self.layer_selection.selected_ids,group_ids=[item.id for item in self.composition.groups],effectively_locked=self.composition.effective_locked)

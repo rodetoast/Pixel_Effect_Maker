@@ -1,4 +1,15 @@
-# Pixel Effect Maker v0.0.14 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.15 수동 테스트 체크리스트
+
+## v0.0.15 Timeline Snapping
+
+- Resource fixture: Layer A Position X 2/8, Rotation Z 3/10, Layer B Opacity 5/12를 만들고 보이는 다른 Key 근처에서 Snap guide와 1-based target 상태를 확인한다.
+- 2/5/8 Multi-Key 묶음을 Frame 14 target 근처로 이동하여 하나의 shared delta와 상대 간격 보존을 확인한다.
+- Playhead를 Frame 18에 둔 뒤 Move 및 Alt-drag Duplicate가 Playhead guide에 붙고 source/value/easing이 보존되는지 확인한다.
+- earliest Key→Start, latest Key→End를 확인하고 same-track collision 후보는 건너뛰며 valid unsnapped drag를 막지 않는지 확인한다.
+- Snap OFF에서 기존 v0.0.14 integer-frame Move/Duplicate가 그대로이고 toggle이 Dirty/Undo를 만들지 않는지 확인한다.
+- All/Animated/Selected Reveal 및 Group collapse에서 숨겨진 Key가 target이 되지 않는지 확인한다.
+- 8/32/64/160 px-per-frame와 Windows DPI 배율에서 약 8 logical px의 체감 threshold와 guide 위치를 확인한다.
+- 실제 Windows GUI 수동 QA는 사용자가 수행하며, Codex 검증은 Qt/QTest offscreen 자동화에 한정된다.
 
 ## v0.0.14 Alt-drag Multi-Key Duplicate
 
@@ -810,3 +821,14 @@ The deterministic model/service and offscreen QTest paths are automated. The fol
 - [ ] Resource Group collapse가 숨겨진 Key selection만 제거하며 Key 데이터와 Layer multi-selection은 유지하는지 확인한다.
 - [ ] Effect Single/Particle/Orbit/Helix logical Layer의 System/Motion Key를 함께 편집하고 generated ID 또는 fake Group이 생기지 않는지 확인한다.
 - [ ] Save/Reload 후 frame/value/easing이 exact하고 runtime Key selection은 저장되지 않으며 FORMAT_VERSION 12가 유지되는지 확인한다.
+
+## v0.0.15 Undo Integrity
+
+These are real Windows GUI checks and are not claimed by offscreen automation.
+
+- [ ] Effect Start Point를 서로 다른 X/Y sentinel에서 드래그하고 Undo/Redo하여 Start만 exact 복원되며 End와 다른 Layer가 유지되는지 확인한다.
+- [ ] Effect End Point에 같은 절차를 반복하여 End만 exact 복원되는지 확인한다.
+- [ ] Layer A의 Start Point를 편집한 뒤 Layer B를 선택하고 Undo/Redo하여 Layer A만 바뀌는지 확인한다.
+- [ ] 이름이 같은 두 Effect Layer를 만들고 한쪽만 편집한 뒤 선택을 바꿔 Undo하여 stable ID 대상만 복원되는지 확인한다.
+- [ ] Resource Canvas의 Move/Rotate X/Y/Z/Scale/Pivot를 single/multi selection에서 드래그하고 gesture당 Undo 하나, no-op은 0개인지 확인한다.
+- [ ] Resource/Effect Timeline에서 Move, multi-move, Delete, easing, nudge, Paste, Alt Duplicate와 snapped 변형을 실행해 action당 Undo 하나와 exact Redo를 확인한다.

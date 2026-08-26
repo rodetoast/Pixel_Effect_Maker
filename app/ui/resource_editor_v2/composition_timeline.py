@@ -11,6 +11,7 @@ from app.ui.hierarchy_display import (
 )
 from app.ui.layout_metrics import COMPACT_TOOL_BUTTON_SIZE, HIERARCHY_LABEL_WIDTH
 from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
+from app.ui.timeline_snapping import batch_delta_issue, collect_snap_targets, compute_batch_snap
 from app.ui.timeline_time_view import TimelineTimeView,navigation_frame
 
 
@@ -116,21 +117,21 @@ class CompositionTimeline(QWidget):
     scrub_started = Signal()
 
     def __init__(self, parent=None):
-        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self._visible_keys=set();self._occupied_keys=set();self.clipboard_context_id="";self.reveal_mode="all";self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
+        super().__init__(parent); self.rows=[]; self.localization=None; self._playing=False; self._shortcuts=([],[],[]);self.key_selection=TimelineKeySelection();self._visible_keys=set();self._occupied_keys=set();self.clipboard_context_id="";self.reveal_mode="all";self.snap_enabled=True;self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False; layout=QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5); controls=QHBoxLayout();controls.setSpacing(4)
         self.previous=QPushButton("◀"); self.play=QPushButton("▶"); self.play.setObjectName("resourceV2PlayButton"); self.next=QPushButton("▶|"); self.delete_keyframe=QPushButton()
         self.add_layer=QPushButton();self.add_layer.setObjectName("resourceV2AddLayerButton");self.add_layer_menu=QMenu(self.add_layer);self.add_layer.setMenu(self.add_layer_menu)
         self.remove_layer=QPushButton();self.remove_layer.setObjectName("resourceV2RemoveLayerButton");self.duplicate_layer=QPushButton();self.duplicate_layer.setObjectName("resourceV2DuplicateLayerButton");self.group_layer=QPushButton("Group");self.group_layer.setObjectName("resourceV2GroupButton");self.ungroup_layer=QPushButton("Ungroup");self.ungroup_layer.setObjectName("resourceV2UngroupButton");self.lock_layer=QPushButton("L");self.lock_layer.setCheckable(True);self.solo_layer=QPushButton("S");self.solo_layer.setCheckable(True);self.move_up=QPushButton("↑");self.move_up.setObjectName("resourceV2MoveLayerUpButton");self.move_down=QPushButton("↓");self.move_down.setObjectName("resourceV2MoveLayerDownButton")
-        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"])
-        self.previous_key.setFixedWidth(32);self.next_key.setFixedWidth(32);self.fit_timeline_button.setFixedWidth(38);self.fit_keys_button.setFixedWidth(42);self.fit_selected_button.setFixedWidth(38);self.reveal_combo.setFixedWidth(92)
-        for widget in (self.previous,self.play,self.next,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo,self.delete_keyframe): controls.addWidget(widget)
+        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"]);self.snap_toggle=QPushButton("Snap");self.snap_toggle.setCheckable(True);self.snap_toggle.setChecked(True)
+        self.previous_key.setFixedWidth(32);self.next_key.setFixedWidth(32);self.fit_timeline_button.setFixedWidth(38);self.fit_keys_button.setFixedWidth(42);self.fit_selected_button.setFixedWidth(38);self.reveal_combo.setFixedWidth(92);self.snap_toggle.setFixedWidth(52)
+        for widget in (self.previous,self.play,self.next,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo,self.snap_toggle,self.delete_keyframe): controls.addWidget(widget)
         controls.addStretch(); layout.addLayout(controls)
         for widget in (self.lock_layer,self.solo_layer,self.move_up,self.move_down):widget.setFixedSize(COMPACT_TOOL_BUTTON_SIZE,COMPACT_TOOL_BUTTON_SIZE)
         layer_controls=QHBoxLayout();layer_controls.setSpacing(4);layer_controls.addWidget(self.add_layer);layer_controls.addWidget(self.duplicate_layer);layer_controls.addWidget(self.remove_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.group_layer);layer_controls.addWidget(self.ungroup_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.lock_layer);layer_controls.addWidget(self.solo_layer);layer_controls.addWidget(_toolbar_separator(self));layer_controls.addWidget(self.move_up);layer_controls.addWidget(self.move_down);layer_controls.addStretch();layout.addLayout(layer_controls)
         self.key_selection_status=QLabel();self.key_selection_status.setObjectName("resourceKeySelectionStatus");layer_controls.addWidget(self.key_selection_status);self.selection_status=QPushButton();self.selection_status.setObjectName("resourceLayerSelectionStatus");self.selection_status.setFlat(True);self.selection_status.setEnabled(False);layer_controls.addWidget(self.selection_status)
-        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection);self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents); layout.addWidget(self.table)
+        self.frame_cell_width=36; self.table=LayerOrderTable(); self.table.setObjectName("resourceV2CompositionTimeline"); self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection);self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel); self.table.horizontalHeader().setDefaultSectionSize(self.frame_cell_width);self.table.verticalHeader().setMinimumWidth(HIERARCHY_LABEL_WIDTH);self.table.verticalHeader().setMaximumWidth(360);self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents);self._snap_guide=QFrame(self.table.viewport());self._snap_guide.setStyleSheet(f"background:{self.table.palette().highlight().color().name()};");self._snap_guide.hide(); layout.addWidget(self.table)
         self.table.cellClicked.connect(self._clicked); self.table.verticalHeader().sectionClicked.connect(self._header_clicked)
         self.scrub_controller=TimelineScrubController(self.table,self._scrub_to,self.scrub_started.emit,self);self.table.viewport().installEventFilter(self);self.table.installEventFilter(self)
-        self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete);self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]))
+        self.previous.clicked.connect(self.previous_requested); self.next.clicked.connect(self.next_requested); self.play.clicked.connect(self.play_requested); self.delete_keyframe.clicked.connect(self._delete);self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]));self.snap_toggle.toggled.connect(self.set_snap_enabled)
         self.remove_layer.clicked.connect(self._remove_selected_layer);self.duplicate_layer.clicked.connect(self._duplicate_selected_layer);self.group_layer.clicked.connect(lambda:self.batch_command_requested.emit("group"));self.ungroup_layer.clicked.connect(lambda:self.batch_command_requested.emit("ungroup"));self.lock_layer.clicked.connect(self._toggle_lock);self.solo_layer.clicked.connect(self._toggle_solo);self.move_up.clicked.connect(lambda:self._move_selected_layer(1));self.move_down.clicked.connect(lambda:self._move_selected_layer(-1));self.table.layer_drop_requested.connect(self.reorder_layer_requested);self.table.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.table.duplicate_requested.connect(self._duplicate_selected_layer);self.table.delete_requested.connect(lambda:self.batch_command_requested.emit("delete"));self.table.select_all_layers_requested.connect(self.select_all_requested);self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.table.customContextMenuRequested.connect(self._context_menu)
 
     def set_available_sources(self,project):
@@ -160,7 +161,7 @@ class CompositionTimeline(QWidget):
             if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ShiftModifier:
                 bar=self.table.horizontalScrollBar();bar.setValue(bar.value()-event.angleDelta().y());event.accept();return True
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.MiddleButton:
-                self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
+                self._clear_snap_guide();self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
             if event.type()==QEvent.Type.MouseMove and self._time_pan and event.buttons()&Qt.MouseButton.MiddleButton:
                 start,value=self._time_pan;self.table.horizontalScrollBar().setValue(int(value-(event.position().x()-start)));event.accept();return True
             if event.type()==QEvent.Type.MouseButtonRelease and event.button()==Qt.MouseButton.MiddleButton and self._time_pan:
@@ -170,31 +171,30 @@ class CompositionTimeline(QWidget):
                 if isinstance(key,TimelineKey) and not self._row_locked(row):
                     modifiers=event.modifiers();ctrl=bool(modifiers&Qt.KeyboardModifier.ControlModifier);shift=bool(modifiers&Qt.KeyboardModifier.ShiftModifier);preserve_click=key in self.key_selection.selected and not ctrl and not shift;track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]
                     if not preserve_click:self.key_selection.click(key,ctrl=ctrl,shift=shift,track_keys=track_keys)
-                    self._key_drag=(key,column,point,False,None,(),preserve_click);self.table.setCurrentCell(row,column);self.frame_selected.emit(column);self._apply_key_visuals();event.accept();return True
+                    playhead_before=self._current_frame;self._key_drag=(key,column,point,False,None,(),preserve_click,None,playhead_before);self.table.setCurrentCell(row,column);self.frame_selected.emit(column);self._apply_key_visuals();event.accept();return True
                 if index.isValid() and self._row_is_property(row):
-                    self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
+                    self._clear_snap_guide();self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
             elif event.type()==QEvent.Type.MouseMove and self._key_drag and event.buttons()&Qt.MouseButton.LeftButton:
-                key,column,start,was_dragged,duplicate,snapshot,preserve_click=self._drag_state();dragged=was_dragged or (event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance()
-                if dragged and not was_dragged:duplicate=bool(event.modifiers()&Qt.KeyboardModifier.AltModifier);snapshot=tuple(self.key_selection.selected)
-                self._key_drag=(key,column,start,dragged,duplicate,snapshot,preserve_click)
-                if dragged:self._preview_key_drag(column,event.position().x(),duplicate=bool(duplicate),keys=snapshot)
+                key,column,start,was_dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before=self._drag_state();dragged=was_dragged or (event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance()
+                if dragged and not was_dragged:
+                    duplicate=bool(event.modifiers()&Qt.KeyboardModifier.AltModifier);snapshot=tuple(self.key_selection.selected);snap_snapshot=collect_snap_targets(self._visible_keys,snapshot,playhead_before,self.table.columnCount()) if self.snap_enabled else None
+                self._key_drag=(key,column,start,dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before)
+                if dragged:self._preview_key_drag(column,event.position().x(),duplicate=bool(duplicate),keys=snapshot,start_x=start.x(),snap_snapshot=snap_snapshot)
                 event.accept();return True
             elif event.type()==QEvent.Type.MouseMove and self._marquee and event.buttons()&Qt.MouseButton.LeftButton:
                 self._marquee.setGeometry(QRect(self._marquee_origin,event.position().toPoint()).normalized());event.accept();return True
             elif event.type()==QEvent.Type.MouseButtonRelease and self._key_drag:
-                key,source,_,dragged,duplicate,snapshot,preserve_click=self._drag_state();self._key_drag=None;self.table.viewport().unsetCursor()
+                key,source,start,dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before=self._drag_state();self._key_drag=None;self.table.viewport().unsetCursor();self._clear_snap_guide()
                 if not dragged and preserve_click:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id])
                 self._apply_key_visuals()
                 if dragged:
-                    target=self.table.columnAt(int(event.position().x()))
-                    if target<0:target=0 if event.position().x()<0 else self.table.columnCount()-1
-                    target=max(0,min(self.table.columnCount()-1,target))
-                    if target>=0 and target!=source:
+                    delta,_snap,_issue=self._resolve_drag_delta(source,start.x(),event.position().x(),bool(duplicate),snapshot,snap_snapshot)
+                    if delta:
                         selected=list(snapshot or self.key_selection.selected)
-                        if duplicate:self.multi_key_duplicate_requested.emit(selected,target-source)
+                        if duplicate:self.multi_key_duplicate_requested.emit(selected,delta)
                         else:
-                            self.multi_key_move_requested.emit(selected,target-source)
-                            if len(selected)==1:self.move_keyframe_requested.emit(selected[0].property_id,selected[0].frame,target)
+                            self.multi_key_move_requested.emit(selected,delta)
+                            if len(selected)==1:self.move_keyframe_requested.emit(selected[0].property_id,selected[0].frame,selected[0].frame+delta)
                 event.accept();return True
             elif event.type()==QEvent.Type.MouseButtonRelease and self._marquee:
                 rect=self._marquee.geometry();self._marquee.hide();self._marquee.deleteLater();self._marquee=None;keys=[]
@@ -212,13 +212,15 @@ class CompositionTimeline(QWidget):
         return not 0<=row<len(self.rows) or bool(getattr(self.rows[row][0],"locked",False))
 
     def _cancel_key_gesture(self):
-        self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
+        self._key_drag=None;self.table.viewport().unsetCursor();self._clear_snap_guide();self._apply_key_visuals()
         if self._marquee:self._marquee.hide();self._marquee.deleteLater();self._marquee=None
 
     def _drag_state(self):
         if len(self._key_drag)==4:
-            key,column,start,dragged=self._key_drag;return key,column,start,dragged,False,tuple(self.key_selection.selected),False
-        if len(self._key_drag)==6:return (*self._key_drag,False)
+            key,column,start,dragged=self._key_drag;return key,column,start,dragged,False,tuple(self.key_selection.selected),False,None,self._current_frame
+        if len(self._key_drag)==6:return (*self._key_drag,False,None,self._current_frame)
+        if len(self._key_drag)==7:return (*self._key_drag,None,self._current_frame)
+        if len(self._key_drag)==8:return (*self._key_drag,self._current_frame)
         return self._key_drag
 
     def _apply_key_visuals(self):
@@ -231,13 +233,33 @@ class CompositionTimeline(QWidget):
                 chosen=key in self.key_selection.selected;item.setBackground(selected_brush if chosen else self.table.palette().base());font=item.font();font.setBold(key==primary);item.setFont(font);item.setText("⬥" if key==primary else "◆")
         count=len(self.key_selection.selected);self.key_selection_status.setText((self.localization.text("timeline.keys_selected").format(count=count) if self.localization else f"{count} Keys Selected") if count else "")
 
-    def _preview_key_drag(self,source_column,x,duplicate=False,keys=None):
-        selected=set(keys or self.key_selection.selected);target=self.table.columnAt(int(x));target=(0 if x<0 else self.table.columnCount()-1) if target<0 else target;requested=target-source_column;noop=duplicate and requested==0;boundary=duplicate and any(not 0<=key.frame+requested<self.table.columnCount() for key in selected);delta=requested if duplicate else clamp_group_delta(selected,requested,self.table.columnCount());destinations={key.at_frame(key.frame+delta) for key in selected};invalid=not noop and (boundary or bool(destinations&self._occupied_keys if duplicate else (destinations&self._occupied_keys)-selected));self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.DragCopyCursor if duplicate else Qt.CursorShape.SizeHorCursor)
+    def _resolve_drag_delta(self,source_column,start_x,x,duplicate,keys,snap_snapshot):
+        selected=set(keys);target=self.table.columnAt(int(x));target=(0 if x<0 else self.table.columnCount()-1) if target<0 else target;requested=target-source_column;base=requested if duplicate else clamp_group_delta(selected,requested,self.table.columnCount());snap=None
+        if self.snap_enabled and snap_snapshot is not None:
+            raw=(float(x)-float(start_x))/max(1,self.frame_cell_width);valid=lambda delta:batch_delta_issue(selected,delta,self.table.columnCount(),self._occupied_keys,duplicate) is None;snap=compute_batch_snap(snap_snapshot,selected,raw,base,self.frame_cell_width,valid)
+        delta=snap.delta if snap else base;return delta,snap,batch_delta_issue(selected,delta,self.table.columnCount(),self._occupied_keys,duplicate)
+
+    def _preview_key_drag(self,source_column,x,duplicate=False,keys=None,start_x=None,snap_snapshot=None):
+        selected=set(keys or self.key_selection.selected);delta,snap,issue=self._resolve_drag_delta(source_column,x if start_x is None else start_x,x,duplicate,selected,snap_snapshot);noop=delta==0;invalid=not noop and issue is not None;self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.DragCopyCursor if duplicate else Qt.CursorShape.SizeHorCursor);self._show_snap_guide(snap if not invalid else None)
         for key in selected:
             row=next((index for index,(layer,prop) in enumerate(self.rows) if getattr(layer,"id",None)==key.layer_id and prop==key.property_id),-1);source=self.table.item(row,key.frame) if row>=0 else None;destination=self.table.item(row,key.frame+delta) if row>=0 and 0<=key.frame+delta<self.table.columnCount() else None
             if source and not duplicate:source.setText("◇")
             if destination and not noop:destination.setText("×" if invalid else "+" if duplicate else "⬥");destination.setBackground(self.table.palette().alternateBase())
-        count=len(selected);mode="Duplicate" if duplicate else "Move";issue=" · No change" if noop else " · Boundary" if boundary else " · Collision" if invalid else "";self.key_selection_status.setText(f"{count} Keys · {mode} · Δ {delta:+d}"+issue)
+        count=len(selected);mode="Duplicate" if duplicate else "Move";suffix=" · No change" if noop else " · Boundary" if issue=="boundary" else " · Collision" if invalid else "";text=f"{count} Keys · {mode} · Δ {delta:+d}"+suffix
+        if snap:text+=self._snap_status(snap)
+        self.key_selection_status.setText(text)
+
+    def _show_snap_guide(self,result):
+        if result is None:self._clear_snap_guide();return
+        first_x=self.table.horizontalHeader().sectionViewportPosition(0);x=int(round(self._time_view.frame_to_x(result.guide_frame,first_x,self.frame_cell_width)));self._snap_guide.setGeometry(x-1,0,2,self.table.viewport().height());self._snap_guide.raise_();self._snap_guide.show()
+
+    def _clear_snap_guide(self):self._snap_guide.hide()
+    def _snap_status(self,result):
+        label=self.localization.text("timeline.snap_"+result.target_kind) if self.localization else result.target_kind.title();frame=self.localization.text("play.frame") if self.localization else "Frame";return f" · {label} · {frame} {result.guide_frame+1}"
+    def set_snap_enabled(self,enabled):
+        enabled=bool(enabled);changed=enabled!=self.snap_enabled;self.snap_enabled=enabled
+        if self.snap_toggle.isChecked()!=enabled:self.snap_toggle.blockSignals(True);self.snap_toggle.setChecked(enabled);self.snap_toggle.blockSignals(False)
+        self._clear_snap_guide();return changed
 
     def refresh(self, composition, selected_layer, frame, selected_ids=None, primary_id=None, expanded_ids=None):
         composition.repair_hierarchy();self._composition=composition;self._selected_layer_ref=selected_layer;self._current_frame=int(frame);primary_id=primary_id or (selected_layer.id if selected_layer else None);self.rows=[];self._child_rows=set()
@@ -436,7 +458,7 @@ class CompositionTimeline(QWidget):
         apply_tooltip(self.play,self.localization,"tooltip.timeline.pause" if self._playing else "tooltip.timeline.play",play)
         apply_tooltip(self.delete_keyframe,self.localization,"tooltip.timeline.delete_keyframe")
         apply_tooltip(self.table,self.localization,"tooltip.timeline.table",status=False)
-        apply_tooltip(self.previous_key,self.localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,self.localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,self.localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,self.localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,self.localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,self.localization,"tooltip.timeline.reveal")
+        apply_tooltip(self.previous_key,self.localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,self.localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,self.localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,self.localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,self.localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,self.localization,"tooltip.timeline.reveal");apply_tooltip(self.snap_toggle,self.localization,"tooltip.timeline.snap")
 
     def retranslate(self,localization):
-        self.localization=localization;self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self.lock_layer.setAccessibleName(localization.text("layer.lock"));self.solo_layer.setAccessibleName(localization.text("layer.solo"));self.move_up.setAccessibleName(localization.text("hierarchy.front"));self.move_down.setAccessibleName(localization.text("hierarchy.back"));self._update_tooltips();[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.add_layer,self.duplicate_layer,self.remove_layer,self.group_layer,self.ungroup_layer,self.lock_layer,self.solo_layer,self.move_up,self.move_down,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo)]
+        self.localization=localization;self.snap_toggle.setText(localization.text("timeline.snap"));self.snap_toggle.setAccessibleName(localization.text("timeline.snap"));self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);self.delete_keyframe.setText(localization.text("composition.delete_keyframe"));self.add_layer.setText(localization.text("composition.add_layer"));self.duplicate_layer.setText(localization.text("composition.duplicate_layer"));self.remove_layer.setText(localization.text("composition.remove_layer"));self.group_layer.setText(localization.text("group.group_selected"));self.ungroup_layer.setText(localization.text("group.ungroup"));self.move_up.setToolTip(localization.text("tooltip.resource.layer_up"));self.move_down.setToolTip(localization.text("tooltip.resource.layer_down"));self.add_layer.setToolTip(localization.text("tooltip.resource.add_layer"));self.duplicate_layer.setToolTip(localization.text("tooltip.resource.duplicate_layer"));self.remove_layer.setToolTip(localization.text("tooltip.resource.remove_layer"));self.group_layer.setToolTip(localization.text("tooltip.group.create"));self.ungroup_layer.setToolTip(localization.text("tooltip.group.ungroup"));self.lock_layer.setToolTip(localization.text("tooltip.layer.lock"));self.solo_layer.setToolTip(localization.text("tooltip.layer.solo"));self.selection_status.setToolTip(localization.text("layer.multiselect_help"));self.lock_layer.setAccessibleName(localization.text("layer.lock"));self.solo_layer.setAccessibleName(localization.text("layer.solo"));self.move_up.setAccessibleName(localization.text("hierarchy.front"));self.move_down.setAccessibleName(localization.text("hierarchy.back"));self._update_tooltips();[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.add_layer,self.duplicate_layer,self.remove_layer,self.group_layer,self.ungroup_layer,self.lock_layer,self.solo_layer,self.move_up,self.move_down,self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo,self.snap_toggle)]

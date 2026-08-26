@@ -1,7 +1,7 @@
 """Central application version information."""
 
 APP_NAME = "Pixel Effect Maker"
-__version__ = "0.0.14"
+__version__ = "0.0.15"
 VERSION_LABEL = f"v{__version__}"
 
 # Distribution channel metadata is intentionally independent from the public

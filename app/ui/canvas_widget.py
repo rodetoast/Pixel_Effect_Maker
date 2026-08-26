@@ -64,6 +64,7 @@ class CanvasWidget(QWidget):
         self.effect_guide_id: str | None = None
         self.effect_guide_kind: str | None = None
         self.effect_guide_settings = None
+        self._guide_identifier: str | None = None
         self.effect_guide_locked = False
         self.show_effect_guides = True
         self._guide_handle: str | None = None
@@ -137,6 +138,9 @@ class CanvasWidget(QWidget):
         self.update()
 
     def set_effect_guide(self, identifier: str | None, kind: str | None = None, settings=None, *, locked: bool = False) -> None:
+        # A render/inspector refresh may arrive while a drag is active.  The
+        # gesture owns its press-time target and settings until release/cancel.
+        if self._guide_identifier is not None:return
         self.effect_guide_id = identifier
         self.effect_guide_kind = kind
         self.effect_guide_settings = deepcopy(settings)
@@ -844,10 +848,11 @@ class CanvasWidget(QWidget):
             hit_started=perf_counter();handle = self._hit_guide_handle(event.position());self._record_interaction("guide_hit_test",hit_started)
             if handle:
                 self._guide_handle = handle
+                self._guide_identifier = self.effect_guide_id
                 self._guide_before = deepcopy(self.effect_guide_settings)
                 self._guide_last_canvas_point = None
                 self._guide_changed = False
-                self.effect_guide_started.emit(self.effect_guide_id);self.setFocus()
+                self.effect_guide_started.emit(self._guide_identifier);self.setFocus()
                 event.accept()
                 self._record_interaction("mouse_press_total",event_started)
                 return
@@ -921,7 +926,7 @@ class CanvasWidget(QWidget):
             guide_started=perf_counter();changed=self._move_effect_guide(point, event.modifiers());self._record_interaction("guide_value_calculation",guide_started)
             if not changed:event.accept();self._record_interaction("mouse_move_total",event_started);return
             self._guide_changed=True
-            signal_started=perf_counter();self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), False);self._record_interaction("guide_signal",signal_started)
+            signal_started=perf_counter();self.effect_guide_changed.emit(self._guide_identifier, deepcopy(self.effect_guide_settings), False);self._record_interaction("guide_signal",signal_started)
             dirty=old_guide.united(self._effect_guide_bounds()).united(self._resource_transform_gizmo_bounds()).adjusted(-12,-12,12,12).intersected(self.rect())
             if dirty.isNull():self.interaction_stats["full_updates_without_rect"]+=1
             else:self.update(dirty)
@@ -968,7 +973,8 @@ class CanvasWidget(QWidget):
             started=perf_counter()
             self._guide_handle = None
             self._guide_last_canvas_point = None
-            if self._guide_changed:self.effect_guide_changed.emit(self.effect_guide_id, deepcopy(self.effect_guide_settings), True)
+            identifier=self._guide_identifier;self._guide_identifier=None
+            if self._guide_changed and identifier:self.effect_guide_changed.emit(identifier, deepcopy(self.effect_guide_settings), True)
             event.accept();self._record_interaction("mouse_release_total",started); return
         if self._gizmo_drag: self._gizmo_drag = False; event.accept(); return
         super().mouseReleaseEvent(event)
@@ -979,7 +985,8 @@ class CanvasWidget(QWidget):
             self.effect_guide_settings = before
             self._guide_handle = None
             self._guide_last_canvas_point = None
-            self.effect_guide_cancelled.emit(self.effect_guide_id, before)
+            identifier=self._guide_identifier;self._guide_identifier=None
+            if identifier:self.effect_guide_cancelled.emit(identifier, before)
             self.update(); event.accept(); return
         if event.key()==Qt.Key.Key_Escape and self._resource_transform_drag and self._resource_transform_before is not None:
             self.resource_transform=deepcopy(self._resource_transform_before);self._resource_transform_drag=None;self._resource_rotation_last_angle=None;self._resource_rotation_accumulated=None;self.resource_transform_cancelled.emit(self.resource_transform_id,deepcopy(self.resource_transform));event.accept();return

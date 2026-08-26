@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.15 - 2026-08-25
+
+- Added runtime-only, default-on Snap toggles to Resource and Effect Timeline toolbars.
+- Normal Move and Alt-drag Duplicate now share screen-space snapping to visible keyframes, the captured playhead, and earliest/latest Timeline boundaries while preserving one batch delta.
+- Snap targets are captured once at drag start, deduped by frame, and queried with bisect; hidden/source keys are excluded and mouse move performs no project copy, serialization, hierarchy rebuild, or filesystem access.
+- Candidates are ranked by pixel distance with deterministic Playhead/Keyframe/Boundary tie priority; collision or boundary failures skip to another candidate and otherwise fall back to the valid unsnapped drag.
+- Added a semantic-palette vertical guide, localized target feedback, Escape/drop cleanup, and unchanged nudge, Clipboard/Paste, scrub, Parenting, Multi-Transform, Auto-Key, and project format v12 behavior.
+- Fixed interrupted Effect guide drags so Start/End Undo captures the press-time logical Layer ID and exact before snapshot instead of reusing a stale target after refresh or selection changes.
+- Fixed the equivalent Resource Canvas single-gizmo transaction so finalization, cancel, Undo, and Redo remain bound to the gesture's original composition and Layer IDs.
+
 ## v0.0.14 - 2026-08-25
 
 - Added Alt-drag duplication for single and multi-key selections in Resource and Effect Timelines, with Alt latched when the drag threshold is crossed.

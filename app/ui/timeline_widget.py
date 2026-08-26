@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -28,6 +29,7 @@ from app.ui.focus_wheel_widgets import ScrollSafeSpinBox
 from app.ui.hierarchy_display import parent_display_labels
 from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MIN_HEIGHT, HIERARCHY_LABEL_WIDTH
 from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
+from app.ui.timeline_snapping import batch_delta_issue, collect_snap_targets, compute_batch_snap
 from app.ui.timeline_time_view import TimelineTimeView,navigation_frame
 
 
@@ -68,7 +70,7 @@ class TimelineWidget(QWidget):
         self._play_shortcuts = []
         self._previous_shortcuts = []
         self._next_shortcuts = []
-        self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self._occupied_keys=set();self.reveal_mode="all";self._selected_logical_ids=set();self._primary_logical_id=None;self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
+        self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self._occupied_keys=set();self.reveal_mode="all";self.snap_enabled=True;self._selected_logical_ids=set();self._primary_logical_id=None;self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
         layout = QVBoxLayout(self)
         status_toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
@@ -78,10 +80,11 @@ class TimelineWidget(QWidget):
         status_toolbar.addWidget(self.playback_status_label)
         status_toolbar.addStretch(1)
         edit_toolbar = QHBoxLayout()
-        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"])
-        self.previous_key.setFixedWidth(28);self.next_key.setFixedWidth(28);self.fit_timeline_button.setFixedWidth(30);self.fit_keys_button.setFixedWidth(34);self.fit_selected_button.setFixedWidth(30);self.reveal_combo.setFixedWidth(76)
+        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"]);self.snap_toggle=QPushButton("Snap");self.snap_toggle.setCheckable(True);self.snap_toggle.setChecked(True)
+        self.previous_key.setFixedWidth(28);self.next_key.setFixedWidth(28);self.fit_timeline_button.setFixedWidth(30);self.fit_keys_button.setFixedWidth(34);self.fit_selected_button.setFixedWidth(30);self.reveal_combo.setFixedWidth(76);self.snap_toggle.setFixedWidth(46)
         for widget in (self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo):edit_toolbar.addWidget(widget)
-        self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]))
+        status_toolbar.insertWidget(2,self.snap_toggle)
+        self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]));self.snap_toggle.toggled.connect(self.set_snap_enabled)
 
         self.edit_buttons: list[QPushButton] = []
         for label, signal, tooltip in (
@@ -135,6 +138,7 @@ class TimelineWidget(QWidget):
         self.table.installEventFilter(self)
         self.table.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
+        self._snap_guide=QFrame(self.table.viewport());self._snap_guide.setStyleSheet(f"background:{self.table.palette().highlight().color().name()};");self._snap_guide.hide()
         layout.addWidget(self.table)
 
     def _scrub_to(self, row: int, column: int) -> None:
@@ -231,7 +235,7 @@ class TimelineWidget(QWidget):
             apply_tooltip(button, localization, key, shortcuts)
         apply_tooltip(self.fps_spin, localization, "tooltip.timeline.fps")
         apply_tooltip(self.table, localization, "tooltip.timeline.table", status=False)
-        self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);apply_tooltip(self.previous_key,localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,localization,"tooltip.timeline.reveal")
+        self.snap_toggle.setText(localization.text("timeline.snap"));self.snap_toggle.setAccessibleName(localization.text("timeline.snap"));self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);apply_tooltip(self.previous_key,localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,localization,"tooltip.timeline.reveal");apply_tooltip(self.snap_toggle,localization,"tooltip.timeline.snap");self.snap_toggle.setAccessibleDescription(self.snap_toggle.toolTip())
         self._update_play_tooltip()
         header = self.table.horizontalHeaderItem(self.NAME_COLUMN)
         if header is not None: header.setText(localization.text("timeline.layer"))
@@ -340,7 +344,7 @@ class TimelineWidget(QWidget):
             if event.type()==QEvent.Type.Wheel and event.modifiers()&Qt.KeyboardModifier.ShiftModifier:
                 bar=self.table.horizontalScrollBar();bar.setValue(bar.value()-event.angleDelta().y());event.accept();return True
             if event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.MiddleButton:
-                self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
+                self._clear_snap_guide();self._time_pan=(event.position().x(),self.table.horizontalScrollBar().value());self.table.viewport().setCursor(Qt.CursorShape.ClosedHandCursor);event.accept();return True
             if event.type()==QEvent.Type.MouseMove and self._time_pan and event.buttons()&Qt.MouseButton.MiddleButton:
                 start,value=self._time_pan;self.table.horizontalScrollBar().setValue(int(value-(event.position().x()-start)));event.accept();return True
             if event.type()==QEvent.Type.MouseButtonRelease and event.button()==Qt.MouseButton.MiddleButton and self._time_pan:
@@ -350,23 +354,24 @@ class TimelineWidget(QWidget):
                 if isinstance(key,TimelineKey) and not self._effect_key_locked(key):
                     modifiers=event.modifiers();ctrl=bool(modifiers&Qt.KeyboardModifier.ControlModifier);shift=bool(modifiers&Qt.KeyboardModifier.ShiftModifier);preserve_click=key in self.key_selection.selected and not ctrl and not shift;track_keys=[value for value in self._visible_keys if value.track_id==key.track_id]
                     if not preserve_click:self.key_selection.click(key,ctrl=ctrl,shift=shift,track_keys=track_keys)
-                    self._key_drag=(key,index.column(),point,False,None,(),preserve_click);self.table.blockSignals(True);self.table.setCurrentCell(index.row(),index.column());self.table.blockSignals(False);self._current_frame=key.frame;self._apply_key_visuals();event.accept();return True
+                    playhead_before=self._current_frame;self._key_drag=(key,index.column(),point,False,None,(),preserve_click,None,playhead_before);self.table.blockSignals(True);self.table.setCurrentCell(index.row(),index.column());self.table.blockSignals(False);self._current_frame=key.frame;self._apply_key_visuals();event.accept();return True
                 if index.isValid() and self._row_is_property(index.row()):
-                    self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
+                    self._clear_snap_guide();self._marquee_origin=point;self._marquee_ctrl=bool(event.modifiers()&Qt.KeyboardModifier.ControlModifier);self._marquee=QRubberBand(QRubberBand.Shape.Rectangle,self.table.viewport());self._marquee.setGeometry(QRect(point,point));self._marquee.show();event.accept();return True
             elif event.type()==QEvent.Type.MouseMove and self._key_drag and event.buttons()&Qt.MouseButton.LeftButton:
-                key,column,start,was_dragged,duplicate,snapshot,preserve_click=self._drag_state();dragged=was_dragged or (event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance()
-                if dragged and not was_dragged:duplicate=bool(event.modifiers()&Qt.KeyboardModifier.AltModifier);snapshot=tuple(self.key_selection.selected)
-                self._key_drag=(key,column,start,dragged,duplicate,snapshot,preserve_click)
-                if dragged:self._preview_key_drag(column,event.position().x(),duplicate=bool(duplicate),keys=snapshot)
+                key,column,start,was_dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before=self._drag_state();dragged=was_dragged or (event.position().toPoint()-start).manhattanLength()>=QApplication.startDragDistance()
+                if dragged and not was_dragged:
+                    duplicate=bool(event.modifiers()&Qt.KeyboardModifier.AltModifier);snapshot=tuple(self.key_selection.selected);snap_snapshot=collect_snap_targets(self._visible_keys,snapshot,playhead_before,self._display_frame_count) if self.snap_enabled else None
+                self._key_drag=(key,column,start,dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before)
+                if dragged:self._preview_key_drag(column,event.position().x(),duplicate=bool(duplicate),keys=snapshot,start_x=start.x(),snap_snapshot=snap_snapshot)
                 event.accept();return True
             elif event.type()==QEvent.Type.MouseMove and self._marquee and event.buttons()&Qt.MouseButton.LeftButton:
                 self._marquee.setGeometry(QRect(self._marquee_origin,event.position().toPoint()).normalized());event.accept();return True
             elif event.type()==QEvent.Type.MouseButtonRelease and self._key_drag:
-                key,source,_,dragged,duplicate,snapshot,preserve_click=self._drag_state();self._key_drag=None;self.table.viewport().unsetCursor()
+                key,source,start,dragged,duplicate,snapshot,preserve_click,snap_snapshot,playhead_before=self._drag_state();self._key_drag=None;self.table.viewport().unsetCursor();self._clear_snap_guide()
                 if not dragged and preserve_click:self.key_selection.click(key,track_keys=[value for value in self._visible_keys if value.track_id==key.track_id])
                 self._apply_key_visuals()
                 if dragged:
-                    target=self.table.columnAt(int(event.position().x()));target=(self.FRAME_COLUMN_OFFSET if event.position().x()<0 else self.table.columnCount()-1) if target<0 else target;target=max(self.FRAME_COLUMN_OFFSET,min(self.table.columnCount()-1,target));delta=target-source
+                    delta,_snap,_issue=self._resolve_drag_delta(source,start.x(),event.position().x(),bool(duplicate),snapshot,snap_snapshot)
                     if delta:(self.multi_key_duplicate_requested if duplicate else self.multi_key_move_requested).emit(list(snapshot or self.key_selection.selected),delta)
                 event.accept();return True
             elif event.type()==QEvent.Type.MouseButtonRelease and self._marquee:
@@ -386,13 +391,15 @@ class TimelineWidget(QWidget):
         return layer is None or self._project.effect_effective_locked(layer)
 
     def _cancel_key_gesture(self):
-        self._key_drag=None;self.table.viewport().unsetCursor();self._apply_key_visuals()
+        self._key_drag=None;self.table.viewport().unsetCursor();self._clear_snap_guide();self._apply_key_visuals()
         if self._marquee:self._marquee.hide();self._marquee.deleteLater();self._marquee=None
 
     def _drag_state(self):
         if len(self._key_drag)==4:
-            key,column,start,dragged=self._key_drag;return key,column,start,dragged,False,tuple(self.key_selection.selected),False
-        if len(self._key_drag)==6:return (*self._key_drag,False)
+            key,column,start,dragged=self._key_drag;return key,column,start,dragged,False,tuple(self.key_selection.selected),False,None,self._current_frame
+        if len(self._key_drag)==6:return (*self._key_drag,False,None,self._current_frame)
+        if len(self._key_drag)==7:return (*self._key_drag,None,self._current_frame)
+        if len(self._key_drag)==8:return (*self._key_drag,self._current_frame)
         return self._key_drag
 
     def _apply_key_visuals(self):
@@ -406,13 +413,33 @@ class TimelineWidget(QWidget):
         count=len(self.key_selection.selected)
         if count:self.selection_label.setText((self._localization.text("timeline.keys_selected") if hasattr(self,"_localization") else "{count} Keys Selected").format(count=count))
 
-    def _preview_key_drag(self,source_column,x,duplicate=False,keys=None):
-        selected=set(keys or self.key_selection.selected);target=self.table.columnAt(int(x));target=(self.FRAME_COLUMN_OFFSET if x<0 else self.table.columnCount()-1) if target<0 else target;requested=target-source_column;noop=duplicate and requested==0;boundary=duplicate and any(not 0<=key.frame+requested<self._display_frame_count for key in selected);delta=requested if duplicate else clamp_group_delta(selected,requested,self._display_frame_count);destinations={key.at_frame(key.frame+delta) for key in selected};invalid=not noop and (boundary or bool(destinations&self._occupied_keys if duplicate else (destinations&self._occupied_keys)-selected));self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.DragCopyCursor if duplicate else Qt.CursorShape.SizeHorCursor)
+    def _resolve_drag_delta(self,source_column,start_x,x,duplicate,keys,snap_snapshot):
+        selected=set(keys);target=self.table.columnAt(int(x));target=(self.FRAME_COLUMN_OFFSET if x<0 else self.table.columnCount()-1) if target<0 else target;target=max(self.FRAME_COLUMN_OFFSET,min(self.table.columnCount()-1,target));requested=target-source_column;base=requested if duplicate else clamp_group_delta(selected,requested,self._display_frame_count);snap=None
+        if self.snap_enabled and snap_snapshot is not None:
+            raw=(float(x)-float(start_x))/max(1,self.frame_cell_width);valid=lambda delta:batch_delta_issue(selected,delta,self._display_frame_count,self._occupied_keys,duplicate) is None;snap=compute_batch_snap(snap_snapshot,selected,raw,base,self.frame_cell_width,valid)
+        delta=snap.delta if snap else base;return delta,snap,batch_delta_issue(selected,delta,self._display_frame_count,self._occupied_keys,duplicate)
+
+    def _preview_key_drag(self,source_column,x,duplicate=False,keys=None,start_x=None,snap_snapshot=None):
+        selected=set(keys or self.key_selection.selected);delta,snap,issue=self._resolve_drag_delta(source_column,x if start_x is None else start_x,x,duplicate,selected,snap_snapshot);noop=delta==0;invalid=not noop and issue is not None;self._apply_key_visuals();self.table.viewport().setCursor(Qt.CursorShape.ForbiddenCursor if invalid else Qt.CursorShape.DragCopyCursor if duplicate else Qt.CursorShape.SizeHorCursor);self._show_snap_guide(snap if not invalid else None)
         for key in selected:
             row=next((index for index,value in enumerate(self.rows) if value.get("kind")=="property" and value.get("logical") is not None and value["logical"].id==key.layer_id and value.get("scope")==key.scope and value.get("property_id")==key.property_id),-1);source=self.table.item(row,key.frame+self.FRAME_COLUMN_OFFSET) if row>=0 else None;destination=self.table.item(row,key.frame+delta+self.FRAME_COLUMN_OFFSET) if row>=0 and 0<=key.frame+delta<self._display_frame_count else None
             if source and not duplicate:source.setText("◇")
             if destination and not noop:destination.setText("×" if invalid else "+" if duplicate else "⬥");destination.setBackground(self.table.palette().alternateBase())
-        count=len(selected);mode="Duplicate" if duplicate else "Move";issue=" · No change" if noop else " · Boundary" if boundary else " · Collision" if invalid else "";self.selection_label.setText(f"{count} Keys · {mode} · Δ {delta:+d}"+issue)
+        count=len(selected);mode="Duplicate" if duplicate else "Move";suffix=" · No change" if noop else " · Boundary" if issue=="boundary" else " · Collision" if invalid else "";text=f"{count} Keys · {mode} · Δ {delta:+d}"+suffix
+        if snap:text+=self._snap_status(snap)
+        self.selection_label.setText(text)
+
+    def _show_snap_guide(self,result):
+        if result is None:self._clear_snap_guide();return
+        first_x=self.table.horizontalHeader().sectionViewportPosition(self.FRAME_COLUMN_OFFSET);x=int(round(self._time_view.frame_to_x(result.guide_frame,first_x,self.frame_cell_width)));self._snap_guide.setGeometry(x-1,0,2,self.table.viewport().height());self._snap_guide.raise_();self._snap_guide.show()
+
+    def _clear_snap_guide(self):self._snap_guide.hide()
+    def _snap_status(self,result):
+        localization=getattr(self,"_localization",None);label=localization.text("timeline.snap_"+result.target_kind) if localization else result.target_kind.title();frame=localization.text("play.frame") if localization else "Frame";return f" · {label} · {frame} {result.guide_frame+1}"
+    def set_snap_enabled(self,enabled):
+        enabled=bool(enabled);changed=enabled!=self.snap_enabled;self.snap_enabled=enabled
+        if self.snap_toggle.isChecked()!=enabled:self.snap_toggle.blockSignals(True);self.snap_toggle.setChecked(enabled);self.snap_toggle.blockSignals(False)
+        self._clear_snap_guide();return changed
 
     def _clipboard_context_id(self):return f"effect:{id(self._project):x}" if self._project is not None else ""
 

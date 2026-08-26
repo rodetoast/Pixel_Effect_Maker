@@ -14,6 +14,7 @@ class TimelineTimeView:
     def clamp_width(self,width):return max(self.minimum_width,min(self.maximum_width,int(round(width))))
     def zoom_width(self,width,wheel_steps):return self.clamp_width(float(width)*(self.zoom_step**int(wheel_steps)))
     def frame_coordinate(self,viewport_x,first_frame_x,width):return (float(viewport_x)-float(first_frame_x))/max(1,float(width))
+    def frame_to_x(self,frame,first_frame_x,width):return float(first_frame_x)+(int(frame)+.5)*float(width)
     def anchored_scroll_delta(self,viewport_x,frame_coordinate,new_first_frame_x,new_width):return float(new_first_frame_x)+float(frame_coordinate)*float(new_width)-float(viewport_x)
     def fit_width(self,viewport_width,first_frame,last_frame,single_width=64):
         first,last=sorted((int(first_frame),int(last_frame)))
