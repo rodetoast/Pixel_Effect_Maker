@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QColor, QDrag, QImage, QPainter, QPen, QPixma
 from PySide6.QtWidgets import (
     QGroupBox,
     QApplication,
+    QFrame,
     QLabel,
     QLayout,
     QListWidget,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QHBoxLayout,
     QVBoxLayout,
     QWidget,
 )
@@ -147,13 +149,15 @@ class EffectLibraryPanel(QWidget):
         layout.addWidget(self.title_label)
 
         self.source_group = QGroupBox("Source Assets")
+        self.source_group.setObjectName("effectSourceAssetSection")
         source_layout = QVBoxLayout(self.source_group)
         self.import_button = QPushButton("Import Source Asset…")
         self.asset_list = QListWidget()
         self.asset_list.setObjectName("sourceAssetList")
+        self.asset_list.setMinimumHeight(56);self.asset_list.setMaximumHeight(92)
         self.source_preview = QLabel("No source selected")
         self.source_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.source_preview.setMinimumHeight(112)
+        self.source_preview.setMinimumHeight(72);self.source_preview.setMaximumHeight(92)
         self.source_preview.setStyleSheet("background: #252a31; color: #adb5bd;")
         self.source_info = QLabel("")
         self.delete_asset_button = QPushButton("Delete Source")
@@ -162,7 +166,7 @@ class EffectLibraryPanel(QWidget):
         source_layout.addWidget(self.source_preview)
         source_layout.addWidget(self.source_info)
         source_layout.addWidget(self.delete_asset_button)
-        layout.addWidget(self.source_group, 1)
+        layout.addWidget(self.source_group, 0)
 
         self.generator_group = QGroupBox("Legacy Clip Generators")
         generator_layout = QVBoxLayout(self.generator_group)
@@ -173,31 +177,48 @@ class EffectLibraryPanel(QWidget):
         generator_layout.addWidget(self.add_emitter_button)
         generator_layout.addWidget(self.generator_list)
         generator_layout.addWidget(self.delete_generator_button)
-        layout.addWidget(self.generator_group, 1)
+        layout.addWidget(self.generator_group, 0)
 
         self.clip_group = QGroupBox("Animated Resources")
         clip_layout = QVBoxLayout(self.clip_group)
         self.create_clip_button = QPushButton("Create Animated Resource")
         self.clip_list = QListWidget(); self.clip_list.setObjectName("animationClipList")
+        self.clip_list.setMinimumHeight(64);self.clip_list.setMaximumHeight(104)
         clip_layout.addWidget(self.create_clip_button); clip_layout.addWidget(self.clip_list)
-        layout.addWidget(self.clip_group, 1)
+        layout.addWidget(self.clip_group, 0)
 
         self.composition_group = QGroupBox("Resource Layers")
-        composition_layout = QVBoxLayout(self.composition_group)
-        self.add_composition_button = QPushButton("Add Resource Layer")
+        self.composition_group.setObjectName("effectResourceLayerSection");self.composition_group.setMinimumHeight(250)
+        composition_layout = QVBoxLayout(self.composition_group);composition_layout.setSpacing(6)
+        self.composition_top_toolbar=QWidget();self.composition_top_toolbar.setObjectName("resourceLayerCreateEditToolbar");self.composition_top_toolbar.setProperty("commandGroup","create_edit")
+        top_layout=QHBoxLayout(self.composition_top_toolbar);top_layout.setContentsMargins(0,0,0,0);top_layout.setSpacing(3)
+        self.add_composition_button = QPushButton("+ Layer")
         self.composition_list = EffectLayerList(); self.composition_list.setObjectName("compositionLayerList");self.composition_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.composition_list.setMinimumHeight(150)
         self.composition_add_menu=QMenu(self.add_composition_button);self.add_composition_button.setMenu(self.composition_add_menu)
-        self.group_composition_button=QPushButton("Group Selected");self.ungroup_composition_button=QPushButton("Ungroup")
-        self.duplicate_composition_button=QPushButton("Duplicate Layer");self.duplicate_composition_button.setObjectName("duplicateEffectLayerButton");self.remove_composition_button=QPushButton("Remove Layer");self.lock_composition_button=QPushButton("L");self.lock_composition_button.setCheckable(True);self.solo_composition_button=QPushButton("S");self.solo_composition_button.setCheckable(True);self.move_composition_up=QPushButton("↑ Front");self.move_composition_down=QPushButton("↓ Back")
-        self.composition_selection_label=QLabel();composition_layout.addWidget(self.add_composition_button); composition_layout.addWidget(self.composition_list);composition_layout.addWidget(self.composition_selection_label);composition_layout.addWidget(self.group_composition_button);composition_layout.addWidget(self.ungroup_composition_button);composition_layout.addWidget(self.duplicate_composition_button);composition_layout.addWidget(self.remove_composition_button);composition_layout.addWidget(self.lock_composition_button);composition_layout.addWidget(self.solo_composition_button);composition_layout.addWidget(self.move_composition_up);composition_layout.addWidget(self.move_composition_down)
-        layout.addWidget(self.composition_group, 1)
+        self.group_composition_button=QPushButton("Create Group");self.ungroup_composition_button=QPushButton("Ungroup")
+        self.duplicate_composition_button=QPushButton("Duplicate");self.duplicate_composition_button.setObjectName("duplicateEffectLayerButton");self.remove_composition_button=QPushButton("Delete")
+        self.lock_composition_button=QPushButton("Lock");self.lock_composition_button.setCheckable(True);self.solo_composition_button=QPushButton("Solo");self.solo_composition_button.setCheckable(True)
+        self.order_composition_button=QPushButton("Order");self.order_composition_button.setObjectName("resourceLayerOrderButton");self.order_composition_menu=QMenu(self.order_composition_button);self.order_front_action=self.order_composition_menu.addAction("Bring Forward");self.order_back_action=self.order_composition_menu.addAction("Send Back");self.order_composition_button.setMenu(self.order_composition_menu)
+        self.composition_top_separator=self._toolbar_separator();top_layout.addWidget(self.add_composition_button,1);top_layout.addWidget(self.duplicate_composition_button);top_layout.addWidget(self.composition_top_separator);top_layout.addWidget(self.remove_composition_button);top_layout.addSpacing(1)
+        self.composition_hierarchy_toolbar=QWidget();self.composition_hierarchy_toolbar.setObjectName("resourceLayerHierarchyToolbar");self.composition_hierarchy_toolbar.setProperty("commandGroup","hierarchy")
+        hierarchy_layout=QHBoxLayout(self.composition_hierarchy_toolbar);hierarchy_layout.setContentsMargins(0,0,0,0);hierarchy_layout.setSpacing(4);hierarchy_layout.addWidget(self.group_composition_button,1);hierarchy_layout.addWidget(self.ungroup_composition_button,1)
+        self.composition_state_toolbar=QWidget();self.composition_state_toolbar.setObjectName("resourceLayerStateOrderToolbar");self.composition_state_toolbar.setProperty("commandGroup","state_order")
+        state_layout=QHBoxLayout(self.composition_state_toolbar);state_layout.setContentsMargins(0,0,0,0);state_layout.setSpacing(4);self.composition_state_separator=self._toolbar_separator();state_layout.addWidget(self.lock_composition_button,1);state_layout.addWidget(self.solo_composition_button,1);state_layout.addWidget(self.composition_state_separator);state_layout.addWidget(self.order_composition_button,1);state_layout.addSpacing(1)
+        for button in (self.add_composition_button,self.duplicate_composition_button,self.remove_composition_button,self.group_composition_button,self.ungroup_composition_button,self.lock_composition_button,self.solo_composition_button,self.order_composition_button):button.setMinimumHeight(30);button.setMaximumHeight(32)
+        self.composition_selection_label=QLabel();self.composition_selection_label.setObjectName("resourceLayerSelectionSummary");composition_layout.addWidget(self.composition_top_toolbar);composition_layout.addWidget(self.composition_list,1);composition_layout.addWidget(self.composition_selection_label);composition_layout.addWidget(self.composition_hierarchy_toolbar);composition_layout.addWidget(self.composition_state_toolbar)
+        for button in (self.import_button,self.create_clip_button):button.setProperty("commandRole","primary")
+        for button in (self.add_composition_button,self.group_composition_button,self.ungroup_composition_button,self.duplicate_composition_button,self.order_composition_button):button.setProperty("commandRole","secondary")
+        for button in (self.lock_composition_button,self.solo_composition_button):button.setProperty("commandRole","toggle")
+        for button in (self.delete_asset_button,self.delete_generator_button,self.remove_composition_button):button.setProperty("commandRole","danger")
+        layout.addWidget(self.composition_group, 4)
 
         self.particle_group = QGroupBox("Particle Systems")
         particle_layout = QVBoxLayout(self.particle_group)
         self.add_particle_button = QPushButton("Add Particle System")
         self.particle_list = QListWidget(); self.particle_list.setObjectName("particleEmitterList")
         particle_layout.addWidget(self.add_particle_button); particle_layout.addWidget(self.particle_list)
-        layout.addWidget(self.particle_group, 1)
+        layout.addWidget(self.particle_group, 0)
         self.particle_group.hide()
 
         self.import_button.clicked.connect(self.import_requested)
@@ -208,7 +229,7 @@ class EffectLibraryPanel(QWidget):
         self.delete_generator_button.clicked.connect(self._request_delete_generator)
         self.create_clip_button.clicked.connect(self._request_create_clip)
         self.add_particle_button.clicked.connect(self._request_add_particle)
-        self.duplicate_composition_button.clicked.connect(self._request_duplicate_composition);self.remove_composition_button.clicked.connect(self._request_remove_composition);self.lock_composition_button.clicked.connect(self._request_lock_composition);self.solo_composition_button.clicked.connect(self._request_solo_composition);self.move_composition_up.clicked.connect(lambda:self._request_move_composition(1));self.move_composition_down.clicked.connect(lambda:self._request_move_composition(-1));self.composition_list.layer_drop_requested.connect(self.reorder_resource_layer_requested);self.composition_list.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.composition_list.duplicate_requested.connect(self._request_duplicate_composition);self.composition_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.composition_list.customContextMenuRequested.connect(self._composition_context_menu)
+        self.duplicate_composition_button.clicked.connect(self._request_duplicate_composition);self.remove_composition_button.clicked.connect(self._request_remove_composition);self.lock_composition_button.clicked.connect(self._request_lock_composition);self.solo_composition_button.clicked.connect(self._request_solo_composition);self.order_front_action.triggered.connect(lambda:self._request_move_composition(1));self.order_back_action.triggered.connect(lambda:self._request_move_composition(-1));self.composition_list.layer_drop_requested.connect(self.reorder_resource_layer_requested);self.composition_list.hierarchy_drop_requested.connect(self.hierarchy_drop_requested);self.composition_list.duplicate_requested.connect(self._request_duplicate_composition);self.composition_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.composition_list.customContextMenuRequested.connect(self._composition_context_menu)
         self.group_composition_button.clicked.connect(lambda:self.batch_resource_layer_requested.emit("group"));self.ungroup_composition_button.clicked.connect(lambda:self.batch_resource_layer_requested.emit("ungroup"));self.composition_list.disclosure_requested.connect(self.group_expanded_requested)
         self.clip_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "clip"))
         self.particle_list.currentItemChanged.connect(lambda item, previous: self._typed_changed(item, "particle"))
@@ -219,6 +240,11 @@ class EffectLibraryPanel(QWidget):
         self.clip_list.itemDoubleClicked.connect(lambda item:self.resource_open_requested.emit("animation_clip",str(item.data(Qt.ItemDataRole.UserRole))))
         self._configure_help()
         self._selected_resource_ids=set();self._primary_resource_id=None;self.composition_list.select_all_layers_requested.connect(self.select_all_resource_layers_requested);self.composition_list.delete_requested.connect(lambda:self.batch_resource_layer_requested.emit("delete"))
+        QWidget.setTabOrder(self.add_composition_button,self.duplicate_composition_button);QWidget.setTabOrder(self.duplicate_composition_button,self.remove_composition_button);QWidget.setTabOrder(self.remove_composition_button,self.composition_list);QWidget.setTabOrder(self.composition_list,self.group_composition_button);QWidget.setTabOrder(self.group_composition_button,self.ungroup_composition_button);QWidget.setTabOrder(self.ungroup_composition_button,self.lock_composition_button);QWidget.setTabOrder(self.lock_composition_button,self.solo_composition_button);QWidget.setTabOrder(self.solo_composition_button,self.order_composition_button)
+
+    @staticmethod
+    def _toolbar_separator():
+        separator=QFrame();separator.setFrameShape(QFrame.Shape.VLine);separator.setFrameShadow(QFrame.Shadow.Sunken);separator.setObjectName("resourceLayerCommandSeparator");return separator
 
     def _configure_help(self) -> None:
         help_text = {
@@ -242,9 +268,9 @@ class EffectLibraryPanel(QWidget):
         self.clip_group.setTitle(t("effects.animated_resources"))
         self.composition_group.setTitle(t("resource_layer.plural"))
         self.create_clip_button.setText(t("effects.create_clip"))
-        self.add_composition_button.setText(t("resource_layer.add"))
-        self.duplicate_composition_button.setText(t("resource_layer.duplicate"));self.remove_composition_button.setText(t("resource_layer.remove"));self.move_composition_up.setText(t("resource_layer.move_front"));self.move_composition_down.setText(t("resource_layer.move_back"))
-        self.group_composition_button.setText(t("group.group_selected"));self.ungroup_composition_button.setText(t("group.ungroup"))
+        self.add_composition_button.setText(t("resource_layer.add_compact"))
+        self.duplicate_composition_button.setText(t("resource_layer.duplicate_compact"));self.remove_composition_button.setText(t("resource_layer.remove_compact"));self.order_composition_button.setText(t("resource_layer.order"));self.order_front_action.setText(t("resource_layer.bring_forward"));self.order_back_action.setText(t("resource_layer.send_back"))
+        self.group_composition_button.setText(t("group.group_selected"));self.ungroup_composition_button.setText(t("group.ungroup"));self.lock_composition_button.setText(t("resource_layer.lock_compact"));self.solo_composition_button.setText(t("resource_layer.solo_compact"))
         self.group_composition_button.setToolTip(t("tooltip.group.create"));self.ungroup_composition_button.setToolTip(t("tooltip.group.ungroup"))
         self.import_button.setText(t("effects.import"))
         self.add_emitter_button.setText(t("effects.add_emitter"))
@@ -255,17 +281,19 @@ class EffectLibraryPanel(QWidget):
             self.add_emitter_button: "tooltip.effect.add_transform", self.delete_asset_button: "tooltip.effect.delete_source",
             self.delete_generator_button: "tooltip.effect.delete_generator", self.create_clip_button: "tooltip.effect.create_clip",
             self.add_particle_button: "tooltip.resource_layer.add",
-            self.add_composition_button: "tooltip.resource_layer.add",
+            self.add_composition_button: "tooltip.resource_layer.add_panel",
             self.duplicate_composition_button: "tooltip.resource_layer.duplicate",
             self.remove_composition_button: "tooltip.resource_layer.remove",
-            self.move_composition_up: "tooltip.resource_layer.move_front",
-            self.move_composition_down: "tooltip.resource_layer.move_back",
+            self.order_composition_button: "tooltip.resource_layer.order",
             self.lock_composition_button: "tooltip.layer.lock", self.solo_composition_button: "tooltip.layer.solo",
         }
         for widget,key in help_keys.items():apply_tooltip(widget,localization,key)
-        self.lock_composition_button.setAccessibleName(t("layer.lock"));self.solo_composition_button.setAccessibleName(t("layer.solo"));self.move_composition_up.setAccessibleName(t("hierarchy.front"));self.move_composition_down.setAccessibleName(t("hierarchy.back"));self.composition_list.setAccessibleName(t("hierarchy.effect_layers"))
+        accessible=((self.add_composition_button,"resource_layer.add_accessible","tooltip.resource_layer.add_panel"),(self.duplicate_composition_button,"resource_layer.duplicate_accessible","tooltip.resource_layer.duplicate"),(self.remove_composition_button,"resource_layer.remove_accessible","tooltip.resource_layer.remove"),(self.group_composition_button,"group.group_selected","tooltip.group.create"),(self.ungroup_composition_button,"group.ungroup","tooltip.group.ungroup"),(self.lock_composition_button,"layer.lock","tooltip.layer.lock"),(self.solo_composition_button,"layer.solo","tooltip.layer.solo"),(self.order_composition_button,"resource_layer.order_accessible","tooltip.resource_layer.order"))
+        for widget,name_key,description_key in accessible:widget.setAccessibleName(t(name_key));widget.setAccessibleDescription(t(description_key))
+        self.composition_list.setAccessibleName(t("hierarchy.effect_layers"));self.composition_list.setAccessibleDescription(t("layer.multiselect_help"))
         if self.current_asset_id() is None:
             self.source_preview.setText(t("effects.no_source"))
+        self._sync_composition_controls()
 
     @staticmethod
     def _item(identifier: str, name: str) -> QListWidgetItem:
@@ -319,6 +347,8 @@ class EffectLibraryPanel(QWidget):
         for composition in project.resource_compositions:
             action=QAction(composition.name,self.composition_add_menu);action.triggered.connect(lambda checked=False,i=composition.id:self.add_composition_requested.emit(i));self.composition_add_menu.addAction(action)
         self.add_composition_button.setEnabled(bool(project.resource_compositions))
+        if hasattr(self,"_localization"):
+            add_tip=self._localization.text("tooltip.resource_layer.add_panel" if project.resource_compositions else "tooltip.resource_layer.add_disabled");self.add_composition_button.setToolTip(add_tip);self.add_composition_button.setStatusTip(add_tip);self.add_composition_button.setAccessibleDescription(add_tip)
         self.particle_group.setVisible(False)
         self._resource_composition_ids = [item.id for item in project.resource_compositions]
         asset = next(
@@ -369,6 +399,7 @@ class EffectLibraryPanel(QWidget):
         if display.parent_label:parts.append(self._localization.text("hierarchy.parent_tooltip").format(name=display.parent_label))
         if display.own_locked:parts.append(self._localization.text("hierarchy.own_lock"))
         elif display.inherited_locked:parts.append(self._localization.text("hierarchy.inherited_lock"))
+        if display.solo:parts.append(self._localization.text("hierarchy.solo_marker"))
         return "\n".join(parts)
 
     def current_asset_id(self) -> str | None:
@@ -433,15 +464,15 @@ class EffectLibraryPanel(QWidget):
         if identifier not in self._selected_resource_ids:self.resource_layer_selection_requested.emit(identifier,Qt.KeyboardModifier.NoModifier)
         layer=getattr(self,"_resource_layers",{}).get(identifier)
         if not layer:return
-        selected_count=len(self._selected_resource_ids);locked=any(value in self.composition_list.locked_ids for value in self._selected_resource_ids);states=context_action_states("group" if isinstance(layer,LayerGroup) else "leaf",selected_count,locked,bool(getattr(layer,"parent_id",None)));menu=QMenu(self);actions={};actions["duplicate"]=menu.addAction(self._localization.text("layer.batch.duplicate"));actions["delete"]=menu.addAction(self._localization.text("layer.batch.delete"));actions["delete"].setEnabled(states["delete"]);menu.addSeparator();actions["group"]=menu.addAction(self._localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self._localization.text("group.ungroup"));actions["group"].setEnabled(states["group"]);actions["ungroup"].setEnabled(states["ungroup"]);menu.addSeparator();parent_actions={}
+        states=self._composition_command_states(layer);menu=QMenu(self);actions={};actions["duplicate"]=menu.addAction(self._localization.text("resource_layer.duplicate_compact"));actions["delete"]=menu.addAction(self._localization.text("resource_layer.remove_compact"));actions["duplicate"].setEnabled(states["duplicate"]);actions["delete"].setEnabled(states["delete"]);menu.addSeparator();actions["group"]=menu.addAction(self._localization.text("group.group_selected"));actions["ungroup"]=menu.addAction(self._localization.text("group.ungroup"));actions["group"].setEnabled(states["group"]);actions["ungroup"].setEnabled(states["ungroup"]);menu.addSeparator();parent_actions={}
         if isinstance(layer,LayerGroup):actions["toggle_expand"]=menu.addAction(self._localization.text("hierarchy.toggle_group"))
         else:
             parent_menu=menu.addMenu(self._localization.text("parent.set"));clear=menu.addAction(self._localization.text("parent.clear"));clear.setEnabled(layer.parent_id is not None and states["clear_parent"]);parent_actions[clear]=None;leaves=[value for value in self._resource_layers.values() if not isinstance(value,LayerGroup)];groups=[value for value in self._resource_layers.values() if isinstance(value,LayerGroup)];labels=layer_display_labels(leaves,groups)
             for candidate in leaves:
                 if candidate.id!=layer.id and not would_create_parent_cycle(leaves,layer.id,candidate.id):action=parent_menu.addAction(labels.get(candidate.id,candidate.name));action.setEnabled(states["set_parent"]);parent_actions[action]=candidate.id
         menu.addSeparator();state_key="show" if not layer.visible else "hide";lock_key="unlock" if layer.locked else "lock";solo_key="unsolo" if layer.solo else "solo"
-        for key in (state_key,lock_key,solo_key):actions[key]=menu.addAction(self._localization.text("layer.batch."+key))
-        menu.addSeparator();actions["front"]=menu.addAction(self._localization.text("layer.batch.front"));actions["back"]=menu.addAction(self._localization.text("layer.batch.back"));actions["front"].setEnabled(states["reorder"]);actions["back"].setEnabled(states["reorder"]);menu.addSeparator();actions["expand_all"]=menu.addAction(self._localization.text("hierarchy.expand_all"));actions["collapse_all"]=menu.addAction(self._localization.text("hierarchy.collapse_all"))
+        for key in (state_key,lock_key,solo_key):actions[key]=menu.addAction(self._localization.text("layer.batch."+key));actions[key].setEnabled(states["state"])
+        menu.addSeparator();actions["front"]=menu.addAction(self._localization.text("resource_layer.bring_forward"));actions["back"]=menu.addAction(self._localization.text("resource_layer.send_back"));actions["front"].setEnabled(states["reorder"]);actions["back"].setEnabled(states["reorder"]);menu.addSeparator();actions["expand_all"]=menu.addAction(self._localization.text("hierarchy.expand_all"));actions["collapse_all"]=menu.addAction(self._localization.text("hierarchy.collapse_all"))
         chosen=menu.exec(self.composition_list.viewport().mapToGlobal(pos));command=next((key for key,value in actions.items() if value is chosen),None)
         if chosen in parent_actions:self.parent_requested.emit(identifier,parent_actions[chosen]);return
         if command=="toggle_expand":self.group_expanded_requested.emit(identifier)
@@ -453,8 +484,15 @@ class EffectLibraryPanel(QWidget):
         identifier=str(item.data(Qt.ItemDataRole.UserRole))
         if isinstance(getattr(self,"_resource_layers",{}).get(identifier),LayerGroup):self.group_expanded_requested.emit(identifier)
 
+    def _composition_command_states(self,primary=None):
+        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];primary=primary or next((value for value in selected if value.id==self._primary_resource_id),selected[0] if selected else None);locked=any(value.id in self.composition_list.locked_ids for value in selected);states=context_action_states("group" if isinstance(primary,LayerGroup) else "leaf",len(selected),locked,bool(getattr(primary,"parent_id",None)));states["group"]=len(selected)>=2 and all(not isinstance(value,LayerGroup) for value in selected);states["ungroup"]=len(selected)==1 and isinstance(selected[0],LayerGroup) and not locked;return states
+
     def _sync_composition_controls(self):
-        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];enabled=bool(selected);any_locked=any(value.locked for value in selected);all_locked=enabled and all(value.locked for value in selected);all_solo=enabled and all(value.solo for value in selected);self.duplicate_composition_button.setEnabled(enabled);self.remove_composition_button.setEnabled(enabled and not any_locked);self.lock_composition_button.setEnabled(enabled);self.solo_composition_button.setEnabled(enabled);self.lock_composition_button.setChecked(all_locked);self.solo_composition_button.setChecked(all_solo);self.move_composition_up.setEnabled(enabled and not any_locked);self.move_composition_down.setEnabled(enabled and not any_locked);self.group_composition_button.setEnabled(len(selected)>=2 and all(not isinstance(value,LayerGroup) for value in selected));self.ungroup_composition_button.setEnabled(len(selected)==1 and isinstance(selected[0],LayerGroup))
+        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];enabled=bool(selected);states=self._composition_command_states();all_locked=enabled and all(value.locked for value in selected);all_solo=enabled and all(value.solo for value in selected)
+        self.duplicate_composition_button.setEnabled(states["duplicate"]);self.remove_composition_button.setEnabled(states["delete"]);self.lock_composition_button.setEnabled(states["state"]);self.solo_composition_button.setEnabled(states["state"]);self.lock_composition_button.setChecked(all_locked);self.solo_composition_button.setChecked(all_solo);self.order_composition_button.setEnabled(states["reorder"]);self.order_front_action.setEnabled(states["reorder"]);self.order_back_action.setEnabled(states["reorder"]);self.group_composition_button.setEnabled(states["group"]);self.ungroup_composition_button.setEnabled(states["ungroup"])
+        if not hasattr(self,"_localization"):return
+        t=self._localization.text;tips={self.duplicate_composition_button:"tooltip.resource_layer.duplicate" if states["duplicate"] else "tooltip.resource_layer.select_for_command",self.remove_composition_button:"tooltip.resource_layer.remove" if states["delete"] else ("layer.locked_delete" if enabled else "tooltip.resource_layer.select_for_command"),self.group_composition_button:"tooltip.group.create" if states["group"] else "tooltip.group.create_disabled",self.ungroup_composition_button:"tooltip.group.ungroup" if states["ungroup"] else "tooltip.group.ungroup_disabled",self.lock_composition_button:"tooltip.layer.lock" if enabled else "tooltip.resource_layer.select_for_command",self.solo_composition_button:"tooltip.layer.solo" if enabled else "tooltip.resource_layer.select_for_command",self.order_composition_button:"tooltip.resource_layer.order" if states["reorder"] else ("layer.batch.locked_block" if enabled else "tooltip.resource_layer.select_for_command")}
+        for widget,key in tips.items():widget.setToolTip(t(key));widget.setStatusTip(t(key));widget.setAccessibleDescription(t(key))
 
     def _request_create_clip(self) -> None:
         identifier = self.current_generator_id()

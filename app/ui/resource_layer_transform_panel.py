@@ -27,9 +27,9 @@ class ResourceLayerTransformPanel(QGroupBox):
         super().__init__("Advanced", parent); self.layer=None;self.multi_layers=[];self.frame=0;self._loading=False;self._localization=None
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.setCheckable(True);self.setChecked(False)
-        outer=QVBoxLayout(self);outer.setContentsMargins(8,6,8,8);self.advanced_status=QLabel("Surface Transform applied");self.advanced_status.setObjectName("surfaceTransformAppliedStatus");self.advanced_status.setWordWrap(True);self.advanced_status.hide();outer.addWidget(self.advanced_status)
+        outer=QVBoxLayout(self);outer.setContentsMargins(6,4,6,6);outer.setSpacing(5);self.advanced_status=QLabel("Surface Transform applied");self.advanced_status.setObjectName("surfaceTransformAppliedStatus");self.advanced_status.setWordWrap(True);self.advanced_status.hide();outer.addWidget(self.advanced_status)
         self.advanced_body=QWidget();root=QVBoxLayout(self.advanced_body);root.setContentsMargins(0,4,0,0);outer.addWidget(self.advanced_body);self.advanced_body.show();self.toggled.connect(self._advanced_toggled)
-        self.system_group=QGroupBox("System Space Transform");system_root=QVBoxLayout(self.system_group);system_root.setContentsMargins(8,10,8,8);root.addWidget(self.system_group)
+        self.system_group=QGroupBox("System Space Transform");system_root=QVBoxLayout(self.system_group);system_root.setContentsMargins(7,8,7,7);system_root.setSpacing(5);root.addWidget(self.system_group)
         self.description=QLabel("Transform the whole layer coordinate system, including particle spawn positions and motion paths.");self.description.setWordWrap(True);self.description.setMinimumWidth(0);self.description.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);system_root.addWidget(self.description);self.multi_help=QLabel();self.multi_help.setWordWrap(True);self.multi_help.hide();system_root.addWidget(self.multi_help)
         tools=QGridLayout();tools.setColumnStretch(0,1);tools.setColumnStretch(1,1);self.gizmo_buttons={}
         for mode,label in (("move","Move XYZ"),("rotate_x","Rotate X"),("rotate_y","Rotate Y"),("rotate_z","Rotate Z"),("scale","Scale"),("pivot","Pivot")):
@@ -163,8 +163,8 @@ class ResourceLayerTransformPanel(QGroupBox):
         if self.layer is not None:self.gizmo_mode_changed.emit(self.layer.id,mode)
 
     def retranslate_ui(self, localization):
-        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.advanced"));self.setToolTip(t("resource_layer.advanced_bypassed"));self.system_group.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"));self._sync_advanced_status(self.isChecked())
-        self.surface_group.setTitle(t("resource_layer.surface_transform"));self.surface_warning.setText(t("resource_layer.surface_help"));self.surface_reset.setText(t("resource_layer.surface_reset"))
+        self._localization=localization;t=localization.text;self.setTitle(t("resource_layer.advanced"));self.setToolTip(t("resource_layer.advanced_bypassed"));self.system_group.setTitle(t("resource_layer.transform"));self.description.setText(t("resource_layer.transform_help_short"));self.description.setToolTip(t("resource_layer.transform_help"));self.reset.setText(t("resource_layer.transform_reset"));self._sync_advanced_status(self.isChecked())
+        self.surface_group.setTitle(t("resource_layer.surface_transform"));self.surface_warning.setText(t("resource_layer.surface_help_short"));self.surface_warning.setToolTip(t("resource_layer.surface_help"));self.surface_reset.setText(t("resource_layer.surface_reset"))
         self.surface_reset.setToolTip(t("resource_layer.surface_reset")+". "+t("resource_layer.surface_help"))
         tips={"rotation_x":"tooltip.resource_layer.rotation_x","rotation_y":"tooltip.resource_layer.rotation_y","rotation_z":"tooltip.resource_layer.rotation_z","position_z":"tooltip.resource_layer.position_z","perspective_strength":"tooltip.resource_layer.perspective"}
         for name,field in self.fields.items():field.setToolTip(t(tips.get(name,"resource_layer.transform_help"))+("\n"+t("tooltip.rotation_revolutions") if name.startswith("rotation_") else ""))

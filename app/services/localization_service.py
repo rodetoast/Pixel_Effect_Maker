@@ -76,6 +76,8 @@ EN = {
     "timeline.paste_out_of_range": "Paste blocked: keys would be outside the timeline.",
     "timeline.paste_incompatible": "These keys cannot be pasted into the current timeline.",
     "timeline.reveal_all":"All", "timeline.reveal_animated":"Animated", "timeline.reveal_selected":"Selected Layer",
+    "timeline.fit_timeline":"Fit Timeline", "timeline.fit_visible_keys":"Fit Visible Keys", "timeline.fit_selected_keys":"Fit Selected Keys",
+    "timeline.previous_frame":"Previous Frame", "timeline.next_frame":"Next Frame", "timeline.previous_key":"Previous Key", "timeline.next_key":"Next Key", "timeline.reveal":"Reveal",
     "timeline.snap":"Snap", "timeline.snap_keyframe":"Snap to Keyframe", "timeline.snap_playhead":"Snap to Playhead", "timeline.snap_start":"Snap to Start", "timeline.snap_end":"Snap to End",
     "tooltip.timeline.previous_key":"Move to the previous visible key (Ctrl+Alt+Left).", "tooltip.timeline.next_key":"Move to the next visible key (Ctrl+Alt+Right).",
     "tooltip.timeline.fit":"Fit the entire timeline.", "tooltip.timeline.fit_keys":"Fit all visible keys.", "tooltip.timeline.fit_selected":"Fit selected keys.",
@@ -131,7 +133,7 @@ EN = {
     "composition.tooltip.add_property":"Search and register only the animation property this layer needs.",
     "composition.tooltip.full_rotation":"Creates Linear 0° and 360° keyframes across the full composition.",
     "v2.assets":"Assets", "v2.resources":"Resources", "v2.empty":"Import an asset, then select it to create a resource.",
-    "v2.asset_inspector":"Asset Inspector", "v2.composition_inspector":"Resource Inspector", "v2.layer_inspector":"Layer Inspector",
+    "v2.asset_inspector":"Asset Inspector", "v2.composition_inspector":"Resource Inspector", "v2.resource_information":"Resource Information", "v2.layer_inspector":"Layer Inspector",
     "v2.asset_pivot_x":"Asset Pivot X", "v2.asset_pivot_y":"Asset Pivot Y", "v2.center_asset_pivot":"Center Asset Pivot",
     "v2.create_from_asset":"Create Resource from This Asset", "v2.create_from_asset_tip":"Creates a ready-to-animate resource at the original asset size.",
     "v2.create_resource_title":"Create New Resource", "v2.create":"Create", "v2.cancel":"Cancel",
@@ -215,6 +217,8 @@ KO = {
     "timeline.paste_out_of_range": "붙여넣을 키가 타임라인 범위를 벗어납니다.",
     "timeline.paste_incompatible": "이 키 데이터는 현재 타임라인에 붙여넣을 수 없습니다.",
     "timeline.reveal_all":"전체", "timeline.reveal_animated":"애니메이션됨", "timeline.reveal_selected":"선택 레이어",
+    "timeline.fit_timeline":"전체 맞춤", "timeline.fit_visible_keys":"키 맞춤", "timeline.fit_selected_keys":"선택 맞춤",
+    "timeline.previous_frame":"이전 프레임", "timeline.next_frame":"다음 프레임", "timeline.previous_key":"이전 키", "timeline.next_key":"다음 키", "timeline.reveal":"보기 범위",
     "timeline.snap":"스냅", "timeline.snap_keyframe":"키프레임에 스냅", "timeline.snap_playhead":"플레이헤드에 스냅", "timeline.snap_start":"시작에 스냅", "timeline.snap_end":"끝에 스냅",
     "tooltip.timeline.previous_key":"이전 보이는 키로 이동합니다(Ctrl+Alt+Left).", "tooltip.timeline.next_key":"다음 보이는 키로 이동합니다(Ctrl+Alt+Right).",
     "tooltip.timeline.fit":"전체 타임라인을 화면에 맞춥니다.", "tooltip.timeline.fit_keys":"보이는 모든 키를 화면에 맞춥니다.", "tooltip.timeline.fit_selected":"선택한 키를 화면에 맞춥니다.",
@@ -270,7 +274,7 @@ KO = {
     "composition.tooltip.add_property":"이 레이어에 필요한 애니메이션 속성만 검색해 등록합니다.",
     "composition.tooltip.full_rotation":"컴포지션 전체 구간에 Linear 0°와 360° 키프레임을 만듭니다.",
     "v2.assets":"에셋", "v2.resources":"리소스", "v2.empty":"에셋을 가져온 뒤 선택해 리소스를 만드세요.",
-    "v2.asset_inspector":"에셋 검사", "v2.composition_inspector":"리소스 정보", "v2.layer_inspector":"레이어 속성",
+    "v2.asset_inspector":"에셋 검사", "v2.composition_inspector":"리소스 검사", "v2.resource_information":"리소스 정보", "v2.layer_inspector":"레이어 속성",
     "v2.asset_pivot_x":"에셋 피벗 X", "v2.asset_pivot_y":"에셋 피벗 Y", "v2.center_asset_pivot":"에셋 피벗 중앙 정렬",
     "v2.create_from_asset":"이 에셋으로 리소스 만들기", "v2.create_from_asset_tip":"원본 에셋 크기로 바로 애니메이션할 수 있는 리소스를 만듭니다.",
     "v2.create_resource_title":"새 리소스 만들기", "v2.create":"만들기", "v2.cancel":"취소",
@@ -316,6 +320,17 @@ EN.update({
 })
 
 EN.update({
+    "resource_layer.add_compact":"＋ Layer", "resource_layer.duplicate_compact":"Duplicate", "resource_layer.remove_compact":"Delete",
+    "resource_layer.lock_compact":"Lock", "resource_layer.solo_compact":"Solo", "resource_layer.order":"Order",
+    "resource_layer.bring_forward":"Bring Forward", "resource_layer.send_back":"Send Back",
+    "resource_layer.add_accessible":"Add Resource Layer", "resource_layer.duplicate_accessible":"Duplicate Resource Layer",
+    "resource_layer.remove_accessible":"Delete Resource Layer", "resource_layer.order_accessible":"Change Resource Layer Order",
+    "tooltip.resource_layer.add_panel":"Add a resource layer.", "tooltip.resource_layer.add_disabled":"Create a Resource Composition before adding a layer.",
+    "tooltip.resource_layer.order":"Change the selected layers' render order.", "tooltip.resource_layer.select_for_command":"Select a layer to use this command.",
+    "tooltip.group.create_disabled":"Select at least two leaf layers to create a group.", "tooltip.group.ungroup_disabled":"Select one group to ungroup it.",
+})
+
+EN.update({
     "multi_transform.multiple_selected":"Multiple layers selected",
     "multi_transform.selection_pivot":"Selection Pivot",
     "multi_transform.mixed":"Mixed",
@@ -334,7 +349,7 @@ EN.update({
 })
 
 EN.update({
-    "group.group_selected":"Group Selected","group.ungroup":"Ungroup","group.rename":"Rename Group","group.duplicate":"Duplicate Group","group.delete":"Delete Group","group.empty":"Empty Group",
+    "group.group_selected":"Create Group","group.ungroup":"Ungroup","group.rename":"Rename Group","group.duplicate":"Duplicate Group","group.delete":"Delete Group","group.empty":"Empty Group",
     "group.inspector":"Layer Group","group.name":"Group Name","group.children":"Children","group.visible":"Visible","group.locked":"Locked","group.solo":"Solo",
     "group.no_transform_help":"Groups organize layers. Groups do not have transforms or keyframes in this version.",
     "group.locked_by_group":"Locked by group","group.must_contiguous":"Layers must be contiguous at the same hierarchy level to create a group. Use Shift+Click to select a continuous range.","group.same_parent":"Layers must share the same parent to move them together.",
@@ -347,7 +362,7 @@ EN.update({
     "hierarchy.empty":"Empty","hierarchy.expand_all":"Expand All","hierarchy.collapse_all":"Collapse All","hierarchy.toggle_group":"Expand / Collapse Group",
     "hierarchy.group_tooltip":"Groups organize the layer list. They are separate from Transform Parenting.",
     "hierarchy.parent_tooltip":"Parent: {name}\nInherits the parent's Position X/Y, Rotation Z, and Scale X/Y transform.",
-    "hierarchy.own_lock":"This layer itself is locked.","hierarchy.inherited_lock":"Editing is disabled because its containing group is locked.",
+    "hierarchy.own_lock":"This layer itself is locked.","hierarchy.inherited_lock":"Editing is disabled because its containing group is locked.","hierarchy.solo_marker":"S: This layer is enabled for Solo preview.",
     "hierarchy.front":"Move Layers to Front","hierarchy.back":"Move Layers to Back","hierarchy.effect_layers":"Effect Resource Layer Hierarchy",
     "hierarchy.drop_before":"Move before","hierarchy.drop_after":"Move after","hierarchy.drop_into":"Move into group","hierarchy.drop_invalid":"This hierarchy drop target is not available.",
     "resource_layer.mode_particle":"Particle","resource_layer.mode_single":"Single",
@@ -367,9 +382,11 @@ EN.update({
     "resource_layer.advanced":"Advanced",
     "resource_layer.transform":"System Space Transform",
     "resource_layer.transform_help":"Transforms the entire layer coordinate system, including particle spawn positions and motion paths. To tilt only the resource image, use X/Y/Z Rotation in Resource Editor.",
+    "resource_layer.transform_help_short":"Moves the layer system, including particle spawn positions. Use Resource Editor for sprite-only tilt.",
     "resource_layer.transform_reset":"Reset System Space\nTransform",
     "resource_layer.surface_transform":"Surface Transform (Compatibility)",
     "resource_layer.surface_help":"Applied to the final flat layer after rasterization. Retained for compatibility with existing projects; for new work, prefer Resource Sprite 2.5D or System Space Transform.",
+    "resource_layer.surface_help_short":"Post-raster compatibility transform for existing projects.",
     "resource_layer.surface_applied":"Surface Transform applied",
     "resource_layer.advanced_bypassed":"Advanced transforms are bypassed; stored values and keyframes are preserved.",
     "resource_layer.surface_reset":"Reset Surface Transform",
@@ -402,9 +419,11 @@ KO.update({
     "resource_layer.advanced":"고급",
     "resource_layer.transform":"시스템 공간 변형",
     "resource_layer.transform_help":"파티클 생성 위치와 이동 경로를 포함해 레이어 전체 좌표계를 변환합니다. 리소스 이미지만 기울이려면 리소스 에디터의 X/Y/Z 회전을 사용하세요.",
+    "resource_layer.transform_help_short":"파티클 생성 위치를 포함한 레이어 좌표계를 변환합니다. 이미지 기울기는 리소스 에디터에서 조정합니다.",
     "resource_layer.transform_reset":"시스템 공간 변형\n초기화",
     "resource_layer.surface_transform":"표면 변형 (호환성)",
     "resource_layer.surface_help":"래스터화가 끝난 최종 평면 레이어에 적용됩니다. 기존 프로젝트 호환을 위해 유지되며 새 작업에는 Resource Sprite 2.5D 또는 시스템 공간 변형을 권장합니다.",
+    "resource_layer.surface_help_short":"기존 프로젝트용 후처리 호환 변형입니다.",
     "resource_layer.surface_applied":"표면 변형이 적용됨",
     "resource_layer.advanced_bypassed":"고급 변환을 우회 중입니다. 저장된 값과 키프레임은 유지됩니다.",
     "resource_layer.surface_reset":"표면 변형 초기화",
@@ -427,6 +446,17 @@ KO.update({
 })
 
 KO.update({
+    "resource_layer.add_compact":"＋ 레이어", "resource_layer.duplicate_compact":"복제", "resource_layer.remove_compact":"삭제",
+    "resource_layer.lock_compact":"잠금", "resource_layer.solo_compact":"솔로", "resource_layer.order":"순서",
+    "resource_layer.bring_forward":"앞으로", "resource_layer.send_back":"뒤로",
+    "resource_layer.add_accessible":"리소스 레이어 추가", "resource_layer.duplicate_accessible":"리소스 레이어 복제",
+    "resource_layer.remove_accessible":"리소스 레이어 삭제", "resource_layer.order_accessible":"리소스 레이어 순서 변경",
+    "tooltip.resource_layer.add_panel":"리소스 레이어를 추가합니다.", "tooltip.resource_layer.add_disabled":"리소스 컴포지션을 먼저 만든 뒤 레이어를 추가하세요.",
+    "tooltip.resource_layer.order":"선택한 레이어의 렌더링 순서를 변경합니다.", "tooltip.resource_layer.select_for_command":"이 명령을 사용하려면 레이어를 선택하세요.",
+    "tooltip.group.create_disabled":"레이어를 2개 이상 선택하면 사용할 수 있습니다.", "tooltip.group.ungroup_disabled":"그룹 하나를 선택하면 사용할 수 있습니다.",
+})
+
+KO.update({
     "multi_transform.multiple_selected":"여러 레이어 선택",
     "multi_transform.selection_pivot":"선택 중심점",
     "multi_transform.mixed":"혼합 값",
@@ -445,7 +475,7 @@ KO.update({
 })
 
 KO.update({
-    "group.group_selected":"선택 레이어 그룹 만들기","group.ungroup":"그룹 해제","group.rename":"그룹 이름 변경","group.duplicate":"그룹 복제","group.delete":"그룹 삭제","group.empty":"빈 그룹",
+    "group.group_selected":"그룹 만들기","group.ungroup":"그룹 해제","group.rename":"그룹 이름 변경","group.duplicate":"그룹 복제","group.delete":"그룹 삭제","group.empty":"빈 그룹",
     "group.inspector":"레이어 그룹","group.name":"그룹 이름","group.children":"하위 레이어","group.visible":"표시","group.locked":"잠금","group.solo":"Solo",
     "group.no_transform_help":"그룹은 레이어 정리용입니다. 이 버전에서는 Transform과 Keyframe을 가지지 않습니다.",
     "group.locked_by_group":"상위 그룹에 의해 잠김","group.must_contiguous":"그룹으로 만들 레이어는 같은 위치에서 연속되어 있어야 합니다. Shift+클릭으로 연속된 범위를 선택하세요.","group.same_parent":"여러 레이어를 함께 이동하려면 같은 그룹 위치에 있어야 합니다.",
@@ -458,7 +488,7 @@ KO.update({
     "hierarchy.empty":"비어 있음","hierarchy.expand_all":"모두 펼치기","hierarchy.collapse_all":"모두 접기","hierarchy.toggle_group":"그룹 펼치기 / 접기",
     "hierarchy.group_tooltip":"그룹은 레이어 목록을 정리합니다. Transform Parenting과는 별개입니다.",
     "hierarchy.parent_tooltip":"부모: {name}\n이 레이어는 부모의 Position X/Y, Rotation Z, Scale X/Y Transform을 상속합니다.",
-    "hierarchy.own_lock":"이 레이어 자체가 잠겨 있습니다.","hierarchy.inherited_lock":"상위 그룹이 잠겨 있어 편집할 수 없습니다.",
+    "hierarchy.own_lock":"이 레이어 자체가 잠겨 있습니다.","hierarchy.inherited_lock":"상위 그룹이 잠겨 있어 편집할 수 없습니다.","hierarchy.solo_marker":"S: 이 레이어가 Solo 미리보기 대상으로 설정되어 있습니다.",
     "hierarchy.front":"레이어 맨 앞으로","hierarchy.back":"레이어 맨 뒤로","hierarchy.effect_layers":"Effect 리소스 레이어 계층",
     "hierarchy.drop_before":"앞에 이동","hierarchy.drop_after":"뒤에 이동","hierarchy.drop_into":"그룹 안으로 이동","hierarchy.drop_invalid":"이 계층 위치로 이동할 수 없습니다.",
     "resource_layer.mode_particle":"파티클","resource_layer.mode_single":"단일",

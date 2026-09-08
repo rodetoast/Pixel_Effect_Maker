@@ -2,6 +2,13 @@
 
 ## v0.0.15 - 2026-08-25
 
+- Rebuilt the Effect Resource Layer panel around compact Create/Edit, Hierarchy, and State/Order toolbars so the Layer list receives the remaining vertical space.
+- Replaced cryptic full-width L/S and arrow order controls with localized Lock, Solo, and an Order menu containing Bring Forward/Send Back; preserved existing callbacks, selection, model, and Undo semantics.
+- Added stable disabled controls with reason tooltips, shared toolbar/context-menu availability, explicit toggle/accessibility metadata, and responsive 1280/1600/1920 geometry coverage.
+- Split Resource and Effect Timeline commands into semantic Timeline, Frame/Layer, Hierarchy, State, and Order groups without adding commands or changing shortcuts.
+- Replaced Fit/Keys/Sel placeholders with localized Fit Timeline, Fit Visible Keys, and Fit Selected Keys labels; differentiated frame and key navigation glyphs and completed accessible names/descriptions.
+- Extended Timeline row/ruler treatment with an O(visible rows) inactive area beyond the real duration while preserving frame width, zoom, pan, key markers, selection, and Snap guide semantics.
+- Rebalanced the Effect Library toward Resource Layers, grouped Resource metadata and its Effect CTA, and compacted Effect Inspector spacing while retaining full technical help in tooltips.
 - Added runtime-only, default-on Snap toggles to Resource and Effect Timeline toolbars.
 - Normal Move and Alt-drag Duplicate now share screen-space snapping to visible keyframes, the captured playhead, and earliest/latest Timeline boundaries while preserving one batch delta.
 - Snap targets are captured once at drag start, deduped by frame, and queried with bisect; hidden/source keys are excluded and mouse move performs no project copy, serialization, hierarchy rebuild, or filesystem access.

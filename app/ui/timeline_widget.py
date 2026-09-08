@@ -31,6 +31,7 @@ from app.ui.layout_metrics import EFFECT_TIMELINE_MAX_HEIGHT, EFFECT_TIMELINE_MI
 from app.ui.timeline_multi_key import TimelineKey, TimelineKeySelection, clamp_group_delta, read_timeline_clipboard_payload, timeline_clipboard_matches
 from app.ui.timeline_snapping import batch_delta_issue, collect_snap_targets, compute_batch_snap
 from app.ui.timeline_time_view import TimelineTimeView,navigation_frame
+from app.ui.timeline_command_bar import InactiveTimelineTable,command_group,command_separator
 
 
 class TimelineWidget(QWidget):
@@ -71,7 +72,7 @@ class TimelineWidget(QWidget):
         self._previous_shortcuts = []
         self._next_shortcuts = []
         self.rows=[];self.key_selection=TimelineKeySelection();self._visible_keys=set();self._occupied_keys=set();self.reveal_mode="all";self.snap_enabled=True;self._selected_logical_ids=set();self._primary_logical_id=None;self._time_view=TimelineTimeView();self._time_pan=None;self._key_drag=None;self._marquee=None;self._marquee_origin=None;self._marquee_ctrl=False
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5)
         status_toolbar = QHBoxLayout()
         self.selection_label = QLabel("Layer 1 · Frame 1")
         self.selection_label.setStyleSheet("font-weight: bold;")
@@ -79,11 +80,8 @@ class TimelineWidget(QWidget):
         self.playback_status_label = QLabel("Stopped · Frame 1 / 1 · 12 FPS")
         status_toolbar.addWidget(self.playback_status_label)
         status_toolbar.addStretch(1)
-        edit_toolbar = QHBoxLayout()
-        self.previous_key=QPushButton("◀◆");self.next_key=QPushButton("◆▶");self.fit_timeline_button=QPushButton("Fit");self.fit_keys_button=QPushButton("Keys");self.fit_selected_button=QPushButton("Sel");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected"]);self.snap_toggle=QPushButton("Snap");self.snap_toggle.setCheckable(True);self.snap_toggle.setChecked(True)
-        self.previous_key.setFixedWidth(28);self.next_key.setFixedWidth(28);self.fit_timeline_button.setFixedWidth(30);self.fit_keys_button.setFixedWidth(34);self.fit_selected_button.setFixedWidth(30);self.reveal_combo.setFixedWidth(76);self.snap_toggle.setFixedWidth(46)
-        for widget in (self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo):edit_toolbar.addWidget(widget)
-        status_toolbar.insertWidget(2,self.snap_toggle)
+        self.previous_key=QPushButton("◆◀");self.next_key=QPushButton("▶◆");self.fit_timeline_button=QPushButton("Fit Timeline");self.fit_keys_button=QPushButton("Fit Visible Keys");self.fit_selected_button=QPushButton("Fit Selected Keys");self.reveal_combo=QComboBox();self.reveal_combo.addItems(["All","Animated","Selected Layer"]);self.snap_toggle=QPushButton("Snap");self.snap_toggle.setCheckable(True);self.snap_toggle.setChecked(True)
+        self.previous_key.setFixedWidth(38);self.next_key.setFixedWidth(38);self.fit_timeline_button.setMinimumWidth(76);self.fit_keys_button.setMinimumWidth(96);self.fit_selected_button.setMinimumWidth(104);self.reveal_combo.setMinimumWidth(96);self.snap_toggle.setMinimumWidth(52)
         self.previous_key.clicked.connect(lambda:self.navigate_key(-1));self.next_key.clicked.connect(lambda:self.navigate_key(1));self.fit_timeline_button.clicked.connect(self.fit_timeline);self.fit_keys_button.clicked.connect(self.fit_visible_keys);self.fit_selected_button.clicked.connect(self.fit_selected_keys);self.reveal_combo.currentIndexChanged.connect(lambda index:self.set_reveal_mode(("all","animated","selected")[index]));self.snap_toggle.toggled.connect(self.set_snap_enabled)
 
         self.edit_buttons: list[QPushButton] = []
@@ -97,24 +95,31 @@ class TimelineWidget(QWidget):
             button = QPushButton(label)
             button.setToolTip(tooltip)
             button.clicked.connect(signal)
-            edit_toolbar.addWidget(button)
             self.edit_buttons.append(button)
         self.delete_layer_button = self.edit_buttons[-1]
+        self.edit_buttons[2].setProperty("commandRole","danger");self.delete_layer_button.setProperty("commandRole","danger")
 
         self.play_button = QPushButton("▶")
         self.play_button.clicked.connect(self.play_requested)
-        status_toolbar.addWidget(self.play_button)
         self.fps_label = QLabel("FPS")
-        status_toolbar.addWidget(self.fps_label)
         self.fps_spin = ScrollSafeSpinBox()
         self.fps_spin.setRange(1, 120)
         self.fps_spin.valueChanged.connect(self.fps_changed)
-        status_toolbar.addWidget(self.fps_spin)
-        edit_toolbar.addStretch(1)
         layout.addLayout(status_toolbar)
-        layout.addLayout(edit_toolbar)
+        self.timeline_command_bar=QWidget(self);self.timeline_command_bar.setObjectName("effectTimelineCommandBar");timeline_controls=QHBoxLayout(self.timeline_command_bar);timeline_controls.setContentsMargins(0,0,0,0);timeline_controls.setSpacing(5);self.timeline_command_groups={}
+        for name,widgets in (("playback",(self.play_button,self.fps_label,self.fps_spin)),("key_navigation",(self.previous_key,self.next_key)),("view",(self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo)),("assist",(self.snap_toggle,))):
+            group=command_group(self.timeline_command_bar,name,widgets);self.timeline_command_groups[name]=group
+            if timeline_controls.count():timeline_controls.addWidget(command_separator(self.timeline_command_bar))
+            timeline_controls.addWidget(group)
+        timeline_controls.addStretch();layout.addWidget(self.timeline_command_bar)
+        self.structure_command_bar=QWidget(self);self.structure_command_bar.setObjectName("effectStructureCommandBar");structure_controls=QHBoxLayout(self.structure_command_bar);structure_controls.setContentsMargins(0,0,0,0);structure_controls.setSpacing(5);self.structure_command_groups={}
+        for name,widgets in (("frame_structure",tuple(self.edit_buttons[:3])),("layer_structure",tuple(self.edit_buttons[3:]))):
+            group=command_group(self.structure_command_bar,name,widgets);self.structure_command_groups[name]=group
+            if structure_controls.count():structure_controls.addWidget(command_separator(self.structure_command_bar))
+            structure_controls.addWidget(group)
+        structure_controls.addStretch();layout.addWidget(self.structure_command_bar)
 
-        self.table = QTableWidget()
+        self.table = InactiveTimelineTable()
         self.frame_cell_width = 36
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -231,11 +236,13 @@ class TimelineWidget(QWidget):
         shortcut_keys = ("new_empty_frame", "new_frame", None, "new_layer", None)
         for button, text, key, shortcut_key in zip(self.edit_buttons, texts, keys, shortcut_keys, strict=True):
             button.setText(text)
+            button.setAccessibleName(text.replace("+ ","").replace("− ","").replace("⧉ ",""))
             shortcuts = getattr(self, "_configured_shortcuts", {}).get(shortcut_key, []) if shortcut_key else None
             apply_tooltip(button, localization, key, shortcuts)
+            button.setAccessibleDescription(button.toolTip())
         apply_tooltip(self.fps_spin, localization, "tooltip.timeline.fps")
         apply_tooltip(self.table, localization, "tooltip.timeline.table", status=False)
-        self.snap_toggle.setText(localization.text("timeline.snap"));self.snap_toggle.setAccessibleName(localization.text("timeline.snap"));self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);apply_tooltip(self.previous_key,localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,localization,"tooltip.timeline.reveal");apply_tooltip(self.snap_toggle,localization,"tooltip.timeline.snap");self.snap_toggle.setAccessibleDescription(self.snap_toggle.toolTip())
+        self.fit_timeline_button.setText(localization.text("timeline.fit_timeline"));self.fit_keys_button.setText(localization.text("timeline.fit_visible_keys"));self.fit_selected_button.setText(localization.text("timeline.fit_selected_keys"));self.snap_toggle.setText(localization.text("timeline.snap"));self.snap_toggle.setAccessibleName(localization.text("timeline.snap"));self.reveal_combo.blockSignals(True);[self.reveal_combo.setItemText(index,localization.text(key)) for index,key in enumerate(("timeline.reveal_all","timeline.reveal_animated","timeline.reveal_selected"))];self.reveal_combo.blockSignals(False);apply_tooltip(self.previous_key,localization,"tooltip.timeline.previous_key");apply_tooltip(self.next_key,localization,"tooltip.timeline.next_key");apply_tooltip(self.fit_timeline_button,localization,"tooltip.timeline.fit");apply_tooltip(self.fit_keys_button,localization,"tooltip.timeline.fit_keys");apply_tooltip(self.fit_selected_button,localization,"tooltip.timeline.fit_selected");apply_tooltip(self.reveal_combo,localization,"tooltip.timeline.reveal");apply_tooltip(self.snap_toggle,localization,"tooltip.timeline.snap");self.previous_key.setAccessibleName(localization.text("timeline.previous_key"));self.next_key.setAccessibleName(localization.text("timeline.next_key"));self.fit_timeline_button.setAccessibleName(localization.text("timeline.fit_timeline"));self.fit_keys_button.setAccessibleName(localization.text("timeline.fit_visible_keys"));self.fit_selected_button.setAccessibleName(localization.text("timeline.fit_selected_keys"));self.reveal_combo.setAccessibleName(localization.text("timeline.reveal"));self.play_button.setAccessibleName(localization.text("tooltip.timeline.play"));[widget.setAccessibleDescription(widget.toolTip()) for widget in (self.previous_key,self.next_key,self.fit_timeline_button,self.fit_keys_button,self.fit_selected_button,self.reveal_combo,self.snap_toggle)];self.snap_toggle.setAccessibleDescription(self.snap_toggle.toolTip())
         self._update_play_tooltip()
         header = self.table.horizontalHeaderItem(self.NAME_COLUMN)
         if header is not None: header.setText(localization.text("timeline.layer"))

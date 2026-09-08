@@ -31,13 +31,13 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.setWidgetResizable(True);self.setMinimumWidth(0);self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.layer: EffectCompositionLayer | None = None
         self._loading = False
-        body = QWidget();body.setObjectName("compositionLayerInspectorContent");body.setMinimumWidth(0);body.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); layout = QVBoxLayout(body);layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        body = QWidget();body.setObjectName("compositionLayerInspectorContent");body.setMinimumWidth(0);body.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); layout = QVBoxLayout(body);layout.setContentsMargins(6,6,6,6);layout.setSpacing(5);layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.resource_layer_id = None
         self.title = QLabel("Resource Layer")
         self.title.setStyleSheet("font-size: 15px; font-weight: bold;")
         self.title.setMinimumWidth(0);self.title.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         layout.addWidget(self.title)
-        common=QGroupBox("Resource Layer");common.setMinimumWidth(0);common.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.common_form=QFormLayout(common);self.common_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.common_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        common=QGroupBox("Resource Layer");common.setMinimumWidth(0);common.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);self.common_form=QFormLayout(common);self.common_form.setContentsMargins(7,8,7,7);self.common_form.setHorizontalSpacing(6);self.common_form.setVerticalSpacing(4);self.common_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.common_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.name=QLineEdit();self.common_form.addRow("Layer Name",self.name);self.name.editingFinished.connect(self._name_changed)
         self.parent_layer=QComboBox();self.common_form.addRow("Parent Layer",self.parent_layer);self.parent_layer.currentIndexChanged.connect(self._parent_changed)
         self.resource = QComboBox();self.resource.setMinimumWidth(0);self.resource.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.common_form.addRow("Resource Composition",self.resource);self.resource.currentIndexChanged.connect(self._resource_changed)
@@ -51,7 +51,7 @@ class CompositionLayerPropertiesPanel(QScrollArea):
         self.transform_panel.keyframe_requested.connect(self.transform_keyframe_requested)
         self.transform_panel.keyframe_delete_requested.connect(self.transform_keyframe_delete_requested)
         self.transform_panel.gizmo_mode_changed.connect(self.transform_gizmo_changed)
-        group = QGroupBox("Path");group.setMinimumWidth(0);group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); self.form = QFormLayout(group);self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        group = QGroupBox("Path");group.setMinimumWidth(0);group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred); self.form = QFormLayout(group);self.form.setContentsMargins(7,8,7,7);self.form.setHorizontalSpacing(6);self.form.setVerticalSpacing(4);self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.start_x = self._number(); self.start_y = self._number()
         self.end_x = self._number(); self.end_y = self._number()
         self.start_frame = self._integer(); self.end_frame = self._integer()

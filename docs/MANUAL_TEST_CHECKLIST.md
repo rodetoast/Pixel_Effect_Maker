@@ -11,6 +11,18 @@
 - 8/32/64/160 px-per-frame와 Windows DPI 배율에서 약 8 logical px의 체감 threshold와 guide 위치를 확인한다.
 - 실제 Windows GUI 수동 QA는 사용자가 수행하며, Codex 검증은 Qt/QTest offscreen 자동화에 한정된다.
 
+## v0.0.15 Timeline / Editor Command Bar UI Polish
+
+- [ ] Resource Timeline에서 Frame/Playback, Key Navigation, View, Snap, Key Editing과 별도 Layer/Hierarchy/State/Order command bar가 기능군별로 읽히는지 확인한다.
+- [ ] Effect Timeline에서 Playback/FPS, Key Navigation, View/Snap과 별도 Frame/Layer Structure command bar가 섞이지 않는지 확인한다.
+- [ ] 한국어/English에서 Fit Timeline, Fit Visible Keys, Fit Selected Keys와 Reveal 항목이 축약·혼합 표기 없이 표시되는지 확인한다.
+- [ ] 12/24-frame Timeline 오른쪽이 inactive time area로 이어지며 실제 duration, Zoom/Pan, current frame, key selection, Snap guide가 유지되는지 확인한다.
+- [ ] 1280×720, 1600×900, 1920×1080에서 command bar 겹침·필수 버튼 잘림·음수 geometry가 없는지 확인한다.
+- [ ] Effect Library의 Source/Animation 영역은 필요한 높이를 유지하고 Resource Layer 목록에 5~8 Layer, Group, Parent badge, L/S, 긴 이름을 읽을 공간이 우선 배분되는지 확인한다.
+- [ ] Resource Inspector에서 정보/metadata와 Add as Effect Layer CTA가 분리되고, Effect Inspector의 section/row spacing과 짧은 설명 tooltip이 자연스러운지 확인한다.
+- [ ] Windows 100%/125%/150% DPI에서 separator, glyph button, Reveal combo, Snap toggle, Timeline inactive area와 양쪽 Inspector scroll을 반복 확인한다.
+- [ ] 실제 Windows GUI 수동 QA는 사용자가 수행하며 Codex는 offscreen geometry/QTest 결과만 보고한다.
+
 ## v0.0.14 Alt-drag Multi-Key Duplicate
 
 - Resource와 Effect Timeline에서 단일 Key 및 여러 Track/Layer의 선택 Key를 `Alt+Drag`하여 원본은 유지되고 복제본만 생성되는지 확인한다.
@@ -832,3 +844,15 @@ These are real Windows GUI checks and are not claimed by offscreen automation.
 - [ ] 이름이 같은 두 Effect Layer를 만들고 한쪽만 편집한 뒤 선택을 바꿔 Undo하여 stable ID 대상만 복원되는지 확인한다.
 - [ ] Resource Canvas의 Move/Rotate X/Y/Z/Scale/Pivot를 single/multi selection에서 드래그하고 gesture당 Undo 하나, no-op은 0개인지 확인한다.
 - [ ] Resource/Effect Timeline에서 Move, multi-move, Delete, easing, nudge, Paste, Alt Duplicate와 snapped 변형을 실행해 action당 Undo 하나와 exact Redo를 확인한다.
+
+## v0.0.15 Resource Layer Panel Clarity
+
+These are real Windows GUI checks and are not claimed by offscreen automation.
+
+- [ ] 한국어/English에서 상단 `＋ Layer/레이어`, `Duplicate/복제`, `Delete/삭제`와 하단 `Create Group/그룹 만들기`, `Ungroup/그룹 해제`, `Lock/잠금`, `Solo/솔로`, `Order/순서`가 축약 없이 보이는지 확인한다.
+- [ ] Order 메뉴에 기존 Bring Forward/앞으로, Send Back/뒤로만 있고 방향 화살표 단독 버튼이나 새 Front/Back command가 생기지 않았는지 확인한다.
+- [ ] 선택 없음, Leaf 하나, Leaf 2개, Group 하나, locked/inherited-locked 선택에서 toolbar와 context menu의 enable/disable 상태 및 이유 tooltip이 일치하는지 확인한다.
+- [ ] Lock/Solo의 OFF/ON selected appearance, 키보드 focus outline, Tab 순서와 스크린리더 이름·설명이 상태를 명확히 전달하는지 확인한다.
+- [ ] 5~8 Layer와 1~2 Group에서 목록이 주 공간을 유지하고 긴 Layer/Parent 이름의 elide, full tooltip, L/L*/S row marker 의미가 유지되는지 확인한다.
+- [ ] 1280×720, 1600×900, 1920×1080 및 Windows 100%/125%/150% DPI에서 버튼 잘림·겹침이 없고 목록 높이가 충분한지 확인한다.
+- [ ] Duplicate/Delete/Group/Ungroup/Lock/Solo/Order를 toolbar와 context menu 양쪽에서 실행하고 selection, Primary, collapse, parent, visibility, render order 및 Undo/Redo가 기존과 동일한지 확인한다.
