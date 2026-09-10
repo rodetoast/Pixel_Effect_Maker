@@ -5,10 +5,10 @@ import math
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget
 
-from app.services.resource_composition_render_service import composition_layer_transform,render_composition_frame
+from app.services.resource_composition_render_service import composition_layer_transform,render_editor_region
 from app.services.layer_space_transform_service import project_local_point,project_local_points,projected_layer_quad,projected_local_axes
 from app.services.layer_parenting_service import offset_matrix, resolve_world_affines, resource_local_affine
 
@@ -33,13 +33,15 @@ class CompositionCanvas(QWidget):
         self.project = self.composition = self.layer = None; self.frame = 0; self.mode = "move"; self.mode_text = "";self._parent_prefix=None;self.selected_layers=[];self.selection_pivot=None;self.multi_transform_enabled=False;self.transform_blocked=False;self._parent_prefixes={};self._multi_drag_value=None
         self.zoom = 8; self.pan = QPointF(); self._panning = False; self._drag = None; self._drag_axis = None; self._hover_handle=None; self._start_point = QPointF(); self._start_value = None; self._start_angle = 0.0;self._alpha_bounds_cache={}
         self.setMouseTracking(True)
+        self._preview_image=None;self._preview_key=None
 
     def set_context(self, project, composition, layer, frame, selected_layers=None, selection_pivot=None, multi_transform_enabled=False, transform_blocked=False):
+        self._preview_key=None
         if project is not self.project:self._alpha_bounds_cache.clear()
         self.project, self.composition, self.layer, self.frame = project, composition, layer, frame;self._parent_prefix=None;self.selected_layers=list(selected_layers or ([layer] if layer else []));self.selection_pivot=selection_pivot;self.multi_transform_enabled=bool(multi_transform_enabled);self.transform_blocked=bool(transform_blocked);self._parent_prefixes={}
-        if composition is not None and self.selected_layers:
+        if composition is not None:
             worlds=resolve_world_affines(composition.layers,frame,lambda item,value:resource_local_affine(item,value,composition))
-            for item in self.selected_layers:
+            for item in composition.layers:
                 local=resource_local_affine(item,frame,composition)
                 try:self._parent_prefixes[item.id]=worlds[item.id]@np.linalg.inv(local)
                 except np.linalg.LinAlgError:self._parent_prefixes[item.id]=None
@@ -151,9 +153,9 @@ class CompositionCanvas(QWidget):
         return {"uniform":polygon[2],"x":(polygon[1]+polygon[2])/2,"y":(polygon[0]+polygon[1])/2,"uniform0":polygon[0],"uniform1":polygon[1],"uniform3":polygon[3]}
 
     def _hit_layer(self, comp_point):
-        has_solo=any(layer.solo for layer in self.composition.layers)
+        has_solo=self.composition.preview_solo_active()
         for layer in reversed(self.composition.layers):
-            if layer.visible and (not has_solo or layer.solo) and layer.start_frame <= self.frame <= layer.end_frame and self.selection_polygon_comp(layer).containsPoint(comp_point, Qt.FillRule.OddEvenFill): return layer
+            if self.composition.effective_visible(layer) and (not has_solo or self.composition.preview_soloed(layer)) and layer.start_frame <= self.frame <= layer.end_frame and self.selection_polygon_comp(layer).containsPoint(comp_point, Qt.FillRule.OddEvenFill): return layer
         return None
 
     @staticmethod
@@ -162,14 +164,38 @@ class CompositionCanvas(QWidget):
     def wheelEvent(self, event):
         self.zoom=max(1,min(32,self.zoom+(1 if event.angleDelta().y()>0 else -1))); self.update(); event.accept()
 
+    def output_frame_rect(self):
+        origin=self.origin()
+        return QRectF(origin.x(),origin.y(),self.composition.width*self.zoom,self.composition.height*self.zoom)
+
+    def editor_region(self):
+        origin=self.origin()
+        left=math.floor(-origin.x()/self.zoom);top=math.floor(-origin.y()/self.zoom)
+        return left,top,math.ceil((self.width()-origin.x())/self.zoom)-left,math.ceil((self.height()-origin.y())/self.zoom)-top
+
+    def preview_image(self):
+        region=self.editor_region()
+        key=(region,self.frame,self.composition.revision)
+        if self._preview_key!=key:
+            pixels=np.ascontiguousarray(render_editor_region(self.project,self.composition,self.frame,region))
+            self._preview_image=QImage(pixels.data,region[2],region[3],pixels.strides[0],QImage.Format.Format_RGBA8888).copy()
+            self._preview_key=key
+        return self._preview_image,region
+
     def paintEvent(self, event):
         painter=QPainter(self); painter.fillRect(self.rect(),QColor("#20242b"))
         if self.composition is None: return
-        pixels=np.ascontiguousarray(render_composition_frame(self.project,self.composition,self.frame,preview=True)); origin=self.origin(); rect=QRectF(origin.x(),origin.y(),self.composition.width*self.zoom,self.composition.height*self.zoom)
+        image,region=self.preview_image();origin=self.origin();rect=self.output_frame_rect()
         tile=max(4,self.zoom*4)
-        for y in range(int(rect.top()),int(rect.bottom())+1,tile):
-            for x in range(int(rect.left()),int(rect.right())+1,tile): painter.fillRect(x,y,tile,tile,QColor("#dfe3e8") if ((x-int(rect.left()))//tile+(y-int(rect.top()))//tile)%2 else QColor("#aeb4bc"))
-        image=QImage(pixels.data,self.composition.width,self.composition.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy(); painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False); painter.drawPixmap(rect,QPixmap.fromImage(image),QRectF(0,0,self.composition.width,self.composition.height)); painter.setPen(QPen(QColor("#6ea8fe"),1)); painter.drawRect(rect)
+        painter.save();painter.setClipRect(rect)
+        for y in range(max(0,int(rect.top())),min(self.height(),int(rect.bottom())+1),tile):
+            for x in range(max(0,int(rect.left())),min(self.width(),int(rect.right())+1),tile): painter.fillRect(x,y,tile,tile,QColor("#dfe3e8") if ((x-int(rect.left()))//tile+(y-int(rect.top()))//tile)%2 else QColor("#aeb4bc"))
+        painter.restore();painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False)
+        target=QRectF(origin.x()+region[0]*self.zoom,origin.y()+region[1]*self.zoom,region[2]*self.zoom,region[3]*self.zoom)
+        painter.drawImage(target,image)
+        outside=QPainterPath();outside.addRect(QRectF(self.rect()));inside=QPainterPath();inside.addRect(rect)
+        shade=self.palette().color(QPalette.ColorRole.Shadow);shade.setAlpha(75);painter.fillPath(outside.subtracted(inside),shade)
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Text),2));painter.drawRect(rect)
         if self.layer is None: return
         for selected in self.selected_layers:
             polygon=self._polygon_widget(selected);painter.setPen(QPen(QColor("#74c0fc") if selected is not self.layer else QColor("#51cf66"),2));painter.drawPolygon(polygon)

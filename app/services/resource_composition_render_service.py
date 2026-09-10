@@ -1,6 +1,7 @@
 """Deterministic nearest-neighbor Resource Composition renderer."""
 from __future__ import annotations
 from collections import OrderedDict
+import math
 import numpy as np
 from app.models.animation_clip import AnimationClipAsset
 from app.models.effect_resource_layer import EffectLayerTransform3D
@@ -8,8 +9,8 @@ from app.models.frame import empty_pixels
 from app.models.project import Project
 from app.models.resource_composition import ResourceComposition,CompositionLayer
 from app.models.source_asset import SourceAsset
-from app.services.effect_render_service import _source_over,render_transformed_source
-from app.services.layer_space_transform_service import transform_layer_space_rgba_frame
+from app.services.effect_render_service import _source_over,render_transformed_source,_homography_from_unit_square,_render_affine_source
+from app.services.layer_space_transform_service import projected_layer_quad
 from app.services.layer_parenting_service import resource_local_affine,resolve_world_affines,local_only_transform
 from app.models.layer_parenting import parent_offset_is_identity
 
@@ -64,8 +65,20 @@ def _has_sprite_2_5d(layer:CompositionLayer,frame:int)->bool:
     return any(abs(float(layer.value(name,frame)))>1e-9 for name in ("rotation_x","rotation_y","position_z","perspective_strength"))
 
 def render_composition_frame(project:Project,composition:ResourceComposition,frame:int,preview:bool=False)->np.ndarray:
+    """Final output always clips after transformation to current Composition bounds."""
+    return _render_region(project,composition,frame,preview,(0,0,composition.width,composition.height))
+
+def render_editor_region(project,composition,frame,region):
+    """Editor-only visible composition-space region; never used by export/cache."""
+    x,y,width,height=map(int,region)
+    if width<1 or height<1 or width*height>16_777_216:
+        raise ValueError("editor region exceeds viewport allocation budget")
+    return _render_region(project,composition,frame,True,(x,y,width,height))
+
+def _render_region(project,composition,frame,preview,region):
     if not 0<=frame<composition.frame_count:raise ValueError("composition frame out of range")
-    output=empty_pixels(composition.width,composition.height)
+    left,top,width,height=region
+    output=empty_pixels(width,height)
     has_solo=preview and composition.preview_solo_active()
     world_affines=resolve_world_affines(composition.layers,frame,lambda layer,value:resource_local_affine(layer,value,composition))
     for layer in composition.layers:
@@ -78,14 +91,53 @@ def render_composition_frame(project:Project,composition:ResourceComposition,fra
         parented=layer.parent_id is not None or not parent_offset_is_identity(layer.parent_offset)
         if not parented and not _has_sprite_2_5d(layer,frame):
             # Preserve the exact legacy 2D raster path and canonical `rotation` result.
-            render_transformed_source(output,asset,position_x=composition.width/2+float(position[0]),position_y=composition.height/2+float(position[1]),rotation=rotation,scale_x=float(scale[0]),scale_y=float(scale[1]),horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=max(0,min(1,opacity)))
+            if (left or top) and (abs(math.remainder(rotation,360))>1e-9 or abs(scale[0]-1)>1e-9 or abs(scale[1]-1)>1e-9):
+                _render_affine_source(output,asset,composition.width/2+float(position[0]),composition.height/2+float(position[1]),rotation,float(scale[0]),float(scale[1]),max(0,min(1,opacity)),canvas_origin=(left,top))
+                continue
+            render_transformed_source(output,asset,position_x=composition.width/2+float(position[0])-left,position_y=composition.height/2+float(position[1])-top,rotation=rotation,scale_x=float(scale[0]),scale_y=float(scale[1]),horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=max(0,min(1,opacity)))
         else:
-            local=empty_pixels(composition.width,composition.height)
-            render_transformed_source(local,asset,position_x=composition.width/2,position_y=composition.height/2,rotation=0,scale_x=1,scale_y=1,horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=1)
             transform=composition_layer_transform(layer,frame)
-            transformed=transform_layer_space_rgba_frame(local,local_only_transform(transform,frame) if parented else transform,local_z_spin=True,post_affine=world_affines[layer.id] if parented else None)
-            _source_over(output,transformed)
+            _draw_projected_source(output,asset,composition,local_only_transform(transform,frame) if parented else transform,world_affines[layer.id] if parented else None,left,top)
     return output
+
+def _draw_projected_source(output,asset,composition,transform,post_affine,left,top):
+    """Project source cells directly: no pre-transform Composition-sized crop.
+
+    Intersect the destination before allocating sampling grids, so distant or
+    enormous transformed bounds cost no more than the visible render target.
+    """
+    if transform.opacity<=0:return
+    cx=composition.width/2-asset.pivot_x;cy=composition.height/2-asset.pivot_y
+    source=asset.pixels
+    # Retain the established pixel lattice for fractional source pivots without
+    # clipping it to output dimensions before the world transform.
+    if abs(cx-round(cx))>1e-9 or abs(cy-round(cy))>1e-9:
+        lx=math.floor(cx);ly=math.floor(cy)
+        local=empty_pixels(asset.width+2,asset.height+2)
+        render_transformed_source(local,asset,position_x=composition.width/2-lx,position_y=composition.height/2-ly,rotation=0,scale_x=1,scale_y=1,horizontal_tilt=0,vertical_tilt=0,perspective=0,opacity=1)
+        source=local;cx=lx;cy=ly
+    ys,xs=np.nonzero(source[...,3])
+    if not len(xs):return
+    xlo,xhi=int(xs.min()),int(xs.max())+1;ylo,yhi=int(ys.min()),int(ys.max())+1
+    source=source[ylo:yhi,xlo:xhi]
+    quad,valid=projected_layer_quad((cx+xlo,cy+ylo,cx+xhi,cy+yhi),transform,composition.width,composition.height,local_z_spin=True,post_affine=post_affine)
+    if not valid.all():return
+    height,width=output.shape[:2]
+    x0=max(0,math.floor(quad[:,0].min())-left);x1=min(width,math.ceil(quad[:,0].max())-left)
+    y0=max(0,math.floor(quad[:,1].min())-top);y1=min(height,math.ceil(quad[:,1].max())-top)
+    if x1<=x0 or y1<=y0:return
+    try:inverse=np.linalg.inv(_homography_from_unit_square(quad))
+    except np.linalg.LinAlgError:return
+    gx,gy=np.meshgrid(np.arange(x0,x1)+left+.5,np.arange(y0,y1)+top+.5)
+    mapped=np.stack((gx,gy,np.ones_like(gx)),axis=-1)@inverse.T
+    denominator=mapped[...,2];safe=np.where(np.abs(denominator)>1e-10,denominator,1)
+    u=mapped[...,0]/safe;v=mapped[...,1]/safe
+    inside=(np.abs(denominator)>1e-10)&(u>=0)&(u<1)&(v>=0)&(v<1)
+    sx=np.floor(np.where(inside,u,0)*source.shape[1]).astype(int)
+    sy=np.floor(np.where(inside,v,0)*source.shape[0]).astype(int)
+    sampled=source[sy,sx].copy();sampled[~inside]=0
+    if transform.opacity<1:sampled[...,3]=np.rint(sampled[...,3]*transform.opacity).astype(np.uint8)
+    _source_over(output[y0:y1,x0:x1],sampled)
 def render_composition_frames(project,composition,use_cache=True):
     global _CACHE_BYTES
     key=(composition.id,composition.revision,composition.width,composition.height,composition.fps,composition.frame_count,id(project))

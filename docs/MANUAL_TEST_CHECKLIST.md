@@ -756,6 +756,22 @@
 - [ ] Group 생성 전후, Group 해제 전후의 대표 PNG, PNG Sequence와 Bake 결과를 픽셀 비교한다.
 # Project-wide stabilization manual pass
 
+## Resource Composition Clip / Overscan — pending Windows GUI approval
+
+Actual Windows GUI manual QA: not performed.
+
+- [ ] Right edge: move half a sprite outside the frame; entire sprite remains visible, outside pixels dimmed, export strictly clipped.
+- [ ] Repeat at left, top and bottom edges, including negative coordinates.
+- [ ] Rotate 45°, 90°, -45°, 720° and 1080°; inspect border and corner visibility.
+- [ ] Scale 2×, 0.5× and non-uniformly, then move the Layer Pivot and rotate/scale again.
+- [ ] Tilt X/Y, change Z/perspective and repeat with a source larger than the Composition.
+- [ ] Parent position/rotation/scale and Parent+Child multi-selection: inspect world-space pixels and gizmos outside output.
+- [ ] Click overscan pixels to select; drag Move/Rotate/Scale/Pivot handles outside output. Verify hidden/soloed groups and inactive frames.
+- [ ] Move A outside, select B, Undo/Redo: only A changes and pixels refresh immediately.
+- [ ] Zoom, pan and Fit: neutral frame matches true output; checkerboard remains inside output; outside dimming does not hide sprites.
+- [ ] Compare Resource export and Add-to-Effect Single/Particle: dimensions unchanged and overscan pixels absent.
+- [ ] Recheck Command Bar groups, compact Resource Layer commands, Lock/Solo labels, Order menu, Fit labels and inactive Timeline area.
+
 These are real Windows GUI checks and are not claimed by offscreen automation.
 
 ## v0.0.08 Parenting

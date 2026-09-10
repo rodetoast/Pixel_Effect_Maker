@@ -2,6 +2,9 @@
 
 ## v0.0.15 - 2026-08-25
 
+- Added viewport-bounded, cached Resource Editor overscan with a neutral output frame and dimmed outside work area; export and Effect resources still use strict Composition dimensions.
+- Removed pre-transform Composition-sized clipping from the Resource 2.5D/parented raster path, preserving source alpha bounds and fractional-pivot sampling before final destination clipping.
+- Aligned overscan hit testing with Group visibility/Solo and world transforms; preserved stable-ID Undo and all existing transform editing operations.
 - Rebuilt the Effect Resource Layer panel around compact Create/Edit, Hierarchy, and State/Order toolbars so the Layer list receives the remaining vertical space.
 - Replaced cryptic full-width L/S and arrow order controls with localized Lock, Solo, and an Order menu containing Bring Forward/Send Back; preserved existing callbacks, selection, model, and Undo semantics.
 - Added stable disabled controls with reason tooltips, shared toolbar/context-menu availability, explicit toggle/accessibility metadata, and responsive 1280/1600/1920 geometry coverage.
