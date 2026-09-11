@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.17 - 2026-09-11
+
+- Added persistent RGB-only Particle Color over Lifetime with Start Color, End Color, and four easing modes evaluated from each particle's own birth to last visible frame.
+- Reused the v0.0.16 lifetime normalization/easing contract while keeping Scale and Color channels independent and deterministic across Linear, Orbit, and Helix motion.
+- Applied lifetime color as a component-wise multiplier to encoded 8-bit source RGB before the existing opacity/source-over path; straight alpha, Particle Alpha easing, Layer opacity, transparent coverage, and seed draws remain unchanged.
+- Added localized Over Lifetime swatch controls using the standard Qt RGB picker. Disabled values are preserved, dialog cancel and same-color selection are no-ops, and each accepted user action is one Undo command.
+- Advanced project saves to format v14; format v13 and older supported projects load Color over Lifetime disabled with white identity colors without rewriting source files.
+- Added evaluator, schema, UI integrity, Undo, Alpha isolation, Scale coexistence, motion/seed isolation, preview/export parity, representative effect, clipping, and performance coverage.
+
 ## v0.0.16 - 2026-09-10
 
 - Fixed Particle Alpha easing loss: Inspector load, refresh, selection changes, and Undo/Redo now preserve Linear, Ease In, Ease Out, and Ease In/Out exactly without creating edits.

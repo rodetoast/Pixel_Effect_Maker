@@ -113,7 +113,14 @@ def _source_over(destination: np.ndarray, source: np.ndarray) -> None:
     destination[:] = np.clip(np.rint(output * 255.0), 0, 255).astype(np.uint8)
 
 
-def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x: float,top_left_y: float,opacity: float) -> None:
+def _apply_rgb_tint(pixels: np.ndarray, tint_r: float, tint_g: float, tint_b: float) -> None:
+    """Multiply encoded RGB channels in place while leaving straight alpha exact."""
+    for channel, factor in enumerate((tint_r, tint_g, tint_b)):
+        if abs(factor - 1.0) > 1e-12:
+            pixels[..., channel] = np.clip(np.rint(pixels[..., channel].astype(np.float64) * factor), 0, 255).astype(np.uint8)
+
+
+def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x: float,top_left_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0) -> None:
     """Sample an unrotated unit-scale sprite without projective setup."""
     height,width=canvas.shape[:2]
     left=max(0,int(math.floor(top_left_x)));right=min(width-1,int(math.ceil(top_left_x+asset.width)))
@@ -126,11 +133,12 @@ def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x:
     source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
     sampled=asset.pixels[source_y[:,None],source_x[None,:]].copy()
     sampled[~(valid_y[:,None]&valid_x[None,:])]=0
+    _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
     _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["translation_blits"]+=1
 
 
-def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,opacity: float, *, canvas_origin=(0,0)) -> None:
+def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0, *, canvas_origin=(0,0)) -> None:
     """Sample the 2D rotate/scale path with an analytic affine inverse."""
     destination=_destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,0.0,0.0,0.0)
     origin=destination[0];axis_u=destination[1]-origin;axis_v=destination[3]-origin
@@ -144,11 +152,12 @@ def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: floa
     valid=(u>=0.0)&(u<=1.0)&(v>=0.0)&(v<=1.0)
     source_x=np.clip(np.rint(u*(asset.width-1)),0,asset.width-1).astype(int);source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
     sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
+    _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
     _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["affine_blits"]+=1
 
 
-def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,horizontal_tilt: float,vertical_tilt: float,perspective: float,opacity: float) -> None:
+def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,horizontal_tilt: float,vertical_tilt: float,perspective: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0) -> None:
     """Retain the general projective nearest sampler as the exact fallback/reference."""
     destination = _destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective)
     try:inverse = np.linalg.inv(_homography_from_unit_square(destination))
@@ -161,6 +170,7 @@ def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: 
     valid=valid_denominator&(u>=0.0)&(u<=1.0)&(v>=0.0)&(v<=1.0)
     source_x=np.clip(np.rint(u*(asset.width-1)),0,asset.width-1).astype(int);source_y=np.clip(np.rint(v*(asset.height-1)),0,asset.height-1).astype(int)
     sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
+    _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
     _source_over(canvas[top:bottom+1,left:right+1],sampled)
 
@@ -178,6 +188,9 @@ def render_transformed_source(
     vertical_tilt: float,
     perspective: float,
     opacity: float,
+    tint_r: float = 1.0,
+    tint_g: float = 1.0,
+    tint_b: float = 1.0,
 ) -> None:
     """Warp one source into an RGBA canvas using inverse nearest sampling."""
     if abs(scale_x) < 1e-6 or abs(scale_y) < 1e-6 or opacity <= 0.0:
@@ -191,7 +204,8 @@ def render_transformed_source(
     top_left_x=position_x-asset.pivot_x;top_left_y=position_y-asset.pivot_y
     identity_rotation=abs(math.remainder(float(rotation),360.0))<=1e-9
     integer_aligned=abs(top_left_x-round(top_left_x))<=1e-9 and abs(top_left_y-round(top_left_y))<=1e-9
-    if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9 and abs(opacity-1.0)<=1e-9 and integer_aligned:
+    identity_tint=abs(tint_r-1.0)<=1e-12 and abs(tint_g-1.0)<=1e-12 and abs(tint_b-1.0)<=1e-12
+    if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9 and abs(opacity-1.0)<=1e-9 and identity_tint and integer_aligned:
         left=int(round(top_left_x));top=int(round(top_left_y));right=left+asset.width;bottom=top+asset.height
         canvas_left=max(0,left);canvas_top=max(0,top);canvas_right=min(canvas.shape[1],right);canvas_bottom=min(canvas.shape[0],bottom)
         if canvas_left>=canvas_right or canvas_top>=canvas_bottom:
@@ -203,10 +217,10 @@ def render_transformed_source(
         EFFECT_RASTER_STATS["identity_blits"]+=1
         return
     if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
-        _render_translation_source(canvas,asset,top_left_x,top_left_y,opacity);return
+        _render_translation_source(canvas,asset,top_left_x,top_left_y,opacity,tint_r,tint_g,tint_b);return
     if abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
-        _render_affine_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,opacity);return
-    _render_projective_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective,opacity)
+        _render_affine_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,opacity,tint_r,tint_g,tint_b);return
+    _render_projective_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective,opacity,tint_r,tint_g,tint_b)
 
 
 def render_generator_frames(

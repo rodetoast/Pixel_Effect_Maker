@@ -7,18 +7,18 @@ from app.version import get_display_name
 
 
 def test_application_version() -> None:
-    assert __version__ == "0.0.16"
+    assert __version__ == "0.0.17"
 
 
 def test_display_name() -> None:
-    assert get_display_name() == "Pixel Effect Maker v0.0.16"
+    assert get_display_name() == "Pixel Effect Maker v0.0.17"
 
 
-def test_project_format_version_is_thirteen_for_lifetime_modulation() -> None:
-    assert FORMAT_VERSION == 13
-    assert Project.create_default().to_dict()["format_version"] == 13
+def test_project_format_version_is_fourteen_for_color_lifetime_modulation() -> None:
+    assert FORMAT_VERSION == 14
+    assert Project.create_default().to_dict()["format_version"] == 14
 
 
 def test_version_cli_does_not_start_gui(capsys) -> None:
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out == "Pixel Effect Maker v0.0.16\n"
+    assert capsys.readouterr().out == "Pixel Effect Maker v0.0.17\n"

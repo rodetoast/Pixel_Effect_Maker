@@ -1,4 +1,19 @@
-# Pixel Effect Maker v0.0.16 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.17 수동 테스트 체크리스트
+
+## v0.0.17 Particle Color over Lifetime
+
+- [ ] Start Yellow, End Red, Linear로 설정하고 각 Particle이 자신의 birth 시점부터 색이 변하는지 확인한다.
+- [ ] 지속 emission에서 같은 Effect frame에 보이는 Particle들이 서로 다른 lifetime 색 진행률을 갖는지 확인한다.
+- [ ] Scale 0→1과 Color White→Orange를 함께 켜 두 채널이 서로 초기화하거나 덮어쓰지 않는지 확인한다.
+- [ ] Particle opacity를 0.4로 고정하고 Color Lifetime 재생 중 투명도가 임의로 변하지 않는지 확인한다.
+- [ ] Linear, Ease In, Ease Out, Ease In/Out의 RGB 변화 속도 차이를 확인한다.
+- [ ] sentinel RGB/Easing을 설정하고 다른 Layer 선택 후 돌아왔을 때 exact하게 유지되는지 확인한다.
+- [ ] Color picker를 취소하거나 같은 색을 선택했을 때 Dirty/Undo가 생기지 않는지 확인한다.
+- [ ] Enable, Start Color, End Color, Easing 각각이 Undo/Redo 한 단계인지 확인한다.
+- [ ] Save/Reload 후 enabled/start/end/easing이 exact하고 Alpha Easing도 유지되는지 확인한다.
+- [ ] Linear, Orbit, Helix에서 trajectory는 같고 RGB만 lifetime에 따라 바뀌는지 확인한다.
+- [ ] Resource Editor Overscan outside artwork 표시와 최종 Effect Export strict clipping이 구분되는지 확인한다.
+- [ ] 이 목록은 Windows native GUI 수동 QA용이며 Codex는 실제 Windows native GUI 수동 QA를 수행하지 않았다.
 
 ## v0.0.16 Alpha Easing / Scale over Lifetime
 

@@ -11,6 +11,8 @@ from .resource_composition import AnimationTrack, EASINGS
 
 
 LIFETIME_SCALE_MAX = 16.0
+RGB_MIN = 0
+RGB_MAX = 255
 
 
 @dataclass
@@ -53,6 +55,51 @@ class LifetimeScalarModulation:
             end=float(data.get("end", 1.0)),
             easing=str(data.get("easing", "Linear")),
         )
+        value.validate()
+        return value
+
+
+@dataclass
+class LifetimeColorModulation:
+    """Two-point RGB-only tint modulation over one particle lifetime."""
+
+    enabled: bool = False
+    start_rgb: tuple[int, int, int] = (255, 255, 255)
+    end_rgb: tuple[int, int, int] = (255, 255, 255)
+    easing: str = "Linear"
+
+    def validate(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError("lifetime color enabled must be a boolean")
+        for name, color in (("start", self.start_rgb), ("end", self.end_rgb)):
+            if not isinstance(color, (tuple, list)) or len(color) != 3:
+                raise ValueError(f"lifetime color {name} must contain exactly three RGB channels")
+            if any(isinstance(channel, bool) or not isinstance(channel, int) or not RGB_MIN <= channel <= RGB_MAX for channel in color):
+                raise ValueError(f"lifetime color {name} channels must be integers from {RGB_MIN} to {RGB_MAX}")
+        if self.easing not in EASINGS:
+            raise ValueError("unsupported lifetime color easing")
+
+    def to_dict(self) -> dict[str, Any]:
+        self.validate()
+        return {
+            "enabled": self.enabled,
+            "start_rgb": list(self.start_rgb),
+            "end_rgb": list(self.end_rgb),
+            "easing": self.easing,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "LifetimeColorModulation":
+        if data is None:
+            return cls()
+        if not isinstance(data, dict):
+            raise ValueError("lifetime color modulation must be an object")
+        enabled = data.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("lifetime color enabled must be a boolean")
+        start = data.get("start_rgb", (255, 255, 255))
+        end = data.get("end_rgb", (255, 255, 255))
+        value = cls(enabled, tuple(start) if isinstance(start, (tuple, list)) else start, tuple(end) if isinstance(end, (tuple, list)) else end, str(data.get("easing", "Linear")))
         value.validate()
         return value
 
@@ -223,6 +270,7 @@ class ParticleEmitterSettings:
     easing: str = "Linear"
     seed: int = 0
     scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
+    color_over_lifetime: LifetimeColorModulation = field(default_factory=LifetimeColorModulation)
     motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
 
     def __post_init__(self) -> None:
@@ -252,11 +300,12 @@ class ParticleEmitterSettings:
         if not (0 <= self.opacity_start <= 1 and 0 <= self.opacity_end <= 1): raise ValueError("opacity must be 0..1")
         if self.easing not in EASINGS: raise ValueError("unsupported particle alpha easing")
         self.scale_over_lifetime.validate()
+        self.color_over_lifetime.validate()
         self.motion.validate()
 
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()
-        value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
+        value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["color_over_lifetime"]=self.color_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
 
     @property
     def resource_id(self) -> str:
@@ -268,6 +317,7 @@ class ParticleEmitterSettings:
         if "resource_id" in values and "clip_asset_id" not in values:
             values["clip_asset_id"] = values.pop("resource_id")
         values["scale_over_lifetime"] = LifetimeScalarModulation.from_dict(values.get("scale_over_lifetime"))
+        values["color_over_lifetime"] = LifetimeColorModulation.from_dict(values.get("color_over_lifetime"))
         values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
         value = cls(**values); value.validate(); return value
 

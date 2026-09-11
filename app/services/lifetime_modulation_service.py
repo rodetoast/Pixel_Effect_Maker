@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.models.particle_emitter import LifetimeScalarModulation
+from app.models.particle_emitter import LifetimeColorModulation, LifetimeScalarModulation
 from app.services.emitter_service import ease
 
 
@@ -25,5 +25,24 @@ def evaluate_lifetime_scalar(
     """Evaluate one scalar channel without mutation or per-frame allocation."""
     if not modulation.enabled:
         return disabled_value
-    amount = ease(max(0.0, min(1.0, float(normalized_age))), modulation.easing)
+    amount = eased_lifetime_amount(normalized_age, modulation.easing)
     return modulation.start + (modulation.end - modulation.start) * amount
+
+
+def eased_lifetime_amount(normalized_age: float, easing: str) -> float:
+    """Apply the shared lifetime clamp and easing contract."""
+    return ease(max(0.0, min(1.0, float(normalized_age))), easing)
+
+
+def evaluate_lifetime_color_component(
+    modulation: LifetimeColorModulation,
+    normalized_age: float,
+    channel: int,
+    *,
+    eased_amount: float | None = None,
+) -> float:
+    """Return one RGB tint factor in 0..1 without creating a color object."""
+    if not modulation.enabled:
+        return 1.0
+    amount = eased_lifetime_amount(normalized_age, modulation.easing) if eased_amount is None else eased_amount
+    return (modulation.start_rgb[channel] + (modulation.end_rgb[channel] - modulation.start_rgb[channel]) * amount) / 255.0

@@ -129,10 +129,10 @@ def test_format12_defaults_disabled_and_old_render_is_preserved():
 
 
 @pytest.mark.parametrize("easing",["Linear","Ease In","Ease Out","Ease In/Out"])
-def test_format13_round_trip_is_exact(tmp_path,easing):
+def test_current_format_round_trip_is_exact(tmp_path,easing):
     project,layer=_project(modulation=_channel(True,.25,2,easing));path=save_project(project,tmp_path/"lifetime")
     loaded=load_project(path);value=loaded.effect_resource_layers[0].particle_settings.scale_over_lifetime
-    assert FORMAT_VERSION==13 and loaded.format_version==13 and value==_channel(True,.25,2,easing)
+    assert FORMAT_VERSION==14 and loaded.format_version==14 and value==_channel(True,.25,2,easing)
 
 
 def test_preview_current_full_materialized_and_export_match(tmp_path):

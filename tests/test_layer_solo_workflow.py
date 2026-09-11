@@ -41,7 +41,7 @@ def test_effect_solo_preview_does_not_change_final_composition_or_exact_export_p
 def test_v9_defaults_and_v10_round_trip_preserve_resource_and_effect_solo():
     project=Project.create_default(width=2,height=2,frame_count=1);asset=SourceAsset("A",_rgba((1,2,3)));composition=ResourceComposition("C",2,2,12,1,layers=[CompositionLayer("A","source_asset",asset.id,0,0,locked=True,solo=True)]);project.source_assets=[asset];project.resource_compositions=[composition]
     effect=EffectResourceLayer("E",composition.id,generated_layer_id=project.layers[0].id,locked=True,solo=True);project.effect_resource_layers=[effect]
-    data=project.to_dict();assert data["format_version"]==FORMAT_VERSION==13
+    data=project.to_dict();assert data["format_version"]==FORMAT_VERSION==14
     loaded=Project.from_dict(deepcopy(data));assert loaded.resource_compositions[0].layers[0].locked and loaded.resource_compositions[0].layers[0].solo and loaded.effect_resource_layers[0].locked and loaded.effect_resource_layers[0].solo
     legacy=deepcopy(data);legacy["format_version"]=9
     for value in (legacy["resource_compositions"][0]["layers"][0],legacy["effect_resource_layers"][0]):value.pop("locked");value.pop("solo")

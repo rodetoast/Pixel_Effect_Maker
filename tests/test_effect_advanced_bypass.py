@@ -40,7 +40,7 @@ def test_advanced_off_bypasses_system_and_surface_and_on_restores_exact():
 def test_advanced_off_preserves_tracks_and_legacy_defaults_enabled():
     project,_,layer=_project();layer.layer_transform.set_keyframe("rotation_z",0,0);layer.layer_transform.set_keyframe("rotation_z",2,720);layer.surface_transform.set_keyframe("opacity",1,.5);layer.advanced_transform_enabled=False;data=project.to_dict();data["effect_resource_layers"]=[layer.to_dict()];loaded=Project.from_dict(data).effect_resource_layers[0]
     assert not loaded.advanced_transform_enabled and loaded.layer_transform.tracks["rotation_z"].keyframe_at(2).value==720 and loaded.surface_transform.tracks["opacity"].keyframe_at(1).value==.5
-    legacy=layer.to_dict();legacy.pop("advanced_transform_enabled");assert EffectResourceLayer.from_dict(legacy).advanced_transform_enabled and FORMAT_VERSION==13
+    legacy=layer.to_dict();legacy.pop("advanced_transform_enabled");assert EffectResourceLayer.from_dict(legacy).advanced_transform_enabled and FORMAT_VERSION==14
 
 
 def test_advanced_state_is_independent_and_particle_motion_remains_enabled():

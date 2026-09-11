@@ -127,7 +127,7 @@ def test_advanced_checkbox_emits_only_enable_state(tmp_path):
     panel.transform_panel.surface_transform_changed.connect(lambda *args: events.append("surface"))
     panel.transform_panel.advanced_enabled_changed.connect(lambda _,state:enabled.append(state))
     panel.transform_panel.set_advanced_expanded(False); APP.processEvents()
-    assert events == [] and enabled==[False] and project.to_dict() == before and FORMAT_VERSION == 13
+    assert events == [] and enabled==[False] and project.to_dict() == before and FORMAT_VERSION == 14
     panel.close()
 
 
