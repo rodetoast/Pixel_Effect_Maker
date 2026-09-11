@@ -2066,13 +2066,27 @@ class MainWindow(QMainWindow):
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
         if unified:
             if self._effect_layer_locked(unified):return
+            if settings==unified.particle_settings:return
             after=deepcopy(unified);after.particle_settings=deepcopy(settings)
             if settings.resource_type=="resource_composition":after.resource_composition_id=settings.resource_id;after.single_settings.resource_composition_id=settings.resource_id
-            self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"resource_layer_settings",unified,after,"Resource Layer Particle Settings",700));return
+            merge_id=self._particle_settings_merge_id(unified.particle_settings,settings)
+            self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"resource_layer_settings",unified,after,"Resource Layer Particle Settings",merge_id));return
         emitter=next((e for e in self.project.particle_emitters if e.id==emitter_id),None)
         if emitter:
             draft=self.particle_preview_manager.ensure_draft(emitter);before=draft.settings
-            self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"particle_settings",before,settings,"Particle Settings",700))
+            if settings==before:return
+            self.application_undo_stack.push(EditorValueCommand(self,emitter_id,"particle_settings",before,settings,"Particle Settings",self._particle_settings_merge_id(before,settings)))
+
+    @staticmethod
+    def _particle_settings_merge_id(before: ParticleEmitterSettings, after: ParticleEmitterSettings) -> int:
+        """Keep distinct lifetime commits separate while merging one control's repeats."""
+        left=before.to_dict();right=after.to_dict();left_lifetime=left.pop("scale_over_lifetime");right_lifetime=right.pop("scale_over_lifetime");left_easing=left.pop("easing");right_easing=right.pop("easing")
+        changed=[name for name in left_lifetime if left_lifetime[name]!=right_lifetime[name]]
+        if left==right and left_easing==right_easing and len(changed)==1:
+            return {"enabled":710,"start":711,"end":712,"easing":713}[changed[0]]
+        if left==right and left_lifetime==right_lifetime and left_easing!=right_easing:
+            return 714
+        return 700
 
     def _effect_guide_changed(self, identifier: str, settings, final: bool) -> None:
         if self._effect_guide_target_id is not None and self._effect_guide_target_id!=identifier:return

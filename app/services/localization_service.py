@@ -445,6 +445,29 @@ KO.update({
     "tooltip.resource.sprite_perspective":"리소스 Sprite 평면의 2.5D 원근감만 조절합니다. Particle 이동 경로에는 영향을 주지 않습니다.",
 })
 
+EN.update({
+    "particle.over_lifetime":"Over Lifetime","particle.alpha_easing":"Alpha Easing",
+    "particle.scale_lifetime_enabled":"Scale over Lifetime","particle.scale_lifetime_start":"Start Scale",
+    "particle.scale_lifetime_end":"End Scale","particle.scale_lifetime_easing":"Easing",
+    "tooltip.particle.over_lifetime":"Controls properties over each particle's own birth-to-death lifetime, independently of the Effect Timeline.",
+    "tooltip.particle.alpha_easing":"Controls the existing start-to-end opacity interpolation over each particle's lifetime.",
+    "tooltip.particle.scale_lifetime_enabled":"Changes each particle's scale multiplier from birth to death.",
+    "tooltip.particle.scale_lifetime_start":"Scale multiplier at particle birth.",
+    "tooltip.particle.scale_lifetime_end":"Scale multiplier on the particle's last visible frame.",
+    "tooltip.particle.scale_lifetime_easing":"Controls interpolation from the start multiplier to the end multiplier.",
+})
+KO.update({
+    "particle.over_lifetime":"수명에 따른 변화","particle.alpha_easing":"알파 이징",
+    "particle.scale_lifetime_enabled":"수명별 크기","particle.scale_lifetime_start":"시작 크기",
+    "particle.scale_lifetime_end":"끝 크기","particle.scale_lifetime_easing":"이징",
+    "tooltip.particle.over_lifetime":"Effect Timeline과 별개로 각 Particle이 생성되어 사라질 때까지의 수명에 따라 속성을 바꿉니다.",
+    "tooltip.particle.alpha_easing":"각 Particle 수명 동안 기존 시작·끝 불투명도를 보간하는 방식을 정합니다.",
+    "tooltip.particle.scale_lifetime_enabled":"각 Particle이 생성된 순간부터 사라질 때까지 크기 배율을 변화시킵니다.",
+    "tooltip.particle.scale_lifetime_start":"Particle이 생성될 때의 크기 배율입니다.",
+    "tooltip.particle.scale_lifetime_end":"Particle이 마지막으로 보이는 프레임의 크기 배율입니다.",
+    "tooltip.particle.scale_lifetime_easing":"시작 배율에서 끝 배율까지 변화하는 방식을 정합니다.",
+})
+
 KO.update({
     "resource_layer.add_compact":"＋ 레이어", "resource_layer.duplicate_compact":"복제", "resource_layer.remove_compact":"삭제",
     "resource_layer.lock_compact":"잠금", "resource_layer.solo_compact":"솔로", "resource_layer.order":"순서",

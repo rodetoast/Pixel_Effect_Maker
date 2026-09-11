@@ -18,6 +18,8 @@ def ease(value: float, easing: str) -> float:
         return value * value
     if easing == Easing.EASE_OUT.value:
         return 1.0 - (1.0 - value) * (1.0 - value)
+    if easing == "Ease In/Out":
+        return 2.0 * value * value if value < 0.5 else 1.0 - ((-2.0 * value + 2.0) ** 2) / 2.0
     return value
 
 

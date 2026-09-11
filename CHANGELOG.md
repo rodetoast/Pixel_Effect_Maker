@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.16 - 2026-09-10
+
+- Fixed Particle Alpha easing loss: Inspector load, refresh, selection changes, and Undo/Redo now preserve Linear, Ease In, Ease Out, and Ease In/Out exactly without creating edits.
+- Added the persistent `LifetimeScalarModulation` foundation and the first uniform Scale over Lifetime multiplier channel, evaluated independently for every particle from birth to its last visible frame.
+- Added localized Over Lifetime controls with preserved disabled values, immediate preview, stable one-command Undo per setting, and primary-layer-only multi-selection editing.
+- Preserved initial random scale, seed draw order, sprite playback, Linear/Orbit/Helix motion, Parenting, System/Surface transforms, rotation revolutions, Overscan preview, and strict final clipping.
+- Advanced project saves to format v13; format v12 and older supported projects load Scale over Lifetime disabled at 1.0→1.0 without rewriting source files.
+- Added evaluator, migration, serialization, UI integrity, Undo, deterministic runtime, transform isolation, preview/export parity, clipping, representative fixture, and performance coverage.
+
 ## v0.0.15 - 2026-08-25
 
 - Added viewport-bounded, cached Resource Editor overscan with a neutral output frame and dimmed outside work area; export and Effect resources still use strict Composition dimensions.

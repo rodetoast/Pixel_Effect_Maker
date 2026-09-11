@@ -22,6 +22,7 @@ from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.services.layer_space_transform_service import project_local_points
+from app.services.lifetime_modulation_service import evaluate_lifetime_scalar, normalized_lifetime_age
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -61,6 +62,7 @@ class ParticleFrameDiagnostic:
     local_x: float = 0.0
     local_y: float = 0.0
     local_z: float = 0.0
+    lifetime_scale: float = 1.0
 
 
 def _motion_ease(value: float, easing: str) -> float:
@@ -237,7 +239,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 
 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
-    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None)
+    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None)
     return repr(values),int(clip_length)
 
 
@@ -263,12 +265,14 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             if age < 0 or age >= instance.lifetime: continue
             pixels=particle_clip_frame(clip,instance,age,project.fps)
             if pixels is None: continue
-            amount = 1.0 if instance.lifetime <= 1 else ease(age / (instance.lifetime - 1), settings.easing)
+            lifetime_age = normalized_lifetime_age(age, instance.lifetime)
+            amount = ease(lifetime_age, settings.easing)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
             position=evaluate_particle_motion(settings,instance,normalized,frame_index,evaluated_motion=motion_value)
             local_x,local_y,motion_scale,visible=project_particle_billboard(position,motion_perspective,project.width,project.height)
             if not visible:continue
-            candidates.append((order,instance,pixels,amount,motion_scale,age,normalized,position))
+            lifetime_scale=evaluate_lifetime_scalar(settings.scale_over_lifetime,lifetime_age)
+            candidates.append((order,instance,pixels,amount,motion_scale,lifetime_scale,age,normalized,position))
             local_points.append((local_x,local_y,position.z))
     if candidates:
         projected_xy,depths,perspective_scales,valid_points=project_local_points(
@@ -279,11 +283,11 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             from app.services.layer_parenting_service import affine_axis_scales
             inherited_scale_x,inherited_scale_y=affine_axis_scales(layer_space_affine)
         else:inherited_scale_x,inherited_scale_y=abs(layer_value.scale_x),abs(layer_value.scale_y)
-    for index,(order,instance,pixels,amount,motion_scale,age,normalized,position) in enumerate(candidates):
+    for index,(order,instance,pixels,amount,motion_scale,lifetime_scale,age,normalized,position) in enumerate(candidates):
             if not valid_points[index]:continue
             x,y=map(float,projected_xy[index]);view_z=float(depths[index]);perspective_scale=float(perspective_scales[index])
-            scale_x=instance.scale*motion_scale*perspective_scale*inherited_scale_x
-            scale_y=instance.scale*motion_scale*perspective_scale*inherited_scale_y
+            scale_x=instance.scale*lifetime_scale*motion_scale*perspective_scale*inherited_scale_x
+            scale_y=instance.scale*lifetime_scale*motion_scale*perspective_scale*inherited_scale_y
             if diagnostic_collector is not None:
                 source_frame=particle_clip_frame_index(clip,instance,age,project.fps)
                 diagnostic_collector.append(ParticleFrameDiagnostic(
@@ -291,7 +295,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
                     x,y,view_z,instance.rotation+instance.angular_velocity*age,
                     (scale_x+scale_y)*0.5,
                     settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
-                    (view_z,order),position.x,position.y,position.z,
+                    (view_z,order),position.x,position.y,position.z,lifetime_scale,
                 ))
             alive.append((view_z,order,instance,pixels,amount,x,y,scale_x,scale_y,age))
     alive.sort(key=lambda item:(item[0],item[1]))

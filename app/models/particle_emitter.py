@@ -7,7 +7,54 @@ import math
 from typing import Any
 from uuid import uuid4
 
-from .resource_composition import AnimationTrack
+from .resource_composition import AnimationTrack, EASINGS
+
+
+LIFETIME_SCALE_MAX = 16.0
+
+
+@dataclass
+class LifetimeScalarModulation:
+    """Minimal reusable scalar channel evaluated over one particle lifetime."""
+
+    enabled: bool = False
+    start: float = 1.0
+    end: float = 1.0
+    easing: str = "Linear"
+
+    def validate(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError("lifetime scalar enabled must be a boolean")
+        start = float(self.start)
+        end = float(self.end)
+        if not all(math.isfinite(value) for value in (start, end)):
+            raise ValueError("lifetime scalar values must be finite")
+        if not 0.0 <= start <= LIFETIME_SCALE_MAX or not 0.0 <= end <= LIFETIME_SCALE_MAX:
+            raise ValueError(f"lifetime scalar values must be 0..{LIFETIME_SCALE_MAX:g}")
+        if self.easing not in EASINGS:
+            raise ValueError("unsupported lifetime scalar easing")
+
+    def to_dict(self) -> dict[str, Any]:
+        self.validate()
+        return {"enabled": bool(self.enabled), "start": float(self.start), "end": float(self.end), "easing": self.easing}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "LifetimeScalarModulation":
+        if data is None:
+            return cls()
+        if not isinstance(data, dict):
+            raise ValueError("lifetime scalar modulation must be an object")
+        enabled = data.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("lifetime scalar enabled must be a boolean")
+        value = cls(
+            enabled=enabled,
+            start=float(data.get("start", 1.0)),
+            end=float(data.get("end", 1.0)),
+            easing=str(data.get("easing", "Linear")),
+        )
+        value.validate()
+        return value
 
 
 MOTION_TRACK_PROPERTIES = {
@@ -175,6 +222,7 @@ class ParticleEmitterSettings:
     opacity_end: float = 0.0
     easing: str = "Linear"
     seed: int = 0
+    scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
     motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
 
     def __post_init__(self) -> None:
@@ -202,11 +250,13 @@ class ParticleEmitterSettings:
         if self.lifetime_min < 1 or self.start_delay_min < 0: raise ValueError("invalid lifetime or start delay")
         if self.scale_min <= 0 or self.clip_speed_min <= 0: raise ValueError("scale and clip speed must be positive")
         if not (0 <= self.opacity_start <= 1 and 0 <= self.opacity_end <= 1): raise ValueError("opacity must be 0..1")
+        if self.easing not in EASINGS: raise ValueError("unsupported particle alpha easing")
+        self.scale_over_lifetime.validate()
         self.motion.validate()
 
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()
-        value=asdict(self); value["motion"]=self.motion.to_dict(); return value
+        value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
 
     @property
     def resource_id(self) -> str:
@@ -217,6 +267,7 @@ class ParticleEmitterSettings:
         values = dict(data)
         if "resource_id" in values and "clip_asset_id" not in values:
             values["clip_asset_id"] = values.pop("resource_id")
+        values["scale_over_lifetime"] = LifetimeScalarModulation.from_dict(values.get("scale_over_lifetime"))
         values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
         value = cls(**values); value.validate(); return value
 

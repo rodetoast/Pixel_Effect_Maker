@@ -6,14 +6,14 @@
 - Project: `C:\Users\SOUTHPAW GAMES\Desktop\Pixel_Effect_Maker`.
 - HEAD: `1bfd865c6396565b9c43d541613b5a58ef590cd9`, main.
 - Working tree: Resource Clip / Overscan 변경이 있는 상태를 감사했다. 해당 변경은 수정하지 않았다.
-- 이번 산출물은 이 문서와 `tools/audit_effect_authoring.py`뿐이다. 기능 구현·버전 변경·stage·commit·tag·push·build·ZIP 없음.
+- 이 문서의 최초 감사 산출물은 이 문서와 `tools/audit_effect_authoring.py`였고 `baff65b`에 checkpoint됐다. 아래 matrix와 결론은 v0.0.16 작업에서 구현 결과에 맞춰 갱신했다.
 - 코드 추적, 기존 자동 테스트, 합성 fixture, offscreen Inspector introspection을 사용했다. **실제 GUI 수동 제작/시각 QA는 수행하지 않았다.** 외부 제품의 기능 수를 목표로 삼지 않았으며 외부 reference는 사용하지 않았다.
 
 제품 정의: 2D/Pixel Art/Sprite 기반 게임용 이펙트를 Animation·Particle·Layer로 조합하고 엔진에 가져갈 이미지로 출력하는 제작툴. 범용 영상 편집기나 Full 3D 엔진이 아니다.
 
-현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 제한적**이다. 가장 큰 표현력 병목은 (1) 개별 Particle의 수명별 크기·색 변화, (2) Additive 부재, (3) Gravity/Drag/Noise 부재다. 별도의 납품 병목은 Sprite Sheet/metadata 부재다.
+현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 아직 제한적**이다. v0.0.16에서 개별 Particle의 uniform Scale over Lifetime을 추가했다. 남은 큰 표현력 병목은 (1) Particle tint/color lifetime, (2) Additive 부재, (3) Gravity/Drag/Noise 부재다. 별도의 납품 병목은 Sprite Sheet/metadata 부재다.
 
-다음 기능 1순위는 **Particle Scale over Lifetime**이다. 정규화된 수명 평가 계약을 먼저 정의하고 Alpha와 일관되게 연결하되, 범용 Graph Editor까지 확장하지 않는다. Work Area보다 먼저 권장한다. Work Area는 이미 가능한 동작의 반복 확인을 줄이지만 크기 성장/소멸의 표현 공백은 해결하지 못한다. 단, 아래 BUG FOUND의 별도 승인된 수정은 새 기능보다 먼저 검토해야 한다.
+v0.0.16은 최초 권고였던 **Particle Scale over Lifetime**과 정규화된 scalar lifetime foundation을 구현했다. 다음 기능 1순위는 이 기반을 재사용하는 **Particle Tint / Color over Lifetime 최소 start/end 채널**이다. 그 다음은 Additive다. Work Area는 여전히 표현력 기능 뒤를 권장한다.
 
 ## 판정 방법 / 증거 인덱스
 
@@ -79,10 +79,11 @@ Missing-feature 판정은 위 dataclass/serializer/Inspector/renderer dispatch/e
 | Initial P/A | Random animation start frame | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
 | Initial P/A | Positive clip speed fixed/range | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
 | Initial P | User-defined discrete variations (except frame) | MISSING | 0 | 0 | 0 | 0 | — | — | — | B |
-| Lifetime P | Alpha linear start → end | COMPLETE | Y | Y | Y | — | Y | Y | Y | 유지 |
-| Lifetime P | Nonlinear alpha easing retained by Inspector | BUGGY | Y | P | Y | — | P | Y | Y | 수정승인 |
+| Lifetime P | Alpha start → end with four easings | COMPLETE | Y | Y | Y | — | Y | Y | Y | 유지 |
+| Lifetime P | Alpha easing retained by Inspector | COMPLETE | Y | Y | Y | — | Y | Y | Y | 유지 |
 | Lifetime P | Color / gradient | MISSING | 0 | 0 | 0 | — | — | — | — | S |
-| Lifetime P/L | Scale / independent X/Y | PARTIAL | P | P | P | — | P | Y | Y | S |
+| Lifetime P | Uniform scale multiplier start/end/easing | PARTIAL | Y | Y | Y | 0 | Y | Y | Y | 유지 |
+| Lifetime P | Multi-point scale / independent X/Y | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
 | Lifetime P | Rotation = initial + angular velocity × age | COMPLETE | Y | Y | Y | — | Y | Y | Y | 유지 |
 | Lifetime P | Variable angular velocity curve | MISSING | 0 | 0 | 0 | — | — | — | — | B |
 | Lifetime P/M | Speed/velocity curve (linear mode) | MISSING | 0 | 0 | 0 | — | — | — | — | A |
@@ -189,13 +190,13 @@ Alpha는 `age/(lifetime-1)`를 사용하고 lifetime<=1이면 amount=1이다. st
 
 Orbit/Helix는 radius/angle/axis를 **age/lifetime** 기반으로 평가하므로 마지막 살아 있는 frame이 1.0에 정확히 도달하지 않는다. 반면 그 trajectory의 center/radius/turns 등의 track은 **Effect의 절대 frame**에서 평가한다. 이것을 임의의 particle size/color curve로 간주하지 않는다. motion 모델의 numeric track은 14개, Inspector keyframe map은 10개다. ellipse XY/phase spread/plane rotation은 static UI는 있지만 해당 track 작성 UI는 없다.
 
-Unified Particle에는 Scale over Lifetime이 없다. 다만 legacy TransformEmitter에는 scale_x/y_start/end의 lifetime 보간 렌더가 남아 있다. 기존 legacy project를 유지하는 경로이지 새 unified Particle 기능이 아니다. 또 Resource 내부 scale/color artwork animation을 particle마다 재생할 수 있다. 이는 source duration·speed에 종속되며 particle별 random lifetime에 자동 동기화하지 않는다. 따라서 전체 inventory는 PARTIAL, **활성 Particle 기능 자체는 MISSING**이다.
+v0.0.16 unified Particle에는 `LifetimeScalarModulation` 기반의 uniform Scale over Lifetime이 있다. 각 instance base scale에 Start→End multiplier를 곱하고 네 easing을 지원한다. 개별 X/Y와 multi-point curve, emitter timeline keyframe은 없으므로 전체 판정은 **PARTIAL**이다. legacy TransformEmitter의 별도 scale_x/y_start/end 보간과 Resource 내부 artwork animation은 이 채널로 세지 않는다.
 
-### BUG FOUND — Alpha easing 보존 실패 (수정하지 않음)
+### RESOLVED IN v0.0.16 — Alpha easing 보존 실패
 
-`ParticleEmitterSettings.easing="Ease In"`은 모델/renderer/save에서 지원한다. `ParticlePropertiesPanel.set_emitter` 후 `settings()`를 읽으면 **Linear**가 된다. settings()가 새 ParticleEmitterSettings를 만들 때 easing을 전달하지 않기 때문이다. 따라서 다른 Inspector 설정을 적용할 때 기존 nonlinear alpha easing도 바뀔 수 있다.
+`ParticleEmitterSettings.easing="Ease In"`을 `ParticlePropertiesPanel.set_emitter` 후 `settings()`로 읽으면 **Linear**가 되던 원인은 settings()가 easing을 전달하지 않아 dataclass 기본값으로 재구성했기 때문이다. refresh signal 자체가 model을 바꾼 것이 아니었다.
 
-재현: audit script의 `introspection`: loaded_alpha_easing=`Ease In`, inspector_reconstructed_alpha_easing=`Linear`. MainWindow의 update_particle_draft는 이 새 settings를 undo command로 받는다. 현재 UI에서 직접 nonlinear alpha easing을 만들 수 없어 영향은 기존/코드 생성 프로젝트 중심이다. 즉시 crash나 프로젝트 파일 손상 재현은 아니므로 CRITICAL BUG로 분류하지 않는다. 이 결함을 기대 동작으로 고정하는 regression test는 추가하지 않았다. 별도 승인 후 보존 테스트와 수정이 필요하다.
+최초 재현은 audit script의 `introspection`: loaded_alpha_easing=`Ease In`, inspector_reconstructed_alpha_easing=`Linear`였다. v0.0.16은 Alpha Easing control을 명시적으로 binding하고 loading guard 안에서 exact 복원하며 `settings()`에 값을 전달한다. MainWindow는 no-op을 push하지 않는다. 네 easing의 refresh/selection/save/Undo 테스트를 추가했고, 공용 alpha evaluator의 누락됐던 Ease In/Out 계산도 고쳤다.
 
 ### Color / Blend / Motion / Sprite
 
@@ -282,7 +283,7 @@ I=Production Impact, F=Frequency, W=Workaround Cost, R=Implementation Risk(클�
 
 | Gap (matrix의 부족 항목 포함) | I | F | W | R | A | Priority/Tier | 이유 / 재사용 / 변경면 |
 | --- | -: | -: | -: | -: | -: | --- | --- |
-| Lifetime uniform/X/Y scale | 5 | 5 | 4 | 3 | 5 | High/S | Spark 소멸·Smoke 성장. age evaluator, seeded instances, existing transform blit 재사용; M/R/UI/S/X/test, 절대frame track과 분리. |
+| Lifetime multi-point / independent X/Y scale | 3 | 3 | 2 | 3 | 5 | Medium/A | v0.0.16 uniform start/end로 핵심 grow/shrink 가능. 필요성 검증 뒤 scalar foundation 확장. |
 | Tint/start-end color/gradient/random palette | 5 | 5 | 4 | 4 | 4 | High/S | Fire/Heal/Poison. RGBA 경로 재사용; tint cache key/alpha/color-space 계약 필요; M/R/UI/S/X, lifetime foundation 의존. |
 | Additive | 5 | 5 | 4 | 4 | 4 | High/S | Glow/energy. composition boundary 재사용; transparent export 합성 의미를 먼저 정의; M/R/UI/S/X 전체. |
 | Rate/interval/burst schedule/continuous loop/prewarm | 4 | 4 | 3 | 4 | 4 | High/A | Ambient 반복. seeded birth planner 재사용; seek와 warmup 정의, rate FPS 단위, cache/save migration. |
@@ -344,11 +345,11 @@ ID/dependency closure → portable preset/cross-project transfer
 
 | 순서 | 범위 | 이유/사용자 체감 | 선행 조건 | 위험 |
 | --- | --- | --- | --- | --- |
-| 1 | Particle Scale over Lifetime, uniform scalar부터 | Spark fade/Smoke growth를 artwork 재제작 없이 편집 | normalized age·endpoint·random life 계약, BUG FOUND 별도 승인 처리 | Medium: cache/preview/PNG/Undo parity |
-| 2 | Tint + Color over Lifetime 최소 start/end | Fire/Heal/Poison/Magic 색상을 직접 반복 편집 | 1의 lifetime evaluator, RGBA 색/alpha 정책 | Medium-high: source tint/transparent RGB/cache |
-| 3 | Additive 최소 blend contract + end-to-end | Glow/energy/light 겹침 표현 | intermediate/final alpha 계약과 reference image test | High: 모든 compositor와 transparent export |
-| 4 | Fixed-cell Sprite Sheet + engine-neutral metadata | PNG 재조립/속도·pivot 수작업 감소 | canonical final render, metadata schema | Medium: rows/cols/offset/timing |
-| 5 | Work Area / Loop Range | 임의 10-frame 구간을 비파괴 반복 확인 | view-state, playback/prebuffer bounds | Low-medium: 범위 boundary/Undo와 분리 |
+| 1 | Tint + Color over Lifetime 최소 start/end | Fire/Heal/Poison/Magic 색상을 직접 반복 편집 | v0.0.16 lifetime evaluator, RGBA 색/alpha 정책 | Medium-high: source tint/transparent RGB/cache |
+| 2 | Additive 최소 blend contract + end-to-end | Glow/energy/light 겹침 표현 | intermediate/final alpha 계약과 reference image test | High: 모든 compositor와 transparent export |
+| 3 | Fixed-cell Sprite Sheet + engine-neutral metadata | PNG 재조립/속도·pivot 수작업 감소 | canonical final render, metadata schema | Medium: rows/cols/offset/timing |
+| 4 | Work Area / Loop Range | 임의 10-frame 구간을 비파괴 반복 확인 | view-state, playback/prebuffer bounds | Low-medium: 범위 boundary/Undo와 분리 |
+| 5 | Deterministic Gravity/Force/Drag | Debris·Smoke의 자연 운동 표현 | analytic seek contract, performance budget | High: scrub/cache/Orbit·Helix isolation |
 
 Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 성능을 지키는 비용이 커서 위 5개 다음의 별도 motion pass로 권장한다. 자연 운동 중심 사용자가 늘면 4/5보다 앞당길 수 있다. 범용 Graph Editor는 scale lifetime의 선행조건이 아니다.
 
@@ -408,8 +409,8 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 33. Color: source artwork만, tint/random 없음.
 34. Sprite frame: random starting frame.
 35. Lifetime Color: 없음.
-36. Lifetime Alpha: linear start/end; nonlinear 보존 BUG FOUND.
-37. Lifetime Scale: unified 없음; source/legacy 우회.
+36. Lifetime Alpha: start/end와 네 easing 지원; v0.0.16에서 Inspector 보존 회귀 및 Ease In/Out 평가 수정. multi-stop은 없음.
+37. Lifetime Scale: v0.0.16 uniform start/end/easing 지원(PARTIAL); 개별 X/Y와 multi-point는 없음.
 38. Lifetime Rotation: constant angular velocity.
 39. Lifetime Speed: linear speed curve 없음.
 40. Lifetime Velocity: 일반 curve 없음; Orbit/Helix trajectory 별도.
@@ -489,7 +490,7 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 114. Sword Slash: POSSIBLE WITH WORKAROUNDS.
 115. Projectile: LIMITED.
 116. 강점: Already Strong 절 참조.
-117. Tier S: lifetime scale/color/tint, Additive.
+117. Tier S: color/tint lifetime, Additive. uniform lifetime scale은 v0.0.16에서 완료.
 118. Tier A: emission/forces/natural motion, sheet/metadata, Work Area, asset reliability, presets, performance.
 119. Tier B: trails/events/orientation/shape/path/specialized editing.
 120. Tier C: graphs/custom blend/nested groups/collision later.
@@ -497,8 +498,8 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 122. Reuse: evaluator, seeded instances, compositor, stable-ID commands, final renderer.
 123. Dependency graph: 위 계약→module→UI/export 순서 참조.
 124. High risk: alpha contract/stateful seek/cache/recursive events/history memory.
-125. FORMAT 후보: 새 persistent effect modules; 이번 변경 없음.
-126. 다음 5개: Scale Lifetime → Color/Tint → Additive → Sheet/metadata → Work Area.
+125. FORMAT: v0.0.16 lifetime scale 영속화로 13; 이후 새 persistent effect module도 변경 후보.
+126. 다음 5개: Color/Tint → Additive → Sheet/metadata → Work Area → deterministic Gravity/Force/Drag.
 127. 이유: 표현 공백 우선, 이어서 엔진 납품과 반복 속도.
 128. 선행 dependency: normalized age / alpha / canonical output / view bounds.
 129. 체감: 아트 재제작 감소, glow 표현, 납품 자동화, 부분 반복.
@@ -517,6 +518,6 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 142. Animation Editor 성숙도: 강한 기반/넓은 자동 회귀, 네이티브 전체 QA 보증은 아님.
 143. Effect Authoring Tool 성숙도: layer/sprite 중심 강점, procedural particle 표현은 중간 단계.
 144. 게임 Effect 충실도: 정해진 baked 연출은 우회 가능, 자연/발광/trail/event 계열은 제한.
-145. 표현 병목 3개: lifetime scale/color, Additive, natural forces/noise.
-146. 1순위: Particle Scale over Lifetime.
+145. 표현 병목 3개: lifetime color/tint, Additive, natural forces/noise.
+146. 1순위: Particle Tint / Color over Lifetime 최소 start/end 채널.
 147. Work Area보다 먼저: 예. 없는 표현을 여는 기능을 먼저, 반복 확인 최적화는 후속.

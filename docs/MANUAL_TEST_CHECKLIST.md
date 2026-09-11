@@ -1,4 +1,19 @@
-# Pixel Effect Maker v0.0.15 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.16 수동 테스트 체크리스트
+
+## v0.0.16 Alpha Easing / Scale over Lifetime
+
+- [ ] Particle Alpha Easing을 Ease Out으로 바꾸고 다른 Layer를 선택했다가 돌아와도 Ease Out이 유지되는지 확인한다.
+- [ ] 프로젝트를 저장하고 다시 연 뒤 Alpha Easing과 Scale Lifetime의 Enabled/Start/End/Easing이 exact하게 유지되는지 확인한다.
+- [ ] Scale over Lifetime을 끄면 Start/End/Easing 입력이 비활성화되고, 다시 켜면 이전 값이 보존되는지 확인한다.
+- [ ] Grow: Start 0, End 1, Ease Out에서 각 Particle이 자기 생성 시점부터 커지는지 확인한다.
+- [ ] Shrink: Start 1, End 0, Ease In에서 마지막 표시 프레임까지 축소되는지 확인한다.
+- [ ] Over Time 방출에서 서로 다른 birth time의 Particle들이 같은 Effect frame에서도 서로 다른 크기 진행률을 보이는지 확인한다.
+- [ ] Initial Scale Min/Max가 다른 상태에서 각 Particle의 상대 크기 차이가 lifetime multiplier와 곱해져 유지되는지 확인한다.
+- [ ] Linear, Orbit, Helix 각각에서 위치 경로는 유지되고 크기만 lifetime에 따라 바뀌는지 확인한다.
+- [ ] Enabled, Start, End, Easing 편집 각각이 Undo 한 번으로 정확히 되돌아가고 Redo되는지 확인한다.
+- [ ] 여러 Effect Layer 선택 상태에서는 Primary logical Resource Layer만 Lifetime 설정이 바뀌는지 확인한다.
+- [ ] Overscan을 포함한 Resource를 Particle source로 사용했을 때 Resource Editor에서는 출력 영역 밖 artwork가 보이고, 최종 Effect PNG는 Output Frame 크기로 strict clip되는지 확인한다.
+- [ ] 이 목록은 Windows native GUI 수동 QA용이며 Codex 자동 테스트가 실제 클릭 검증을 대신하지 않는다.
 
 ## v0.0.15 Timeline Snapping
 
