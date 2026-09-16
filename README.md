@@ -6,7 +6,9 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v14. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.17`.
+New saves use project format v15. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.18`.
+
+Particle Emission Resource Layers support `Normal` and `Additive` Blend Modes in the Inspector's Rendering section. Additive uses clamped premultiplied RGB and Alpha contributions while storing valid straight-alpha RGBA, and it applies both between particles in one emitter and between that logical Effect Layer and lower layers. Source alpha, particle opacity, generated-layer opacity, ordering, Color over Lifetime, and Scale over Lifetime remain active. PNG export contains the already baked RGBA result; PNG does not retain a reusable blend-mode instruction for another engine.
 
 Resource and Effect Timelines support runtime-only multi-key editing. Click a key for a single selection, use `Ctrl+Click` to toggle keys, `Shift+Click` for a same-track key range, or drag a marquee across visible Property rows. Drag selected keys horizontally, use `Alt+Left/Right` to nudge, Delete to remove, or the key context menu to batch easing. Timing edits preserve relative spacing and reject the entire operation when an unselected key occupies any destination frame.
 
@@ -34,7 +36,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.17**이며 프로젝트 형식은 v14입니다. Particle Inspector의 **수명에 따른 변화 / Over Lifetime**에서 uniform Scale 배율과 RGB Color Tint를 각 Particle의 생성 시점부터 마지막 표시 프레임까지 독립적으로 변화시킬 수 있습니다. Color는 source artwork RGB에 component-wise multiplier로 적용되며 기존 Particle/Layer Alpha와 opacity easing을 변경하지 않습니다. 두 채널은 Linear, Ease In, Ease Out, Ease In/Out을 지원하고, 기존 형식 프로젝트는 Scale 1.0과 Color white identity가 꺼진 상태로 열려 렌더 결과를 유지합니다.
+현재 버전은 **v0.0.18**이며 프로젝트 형식은 v15입니다. Particle Inspector의 **렌더링 / Rendering**에서 일반(Normal)과 가산(Additive)을 선택할 수 있습니다. 가산은 한 Emitter 안의 Particle 겹침과 해당 논리 Effect Layer가 아래 레이어에 합성되는 두 경계 모두에 적용되며, premultiplied 기여도를 clamp한 뒤 valid straight-alpha RGBA로 저장합니다. **수명에 따른 변화 / Over Lifetime**의 Scale·RGB Color와 기존 Alpha/Easing은 독립적으로 유지됩니다. 이전 프로젝트는 Normal로 열립니다. PNG에는 이미 계산된 RGBA 픽셀만 bake되며 다른 엔진이 해석할 Blend Mode 명령은 저장되지 않습니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 

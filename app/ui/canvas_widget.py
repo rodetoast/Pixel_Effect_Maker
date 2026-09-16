@@ -14,6 +14,8 @@ from app.models.project import Project
 from app.models.effect_composition_layer import EffectCompositionLayer
 from app.models.effect_resource_layer import EffectLayerTransform3D,PLACEMENT_PARTICLE
 from app.models.particle_emitter import ParticleEmitterSettings
+from app.models.blend_mode import BLEND_NORMAL, project_layer_blend_mode
+from app.services.alpha_composite_service import composite_rgba8_over_float32
 from app.services.particle_render_service import particle_motion_guide, project_particle_billboard, representative_particle_guide
 from app.services.layer_parenting_service import effect_local_affine, resolve_world_affines
 
@@ -272,14 +274,14 @@ class CanvasWidget(QWidget):
         frame=self.project.frames[self.frame_index]
         for layer in layers:
             source=frame.layer_pixels.get(layer.id)
-            if source is not None:self._composite(output,source,layer.opacity)
+            if source is not None:self._composite(output,source,layer.opacity,project_layer_blend_mode(self.project,layer.id))
         pixels=np.ascontiguousarray(np.clip(output*255.0,0,255).astype(np.uint8))
         image=QImage(pixels.data,self.project.width,self.project.height,pixels.strides[0],QImage.Format.Format_RGBA8888).copy()
         return QPixmap.fromImage(image)
 
     def _proxy_layer_revision(self,layer) -> tuple:
         frame=self.project.frames[self.frame_index];source=frame.layer_pixels.get(layer.id)
-        return (layer.id,id(source),round(float(layer.opacity),6),None if source is None else source.shape)
+        return (layer.id,id(source),round(float(layer.opacity),6),project_layer_blend_mode(self.project,layer.id),None if source is None else source.shape)
 
     def proxy_prewarm_token(self,layer,base_key,request_revision=0) -> ProxyPrewarmToken:
         signature,before,after=self._proxy_depth_signature(layer,layer.layer_transform)
@@ -310,7 +312,7 @@ class CanvasWidget(QWidget):
         self.last_prewarm_payload_timings["selected_index_partition"]=(perf_counter()-started)*1000.0
         frame=self.project.frames[self.frame_index]
         def sources(items):
-            return tuple((frame.layer_pixels[item.id],float(item.opacity)) for item in items if item.id in frame.layer_pixels)
+            return tuple((frame.layer_pixels[item.id],float(item.opacity),project_layer_blend_mode(self.project,item.id)) for item in items if item.id in frame.layer_pixels)
         started=perf_counter();before_sources=sources(before);after_sources=sources(after)
         self.last_prewarm_payload_timings["exact_rgba_cache_lookup"]=(perf_counter()-started)*1000.0
         started=perf_counter()
@@ -411,6 +413,7 @@ class CanvasWidget(QWidget):
             else:
                 previous=deepcopy(self.resource_transform) if self.resource_transform_id==layer.id and self.resource_transform is not None else deepcopy(layer.layer_transform)
             state=InteractiveTransformProxyState(layer.id,self.frame_index,cache_key,base,applied_transform=previous)
+            state.blend_mode=project_layer_blend_mode(self.project,layer.generated_layer_id)
             previous_quad,valid=self._proxy_widget_quad(base.alpha_bounds,previous.evaluated(self.frame_index))
             if valid:state.previous_projected_bounds=self._proxy_polygon_bounds(previous_quad)
             old_signature,_,_=self._proxy_depth_signature(layer,previous)
@@ -458,6 +461,7 @@ class CanvasWidget(QWidget):
             self.proxy_stats["overlap_rejections"]+=1;return False
         base=self.proxy_base_image_cache.get(cache_key,base_frame);transform=EffectLayerTransform3D() if already_transformed else deepcopy(layer.layer_transform)
         state=InteractiveTransformProxyState(layer.id,self.frame_index,cache_key,base,active=True,applied_transform=transform)
+        state.blend_mode=project_layer_blend_mode(self.project,layer.generated_layer_id)
         state.render_in_progress=True
         try:
             state.prewarm_token=token;state.depth_order_signature=token.depth_signature
@@ -611,7 +615,7 @@ class CanvasWidget(QWidget):
         mapping=projective_pixmap_transform(state.base.pixmap,state.projected_quad)
         if mapping is None:return
         painter.save();painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus if state.blend_mode=="additive" else QPainter.CompositionMode.CompositionMode_SourceOver)
         painter.setOpacity(max(0.0,min(1.0,state.applied_transform.evaluated(self.frame_index).opacity)))
         painter.setTransform(mapping);painter.drawPixmap(0,0,state.base.pixmap);painter.restore()
 
@@ -1086,25 +1090,16 @@ class CanvasWidget(QWidget):
             else:
                 source = None
             if source is not None:
-                self._composite(output, source, layer.opacity)
+                self._composite(output, source, layer.opacity, project_layer_blend_mode(self.project,layer.id))
         if not replacement_seen and not has_solo:
-            self._composite(output, preview, 1.0)
+            self._composite(output, preview, 1.0, project_layer_blend_mode(self.project,self.preview_layer_id))
         return np.clip(output * 255.0, 0, 255).astype(np.uint8)
 
     @staticmethod
-    def _composite(output: np.ndarray, source: np.ndarray, opacity: float) -> None:
+    def _composite(output: np.ndarray, source: np.ndarray, opacity: float, blend_mode: str = BLEND_NORMAL) -> None:
         if source.shape[:2] != output.shape[:2]:
             return
-        src = source.astype(np.float32) / 255.0
-        src_alpha = src[..., 3:4] * max(0.0, min(1.0, opacity))
-        dst_alpha = output[..., 3:4]
-        combined_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
-        safe_alpha = np.where(combined_alpha == 0, 1.0, combined_alpha)
-        output[..., :3] = (
-            src[..., :3] * src_alpha
-            + output[..., :3] * dst_alpha * (1.0 - src_alpha)
-        ) / safe_alpha
-        output[..., 3:4] = combined_alpha
+        composite_rgba8_over_float32(output,source,opacity,blend_mode)
     gizmo_changed = Signal(str, object)
     effect_guide_changed = Signal(str, object, bool)
     effect_guide_started = Signal(str)

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from .resource_composition import AnimationTrack, EASINGS
+from .blend_mode import BLEND_NORMAL, validate_blend_mode
 
 
 LIFETIME_SCALE_MAX = 16.0
@@ -268,6 +269,7 @@ class ParticleEmitterSettings:
     opacity_start: float = 1.0
     opacity_end: float = 0.0
     easing: str = "Linear"
+    blend_mode: str = BLEND_NORMAL
     seed: int = 0
     scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
     color_over_lifetime: LifetimeColorModulation = field(default_factory=LifetimeColorModulation)
@@ -299,6 +301,7 @@ class ParticleEmitterSettings:
         if self.scale_min <= 0 or self.clip_speed_min <= 0: raise ValueError("scale and clip speed must be positive")
         if not (0 <= self.opacity_start <= 1 and 0 <= self.opacity_end <= 1): raise ValueError("opacity must be 0..1")
         if self.easing not in EASINGS: raise ValueError("unsupported particle alpha easing")
+        self.blend_mode = validate_blend_mode(self.blend_mode)
         self.scale_over_lifetime.validate()
         self.color_over_lifetime.validate()
         self.motion.validate()

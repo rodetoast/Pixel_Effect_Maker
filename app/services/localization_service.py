@@ -446,6 +446,10 @@ KO.update({
 })
 
 EN.update({
+    "particle.rendering":"Rendering","particle.blend_mode":"Blend Mode",
+    "particle.blend_normal":"Normal","particle.blend_additive":"Additive",
+    "tooltip.particle.rendering":"Controls how emitted particles combine with each other and how this Particle Effect Layer combines with lower layers.",
+    "tooltip.particle.blend_mode":"Normal uses standard alpha compositing. Additive adds premultiplied RGB light contributions for brighter overlaps while respecting source alpha, particle opacity, and layer opacity.",
     "particle.over_lifetime":"Over Lifetime","particle.alpha_easing":"Alpha Easing",
     "particle.scale_lifetime_enabled":"Scale over Lifetime","particle.scale_lifetime_start":"Start Scale",
     "particle.scale_lifetime_end":"End Scale","particle.scale_lifetime_easing":"Easing",
@@ -464,6 +468,10 @@ EN.update({
     "tooltip.particle.color_lifetime_easing":"Controls RGB interpolation from the start tint to the end tint. Opacity is not affected.",
 })
 KO.update({
+    "particle.rendering":"렌더링","particle.blend_mode":"블렌드 모드",
+    "particle.blend_normal":"일반","particle.blend_additive":"가산",
+    "tooltip.particle.rendering":"방출된 Particle끼리 겹치는 방식과 이 Particle Effect Layer가 아래 레이어에 합성되는 방식을 정합니다.",
+    "tooltip.particle.blend_mode":"일반은 표준 알파 합성을 사용합니다. 가산은 소스 알파, Particle 불투명도, 레이어 불투명도를 반영한 premultiplied RGB 빛 기여도를 더해 겹침을 밝게 만듭니다.",
     "particle.over_lifetime":"수명에 따른 변화","particle.alpha_easing":"알파 이징",
     "particle.scale_lifetime_enabled":"수명별 크기","particle.scale_lifetime_start":"시작 크기",
     "particle.scale_lifetime_end":"끝 크기","particle.scale_lifetime_easing":"이징",
@@ -931,7 +939,7 @@ EN.update({
     "preview.purpose_heading": "What this project is for",
     "preview.purpose_body": "Pixel Effect Maker is not intended to replace Aseprite as a general-purpose pixel editor.\n\nIt is designed to import PNG, GIF, and Aseprite assets, organize them as reusable Resource Compositions, and combine Resource Layers and Particle Emission to create, preview, bake, and export multi-frame pixel effects.",
     "preview.current_heading": "Currently implemented",
-    "preview.current_items": "PNG, GIF, and Aseprite asset import\nResource Composition authoring and keyframe animation\nSingle and Particle Emission Resource Layers\nLinear, Orbit, and Helix particle motion\nParticle-local perspective and stable depth sorting\nLayer Space and compatibility Surface 2.5D transforms\nCanvas guides and direct-manipulation gizmos\nTimeline playback, scrubbing, and Undo/Redo\nPreview, Bake, PNG, and PNG Sequence export\nCompact Project Format v10 and atomic save\nMigration of earlier project formats\nKorean and English interfaces",
+    "preview.current_items": "PNG, GIF, and Aseprite asset import\nResource Composition authoring and keyframe animation\nSingle and Particle Emission Resource Layers\nNormal and Additive Particle Blend Modes\nLinear, Orbit, and Helix particle motion\nParticle-local perspective and stable depth sorting\nLayer Space and compatibility Surface 2.5D transforms\nCanvas guides and direct-manipulation gizmos\nTimeline playback, scrubbing, and Undo/Redo\nPreview, Bake, PNG, and PNG Sequence export\nCompact Project Format v15 and atomic save\nMigration of earlier project formats\nKorean and English interfaces",
     "preview.future_heading": "Planned development",
     "preview.future_items": "Further stabilization and user-feedback fixes\nLayer duplication, locking, drag reordering, and multi-selection\nKeyframe copy/paste and a Graph Editor\nAdvanced per-particle 3D position, rotation, and depth\nCustom Path, presets, and additional motion/deformation\nBasic pixel-editing tools\nAutosave and recovery\nAdditional export formats and a production distribution pipeline",
     "preview.footer": "Development plans and feature scope may change based on testing results.",
@@ -958,7 +966,7 @@ KO.update({
     "preview.purpose_heading": "프로그램의 목적",
     "preview.purpose_body": "Pixel Effect Maker는 Aseprite를 대체하는 범용 픽셀 편집기가 아닙니다.\n\nPNG, GIF, Aseprite 에셋을 가져와 재사용 가능한 Resource Composition으로 구성하고, Resource Layer와 Particle Emission을 조합하여 여러 프레임의 픽셀 이펙트를 제작·미리보기·굽기·내보내기 위한 도구입니다.",
     "preview.current_heading": "현재 구현 기능",
-    "preview.current_items": "PNG, GIF, Aseprite 에셋 가져오기\nResource Composition 제작과 키프레임 애니메이션\nSingle 및 Particle Emission Resource Layer\nLinear, Orbit, Helix 파티클 이동\nParticle Local Perspective와 안정적 깊이 정렬\nLayer Space 및 호환 Surface 2.5D 변형\nCanvas Guide와 직접 조작 Gizmo\nTimeline 재생, 스크러빙, Undo/Redo\nPreview, Bake, PNG 및 PNG Sequence 내보내기\nCompact Project Format v10과 Atomic Save\n기존 프로젝트 형식 마이그레이션\n한국어와 영어 인터페이스",
+    "preview.current_items": "PNG, GIF, Aseprite 에셋 가져오기\nResource Composition 제작과 키프레임 애니메이션\nSingle 및 Particle Emission Resource Layer\nNormal 및 Additive Particle Blend Mode\nLinear, Orbit, Helix 파티클 이동\nParticle Local Perspective와 안정적 깊이 정렬\nLayer Space 및 호환 Surface 2.5D 변형\nCanvas Guide와 직접 조작 Gizmo\nTimeline 재생, 스크러빙, Undo/Redo\nPreview, Bake, PNG 및 PNG Sequence 내보내기\nCompact Project Format v15와 Atomic Save\n기존 프로젝트 형식 마이그레이션\n한국어와 영어 인터페이스",
     "preview.future_heading": "앞으로 개발할 기능",
     "preview.future_items": "전체 기능의 추가 안정화와 사용자 피드백 반영\n레이어 복제, 잠금, 드래그 재정렬과 다중 선택\n키프레임 복사·붙여넣기와 Graph Editor\nParticle별 고급 3D 위치·회전과 깊이 표현\nCustom Path, Preset과 추가 Motion/Deformation\n기본 픽셀 편집 도구\n자동 저장과 복구\n추가 Export 형식과 정식 배포 환경",
     "preview.footer": "개발 계획과 기능 범위는 테스트 결과에 따라 변경될 수 있습니다.",

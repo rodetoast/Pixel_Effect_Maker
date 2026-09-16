@@ -18,7 +18,7 @@ from app.services.alpha_composite_service import composite_layers_rgba8
 
 
 def alpha_composite_layers(
-    size: tuple[int, int], layers: tuple[tuple[np.ndarray, float], ...]
+    size: tuple[int, int], layers: tuple[tuple[np.ndarray, float] | tuple[np.ndarray, float, str], ...]
 ) -> np.ndarray:
     """Composite an immutable layer snapshot into an RGBA8 canvas."""
     return composite_layers_rgba8(size,layers)
@@ -26,8 +26,8 @@ def alpha_composite_layers(
 
 def prefix_suffix_composite(
     size: tuple[int, int],
-    before: tuple[tuple[np.ndarray, float], ...],
-    after: tuple[tuple[np.ndarray, float], ...],
+    before: tuple[tuple[np.ndarray, float] | tuple[np.ndarray, float, str], ...],
+    after: tuple[tuple[np.ndarray, float] | tuple[np.ndarray, float, str], ...],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the selected layer's prefix and suffix composites.
 
@@ -69,8 +69,8 @@ class ProxyPrewarmToken:
 class ProxyPrewarmPayload:
     token: ProxyPrewarmToken
     base_frame: np.ndarray
-    before: tuple[tuple[np.ndarray, float], ...]
-    after: tuple[tuple[np.ndarray, float], ...]
+    before: tuple[tuple[np.ndarray, float] | tuple[np.ndarray, float, str], ...]
+    after: tuple[tuple[np.ndarray, float] | tuple[np.ndarray, float, str], ...]
     cached_underlay: QPixmap | None = None
     cached_overlay: QPixmap | None = None
     cached_crop: np.ndarray | None = None

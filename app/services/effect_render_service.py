@@ -7,6 +7,9 @@ from uuid import uuid4
 
 import numpy as np
 
+from app.models.blend_mode import BLEND_ADDITIVE, BLEND_NORMAL
+from app.services.alpha_composite_service import composite_rgba8_additive_in_place
+
 from app.models.effect_generator import TransformEmitter
 from app.models.frame import empty_pixels
 from app.models.layer import Layer
@@ -113,6 +116,13 @@ def _source_over(destination: np.ndarray, source: np.ndarray) -> None:
     destination[:] = np.clip(np.rint(output * 255.0), 0, 255).astype(np.uint8)
 
 
+def _composite_sampled(destination: np.ndarray, source: np.ndarray, blend_mode: str) -> None:
+    if blend_mode == BLEND_ADDITIVE:
+        composite_rgba8_additive_in_place(destination, source)
+    else:
+        _source_over(destination, source)
+
+
 def _apply_rgb_tint(pixels: np.ndarray, tint_r: float, tint_g: float, tint_b: float) -> None:
     """Multiply encoded RGB channels in place while leaving straight alpha exact."""
     for channel, factor in enumerate((tint_r, tint_g, tint_b)):
@@ -120,7 +130,7 @@ def _apply_rgb_tint(pixels: np.ndarray, tint_r: float, tint_g: float, tint_b: fl
             pixels[..., channel] = np.clip(np.rint(pixels[..., channel].astype(np.float64) * factor), 0, 255).astype(np.uint8)
 
 
-def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x: float,top_left_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0) -> None:
+def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x: float,top_left_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0,blend_mode: str=BLEND_NORMAL) -> None:
     """Sample an unrotated unit-scale sprite without projective setup."""
     height,width=canvas.shape[:2]
     left=max(0,int(math.floor(top_left_x)));right=min(width-1,int(math.ceil(top_left_x+asset.width)))
@@ -135,10 +145,10 @@ def _render_translation_source(canvas: np.ndarray,asset: SourceAsset,top_left_x:
     sampled[~(valid_y[:,None]&valid_x[None,:])]=0
     _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
-    _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["translation_blits"]+=1
+    _composite_sampled(canvas[top:bottom+1,left:right+1],sampled,blend_mode);EFFECT_RASTER_STATS["translation_blits"]+=1
 
 
-def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0, *, canvas_origin=(0,0)) -> None:
+def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0,blend_mode: str=BLEND_NORMAL, *, canvas_origin=(0,0)) -> None:
     """Sample the 2D rotate/scale path with an analytic affine inverse."""
     destination=_destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,0.0,0.0,0.0)
     origin=destination[0];axis_u=destination[1]-origin;axis_v=destination[3]-origin
@@ -154,10 +164,10 @@ def _render_affine_source(canvas: np.ndarray,asset: SourceAsset,position_x: floa
     sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
     _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
-    _source_over(canvas[top:bottom+1,left:right+1],sampled);EFFECT_RASTER_STATS["affine_blits"]+=1
+    _composite_sampled(canvas[top:bottom+1,left:right+1],sampled,blend_mode);EFFECT_RASTER_STATS["affine_blits"]+=1
 
 
-def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,horizontal_tilt: float,vertical_tilt: float,perspective: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0) -> None:
+def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: float,position_y: float,rotation: float,scale_x: float,scale_y: float,horizontal_tilt: float,vertical_tilt: float,perspective: float,opacity: float,tint_r: float=1.0,tint_g: float=1.0,tint_b: float=1.0,blend_mode: str=BLEND_NORMAL) -> None:
     """Retain the general projective nearest sampler as the exact fallback/reference."""
     destination = _destination_corners(asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective)
     try:inverse = np.linalg.inv(_homography_from_unit_square(destination))
@@ -172,7 +182,7 @@ def _render_projective_source(canvas: np.ndarray,asset: SourceAsset,position_x: 
     sampled=asset.pixels[source_y,source_x].copy();sampled[~valid]=0
     _apply_rgb_tint(sampled,tint_r,tint_g,tint_b)
     if opacity<1.0:sampled[...,3]=np.rint(sampled[...,3].astype(float)*opacity).astype(np.uint8)
-    _source_over(canvas[top:bottom+1,left:right+1],sampled)
+    _composite_sampled(canvas[top:bottom+1,left:right+1],sampled,blend_mode)
 
 
 def render_transformed_source(
@@ -191,6 +201,7 @@ def render_transformed_source(
     tint_r: float = 1.0,
     tint_g: float = 1.0,
     tint_b: float = 1.0,
+    blend_mode: str = BLEND_NORMAL,
 ) -> None:
     """Warp one source into an RGBA canvas using inverse nearest sampling."""
     if abs(scale_x) < 1e-6 or abs(scale_y) < 1e-6 or opacity <= 0.0:
@@ -213,14 +224,14 @@ def render_transformed_source(
         source=asset.pixels[canvas_top-top:canvas_bottom-top,canvas_left-left:canvas_right-left]
         destination=canvas[canvas_top:canvas_bottom,canvas_left:canvas_right]
         if not np.any(destination[...,3]):destination[:]=source
-        else:_source_over(destination,source)
+        else:_composite_sampled(destination,source,blend_mode)
         EFFECT_RASTER_STATS["identity_blits"]+=1
         return
     if identity_rotation and abs(scale_x-1.0)<=1e-9 and abs(scale_y-1.0)<=1e-9 and abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
-        _render_translation_source(canvas,asset,top_left_x,top_left_y,opacity,tint_r,tint_g,tint_b);return
+        _render_translation_source(canvas,asset,top_left_x,top_left_y,opacity,tint_r,tint_g,tint_b,blend_mode);return
     if abs(horizontal_tilt)<=1e-9 and abs(vertical_tilt)<=1e-9 and abs(perspective)<=1e-9:
-        _render_affine_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,opacity,tint_r,tint_g,tint_b);return
-    _render_projective_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective,opacity,tint_r,tint_g,tint_b)
+        _render_affine_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,opacity,tint_r,tint_g,tint_b,blend_mode);return
+    _render_projective_source(canvas,asset,position_x,position_y,rotation,scale_x,scale_y,horizontal_tilt,vertical_tilt,perspective,opacity,tint_r,tint_g,tint_b,blend_mode)
 
 
 def render_generator_frames(

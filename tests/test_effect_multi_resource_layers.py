@@ -172,7 +172,7 @@ def test_multi_effect_round_trip_preserves_order_duplicate_refs_and_all_state(tm
     project.effect_resource_layers=layers;data=project.to_dict();loaded=Project.from_dict(data)
     assert loaded.to_dict()==data and [item.id for item in loaded.effect_resource_layers]==[item.id for item in layers]
     assert loaded.effect_resource_layers[1].resource_composition_id==loaded.effect_resource_layers[2].resource_composition_id and loaded.effect_resource_layers[1].id!=loaded.effect_resource_layers[2].id
-    assert FORMAT_VERSION==14
+    assert FORMAT_VERSION==15
 
 
 def test_multi_effect_direct_playback_bake_png_and_sequence_parity(tmp_path):

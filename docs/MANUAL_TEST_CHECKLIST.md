@@ -1,4 +1,20 @@
-# Pixel Effect Maker v0.0.17 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.18 수동 테스트 체크리스트
+
+## v0.0.18 Particle Additive Blend
+
+- [ ] Particle Emission Resource Layer의 Rendering에서 Normal/Additive 두 항목만 보이고 기본값이 Normal인지 확인한다.
+- [ ] 반투명 Particle 여러 개를 같은 위치에 겹쳐 Additive가 Normal보다 밝은/높은 누적 기여도를 만드는지 확인한다.
+- [ ] 아래에 어두운 Normal Effect Layer를 두고 위 Particle Layer를 Additive로 바꾸면 최종 Canvas가 실제로 밝아지는지 확인한다.
+- [ ] Additive 결과 위에 불투명 Normal Layer를 올리면 기존 Source Over 순서대로 덮이는지 확인한다.
+- [ ] source alpha, Particle Opacity, Resource Layer opacity를 각각 낮추어 가산 기여도가 함께 낮아지는지 확인한다.
+- [ ] Scale+Color over Lifetime+Additive를 동시에 켜고 각 기능이 서로 값을 초기화하지 않는지 확인한다.
+- [ ] Linear/Orbit/Helix, Parenting, System/Surface 2.5D, 여러 회전수에서 경로와 seed는 유지되고 합성만 달라지는지 확인한다.
+- [ ] Normal→Additive→Normal 전환 때 Playback/스크럽에 이전 모드의 stale cache frame이 남지 않는지 확인한다.
+- [ ] Blend Mode 선택 한 번이 Undo 한 번으로 복원되고 Redo되며, 같은 값을 다시 선택하거나 Inspector refresh/selection만으로 Undo가 생기지 않는지 확인한다.
+- [ ] Current Preview, Full Playback, Bake/Generated Output, PNG decoded 결과를 같은 프레임에서 비교한다.
+- [ ] 투명 checkerboard 색상이 Additive 계산에 섞이지 않고 최종 RGBA 뒤에서만 표시되는지 확인한다.
+- [ ] PNG를 외부 도구에서 열어 baked 픽셀은 같지만 별도 Additive Blend metadata/instruction은 없음을 확인한다.
+- [ ] Windows native GUI 수동 QA: **수행하지 않음**. 이 항목들은 사용자 승인 전 실제 Windows 환경에서 확인한다.
 
 ## v0.0.17 Particle Color over Lifetime
 

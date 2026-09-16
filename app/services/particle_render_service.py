@@ -317,7 +317,8 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
                 scale_x=scale_x, scale_y=scale_y,
                 horizontal_tilt=0, vertical_tilt=0, perspective=0,
                 opacity=settings.opacity_start + (settings.opacity_end - settings.opacity_start) * amount,
-                tint_r=tint_r,tint_g=tint_g,tint_b=tint_b)
+                tint_r=tint_r,tint_g=tint_g,tint_b=tint_b,
+                blend_mode=settings.blend_mode)
     if layer_value.opacity < 1.0:
         output[...,3]=np.rint(output[...,3].astype(np.float64)*layer_value.opacity).astype(np.uint8)
     PARTICLE_RENDER_STATS["current_frame_renders"]+=1

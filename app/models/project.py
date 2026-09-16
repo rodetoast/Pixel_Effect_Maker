@@ -26,7 +26,7 @@ from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 from .layer_parenting import repair_parent_links
 
-FORMAT_VERSION = 14
+FORMAT_VERSION = 15
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -187,6 +187,8 @@ class Project:
 
     def compose_frame(self, index: int, *, solo_preview: bool = False) -> np.ndarray:
         """Alpha-composite visible layers and return an RGBA buffer."""
+        from app.models.blend_mode import project_layer_blend_mode
+        from app.services.alpha_composite_service import composite_rgba8_over_float32
         output = np.zeros((self.height, self.width, 4), dtype=np.float32)
         frame = self.frames[index]
         resource_by_generated = {item.generated_layer_id: item for item in self.effect_resource_layers}
@@ -211,16 +213,7 @@ class Project:
             source = frame.layer_pixels.get(layer.id)
             if source is None:
                 continue
-            src = source.astype(np.float32) / 255.0
-            src_alpha = src[..., 3:4] * max(0.0, min(1.0, layer.opacity))
-            dst_alpha = output[..., 3:4]
-            combined_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
-            safe_alpha = np.where(combined_alpha == 0, 1.0, combined_alpha)
-            output[..., :3] = (
-                src[..., :3] * src_alpha
-                + output[..., :3] * dst_alpha * (1.0 - src_alpha)
-            ) / safe_alpha
-            output[..., 3:4] = combined_alpha
+            composite_rgba8_over_float32(output, source, layer.opacity, project_layer_blend_mode(self, layer.id))
         return np.clip(output * 255.0, 0, 255).astype(np.uint8)
 
     def to_dict(self) -> dict[str, Any]:

@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage,QPixmap
 from app.models.effect_resource_layer import EffectLayerTransform3D, PLACEMENT_PARTICLE
 from app.services.effect_resource_layer_render_service import render_effect_resource_layer_current_frame
 from app.services.alpha_composite_service import composite_rgba8_over_float32
+from app.models.blend_mode import BLEND_NORMAL, project_layer_blend_mode
 from app.services.runtime_diagnostics import log_exception
 
 
@@ -103,7 +104,7 @@ class PlaybackFrameCache:
 def playback_relevant_revision(project) -> tuple:
     return (
         tuple((item.id,item.revision) for item in project.resource_compositions),
-        tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision) for item in project.effect_resource_layers),
+        tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision,item.particle_settings.blend_mode) for item in project.effect_resource_layers),
         tuple((layer.id,layer.visible,layer.opacity) for layer in project.layers),
         project.width,project.height,project.fps,project.loop,
     )
@@ -138,9 +139,9 @@ class PlaybackStaticLayerCache:
             return value,False
 
 
-def _composite(output,source,opacity):
+def _composite(output,source,opacity,blend_mode=BLEND_NORMAL):
     if source is None or source.shape[:2]!=output.shape[:2]:return
-    composite_rgba8_over_float32(output,source,opacity)
+    composite_rgba8_over_float32(output,source,opacity,blend_mode)
 
 
 def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_layer_id=None,static_layer_cache=None,collector=None,solo_preview=False):
@@ -172,8 +173,8 @@ def render_exact_playback_frame(project,frame_index,preview_frames=None,preview_
         if has_solo and (logical is None or not project.effect_preview_soloed(logical)):continue
         if preview is not None and layer.id==preview_layer_id:source=preview;replacement_seen=True
         else:source=dynamic.get(layer.id,None if project_frame is None else project_frame.layer_pixels.get(layer.id))
-        _composite(output,source,layer.opacity)
-    if preview is not None and not replacement_seen and not has_solo:_composite(output,preview,1.0)
+        _composite(output,source,layer.opacity,project_layer_blend_mode(project,layer.id))
+    if preview is not None and not replacement_seen and not has_solo:_composite(output,preview,1.0,project_layer_blend_mode(project,preview_layer_id))
     rgba=np.ascontiguousarray(np.clip(output*255.0,0,255).astype(np.uint8));total=(perf_counter()-started)*1000.0
     return rgba,{"particle_exact_render":particle_ms,"single_exact_render":single_ms,"layer_alpha_composite":(perf_counter()-composite_started)*1000.0,"exact_frame_generation":total}
 

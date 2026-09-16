@@ -99,6 +99,7 @@ class InteractiveTransformProxyState:
     underlay_pixmap: QPixmap | None = None
     overlay_pixmap: QPixmap | None = None
     prewarm_token: object | None = None
+    blend_mode: str = "normal"
 
     def queue(self, transform: EffectLayerTransform3D) -> None:
         self.pending_transform = deepcopy(transform)

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.18 - 2026-09-14
+
+- Added persistent `Normal` / `Additive` Blend Mode for Particle Emission Resource Layers in a dedicated localized Rendering Inspector section; Normal remains the default and unknown values are rejected.
+- Implemented Additive as clamped premultiplied source/destination RGB contributions plus clamped Alpha, restored to valid straight-alpha RGBA storage. Transparent hidden RGB contributes nothing and uint8 values cannot wrap.
+- Applied the same Additive contract both to particles overlapping inside one emitter and to the resulting logical Effect Layer over lower Effect layers; upper Normal layers retain ordinary source-over ordering.
+- Preserved source alpha, Particle opacity/easing, generated Layer opacity, Scale/Color over Lifetime, deterministic seed/motion, Parenting, Layer Space/Surface transforms, preview cache invalidation, and strict output clipping.
+- Kept the historical Normal arithmetic path byte exact and aligned current-frame, full render, materialized Generated Output, Effect Playback, project composition, and decoded PNG export.
+- Advanced project saves to format v15; format v14 and older supported projects load missing Blend Mode as Normal without rewriting their source files.
+- Documented that PNG exports contain baked RGBA results only and do not carry a reusable Additive blend instruction for engines or runtimes.
+- Added reference math, saturation, alpha, overlap, layer-order, migration, cache, UI Undo/no-op, output parity, and 100/500/1000/5000-particle benchmark coverage.
+
 ## v0.0.17 - 2026-09-11
 
 - Added persistent RGB-only Particle Color over Lifetime with Start Color, End Color, and four easing modes evaluated from each particle's own birth to last visible frame.
