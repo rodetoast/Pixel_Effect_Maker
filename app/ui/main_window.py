@@ -2080,16 +2080,19 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _particle_settings_merge_id(before: ParticleEmitterSettings, after: ParticleEmitterSettings) -> int:
         """Keep distinct lifetime commits separate while merging one control's repeats."""
-        left=before.to_dict();right=after.to_dict();left_scale=left.pop("scale_over_lifetime");right_scale=right.pop("scale_over_lifetime");left_color=left.pop("color_over_lifetime");right_color=right.pop("color_over_lifetime");left_easing=left.pop("easing");right_easing=right.pop("easing");left_blend=left.pop("blend_mode");right_blend=right.pop("blend_mode")
+        left=before.to_dict();right=after.to_dict();left_scale=left.pop("scale_over_lifetime");right_scale=right.pop("scale_over_lifetime");left_color=left.pop("color_over_lifetime");right_color=right.pop("color_over_lifetime");left_easing=left.pop("easing");right_easing=right.pop("easing");left_blend=left.pop("blend_mode");right_blend=right.pop("blend_mode");left_gravity=(left.pop("gravity_enabled"),left.pop("gravity_strength"));right_gravity=(right.pop("gravity_enabled"),right.pop("gravity_strength"))
         scale_changed=[name for name in left_scale if left_scale[name]!=right_scale[name]]
         color_changed=[name for name in left_color if left_color[name]!=right_color[name]]
-        if left==right and left_easing==right_easing and left_color==right_color and left_blend==right_blend and len(scale_changed)==1:
+        if left==right and left_easing==right_easing and left_color==right_color and left_blend==right_blend and left_gravity==right_gravity and len(scale_changed)==1:
             return {"enabled":710,"start":711,"end":712,"easing":713}[scale_changed[0]]
-        if left==right and left_easing==right_easing and left_scale==right_scale and left_blend==right_blend and len(color_changed)==1:
+        if left==right and left_easing==right_easing and left_scale==right_scale and left_blend==right_blend and left_gravity==right_gravity and len(color_changed)==1:
             return {"enabled":720,"start_rgb":721,"end_rgb":722,"easing":723}[color_changed[0]]
-        if left==right and left_scale==right_scale and left_color==right_color and left_blend==right_blend and left_easing!=right_easing:
+        if left==right and left_scale==right_scale and left_color==right_color and left_blend==right_blend and left_gravity==right_gravity and left_easing!=right_easing:
             return 714
-        if left==right and left_scale==right_scale and left_color==right_color and left_easing==right_easing and left_blend!=right_blend:return 730
+        if left==right and left_scale==right_scale and left_color==right_color and left_easing==right_easing and left_gravity==right_gravity and left_blend!=right_blend:return 730
+        if left==right and left_scale==right_scale and left_color==right_color and left_easing==right_easing and left_blend==right_blend and left_gravity!=right_gravity:
+            changed=[index for index,(a,b) in enumerate(zip(left_gravity,right_gravity)) if a!=b]
+            if len(changed)==1:return 740+changed[0]
         return 700
 
     def _effect_guide_changed(self, identifier: str, settings, final: bool) -> None:

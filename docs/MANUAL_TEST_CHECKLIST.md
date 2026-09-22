@@ -1,4 +1,20 @@
-# Pixel Effect Maker v0.0.18 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.19 수동 테스트 체크리스트
+
+## v0.0.19 Particle Gravity
+
+- [ ] Gravity OFF에서 기존 v0.0.18 Effect의 trajectory와 픽셀이 같은지 확인한다.
+- [ ] 양수 Gravity의 Falling Debris/Hit Spark가 처음 속도를 유지한 채 점점 아래로 휘는지 확인한다.
+- [ ] 음수 Gravity의 Rising Ember가 위쪽으로 가속되는지 확인한다.
+- [ ] 지속 방출에서 새 Particle과 오래된 Particle의 변위가 각 birth age에 맞게 다른지 확인한다.
+- [ ] 재생으로 Frame N에 도달한 위치와 다른 Frame에서 N을 직접 클릭한 위치가 같은지 확인한다.
+- [ ] Linear에는 ballistic endpoint가, Orbit/Helix에는 radius·phase·axis를 보존한 전체 drift가 나타나는지 확인한다.
+- [ ] Gravity + Scale + Color + Additive를 동시에 켰을 때 네 기능이 독립적으로 유지되는지 확인한다.
+- [ ] Gravity toggle과 Strength 입력이 각각 Undo/Redo 한 단계이며 같은 값/refresh에는 Undo가 생기지 않는지 확인한다.
+- [ ] A: ON/1.375, B: OFF/-0.625를 설정하고 A→B→A 선택 후 exact하게 보존되는지 확인한다.
+- [ ] Save/Reload 후 enabled/strength가 exact하고 format 15 프로젝트는 OFF/0으로 열리는지 확인한다.
+- [ ] Parent/parent_offset/Keep World/System/Surface/Rotation X·Y·Z/Perspective와 함께 trajectory를 확인한다.
+- [ ] 출력 밖 Particle은 Editor Overscan 계약을 유지하고 최종 PNG는 Composition 크기로 strict clip되는지 확인한다.
+- [ ] Windows native GUI manual QA: **수행하지 않음**. 사용자 승인 전 실제 네이티브 클릭/시각 검증은 주장하지 않는다.
 
 ## v0.0.18 Particle Additive Blend
 

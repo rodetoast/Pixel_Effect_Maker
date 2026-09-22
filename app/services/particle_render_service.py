@@ -23,6 +23,7 @@ from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.services.layer_space_transform_service import project_local_points
 from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar, normalized_lifetime_age
+from app.services.particle_natural_motion_service import gravity_displacement
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -83,29 +84,33 @@ def _stable_motion_phase(seed: int, particle_id: int, spread: float) -> float:
     return fraction*float(spread)
 
 
-def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: ParticleInstance, normalized_age: float, effect_frame: int = 0, *, evaluated_motion: ParticleMotionSettings | None = None) -> ParticleMotionPosition:
+def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: ParticleInstance, normalized_age: float, effect_frame: int = 0, *, evaluated_motion: ParticleMotionSettings | None = None, particle_age: float | None = None) -> ParticleMotionPosition:
     """Evaluate Linear, Orbit, or Helix in particle-local XYZ coordinates."""
     motion=evaluated_motion or settings.motion.evaluated(effect_frame)
     t=max(0.0,min(1.0,float(normalized_age)))
+    age=t*instance.lifetime if particle_age is None else max(0.0,float(particle_age))
     if motion.mode=="linear":
-        age=t*instance.lifetime
-        return ParticleMotionPosition(instance.start_x+instance.velocity_x*age,instance.start_y+instance.velocity_y*age,0.0)
-    radius_t=_motion_ease(t,motion.radius_easing);angle_t=_motion_ease(t,motion.angle_easing)
-    radius=motion.radius_start+(motion.radius_end-motion.radius_start)*radius_t
-    # Screen Y grows downward, so positive angles are visually clockwise.
-    sign=1.0 if motion.direction=="clockwise" else -1.0
-    phase=instance.motion_phase_unit*motion.phase_spread_degrees if instance.motion_phase_unit else instance.motion_phase_degrees
-    angle=math.radians(motion.start_angle_degrees+sign*motion.turns*360.0*angle_t+phase)
-    orbit_x=math.cos(angle)*radius*motion.ellipse_scale_x
-    orbit_y=math.sin(angle)*radius*motion.ellipse_scale_y
-    plane=math.radians(motion.orbit_plane_rotation_degrees)
-    orbit_x,orbit_y=(orbit_x*math.cos(plane)-orbit_y*math.sin(plane),orbit_x*math.sin(plane)+orbit_y*math.cos(plane))
-    cx=instance.start_x+motion.center_x;cy=instance.start_y+motion.center_y;cz=motion.center_z
-    if motion.mode=="orbit": return ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz)
-    axis_t=_motion_ease(t,motion.axis_easing);axis=motion.axis_start+(motion.axis_end-motion.axis_start)*axis_t
-    if motion.helix_axis=="x": return ParticleMotionPosition(cx+axis,cy+orbit_x,cz+orbit_y)
-    if motion.helix_axis=="y": return ParticleMotionPosition(cx+orbit_x,cy+axis,cz+orbit_y)
-    return ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz+axis)
+        base=ParticleMotionPosition(instance.start_x+instance.velocity_x*age,instance.start_y+instance.velocity_y*age,0.0)
+    else:
+        radius_t=_motion_ease(t,motion.radius_easing);angle_t=_motion_ease(t,motion.angle_easing)
+        radius=motion.radius_start+(motion.radius_end-motion.radius_start)*radius_t
+        # Screen Y grows downward, so positive angles are visually clockwise.
+        sign=1.0 if motion.direction=="clockwise" else -1.0
+        phase=instance.motion_phase_unit*motion.phase_spread_degrees if instance.motion_phase_unit else instance.motion_phase_degrees
+        angle=math.radians(motion.start_angle_degrees+sign*motion.turns*360.0*angle_t+phase)
+        orbit_x=math.cos(angle)*radius*motion.ellipse_scale_x
+        orbit_y=math.sin(angle)*radius*motion.ellipse_scale_y
+        plane=math.radians(motion.orbit_plane_rotation_degrees)
+        orbit_x,orbit_y=(orbit_x*math.cos(plane)-orbit_y*math.sin(plane),orbit_x*math.sin(plane)+orbit_y*math.cos(plane))
+        cx=instance.start_x+motion.center_x;cy=instance.start_y+motion.center_y;cz=motion.center_z
+        if motion.mode=="orbit": base=ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz)
+        else:
+            axis_t=_motion_ease(t,motion.axis_easing);axis=motion.axis_start+(motion.axis_end-motion.axis_start)*axis_t
+            if motion.helix_axis=="x": base=ParticleMotionPosition(cx+axis,cy+orbit_x,cz+orbit_y)
+            elif motion.helix_axis=="y": base=ParticleMotionPosition(cx+orbit_x,cy+axis,cz+orbit_y)
+            else: base=ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz+axis)
+    gravity_y=gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength)
+    return ParticleMotionPosition(base.x,base.y+gravity_y,base.z)
 
 
 def project_particle_billboard(position: ParticleMotionPosition, strength: float, width: int, height: int) -> tuple[float,float,float,bool]:
@@ -122,8 +127,9 @@ def project_particle_billboard(position: ParticleMotionPosition, strength: float
 def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height: int, samples: int | None = None, effect_frame: int = 0) -> list[ParticleMotionPosition]:
     """Sample the exact renderer motion evaluator for Canvas guides."""
     count=samples or max(32,min(256,32+round(abs(settings.motion.turns)*24)))
-    instance=ParticleInstance(0,1,settings.origin_x,settings.origin_y,0,0,1,0,0,0,1,0)
-    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),effect_frame) for index in range(count)]
+    lifetime=max(1,round((settings.lifetime_min+settings.lifetime_max)/2))
+    instance=ParticleInstance(0,lifetime,settings.origin_x,settings.origin_y,0,0,1,0,0,0,1,0)
+    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),effect_frame,particle_age=index/max(1,count-1)*max(0,lifetime-1)) for index in range(count)]
 
 
 def velocity_from_direction_speed(direction_degrees: float, speed: float) -> tuple[float, float]:
@@ -142,7 +148,7 @@ def representative_particle_guide(settings: ParticleEmitterSettings) -> dict[str
         "origin_x": float(settings.origin_x),
         "origin_y": float(settings.origin_y),
         "endpoint_x": float(settings.origin_x) + velocity_x * age,
-        "endpoint_y": float(settings.origin_y) + velocity_y * age,
+        "endpoint_y": float(settings.origin_y) + velocity_y * age + gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength),
         "speed": speed,
         "lifetime": lifetime,
     }
@@ -242,7 +248,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 
 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
-    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None)
+    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
     return repr(values),int(clip_length)
 
 
@@ -271,7 +277,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             lifetime_age = normalized_lifetime_age(age, instance.lifetime)
             amount = ease(lifetime_age, settings.easing)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
-            position=evaluate_particle_motion(settings,instance,normalized,frame_index,evaluated_motion=motion_value)
+            position=evaluate_particle_motion(settings,instance,normalized,frame_index,evaluated_motion=motion_value,particle_age=age)
             local_x,local_y,motion_scale,visible=project_particle_billboard(position,motion_perspective,project.width,project.height)
             if not visible:continue
             lifetime_scale=evaluate_lifetime_scalar(settings.scale_over_lifetime,lifetime_age)

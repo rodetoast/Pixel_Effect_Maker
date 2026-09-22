@@ -104,7 +104,7 @@ class PlaybackFrameCache:
 def playback_relevant_revision(project) -> tuple:
     return (
         tuple((item.id,item.revision) for item in project.resource_compositions),
-        tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision,item.particle_settings.blend_mode) for item in project.effect_resource_layers),
+        tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision,item.particle_settings.blend_mode,item.particle_settings.gravity_enabled,item.particle_settings.gravity_strength) for item in project.effect_resource_layers),
         tuple((layer.id,layer.visible,layer.opacity) for layer in project.layers),
         project.width,project.height,project.fps,project.loop,
     )

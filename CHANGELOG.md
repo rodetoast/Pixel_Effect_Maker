@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.19 - 2026-09-17
+
+- Added persistent signed constant Gravity in a dedicated localized Natural Motion Inspector section, with preserved disabled values and a `-1024..1024 px/frame²` numeric policy.
+- Evaluated Gravity analytically from each particle's own 0-based frame age as `0.5 × g × age²`; birth displacement is zero and direct seek has no simulation-history dependency.
+- Composed Gravity after the existing Linear/Orbit/Helix base evaluator in particle/system-local space, preserving Orbit radius/phase and Helix radius/phase/axis before the existing perspective, Layer/Parent 2.5D, and Surface transforms.
+- Kept Gravity independent from Scale/Color/Alpha over Lifetime and Normal/Additive Blend, and excluded it from spawn-state cache keys so toggles consume no random draws or rebuild deterministic instances.
+- Updated representative motion guides, render/playback cache identities, one-command Undo/no-op handling, English/Korean labels and tooltips, current/full/generated/PNG parity, and strict output clipping coverage.
+- Advanced project saves to format v16; format v15 and older supported projects load Gravity disabled at zero without rewriting their source files.
+- Added formula, age, motion preservation, seed/cache, UI integrity, Undo, migration, transform/output, representative fixture, and 100/500/1000/5000-particle benchmark coverage.
+
 ## v0.0.18 - 2026-09-14
 
 - Added persistent `Normal` / `Additive` Blend Mode for Particle Emission Resource Layers in a dedicated localized Rendering Inspector section; Normal remains the default and unknown values are rejected.

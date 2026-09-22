@@ -6,7 +6,9 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v15. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.18`.
+New saves use project format v16. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.19`.
+
+Particle Emission now has a localized **Natural Motion** section with signed constant Gravity. Gravity is evaluated analytically from each particle's 0-based age as `0.5 × strength × age²` in the existing particle/system-local frame unit: positive values move down and negative values move up. Linear, Orbit, and Helix remain the base paths; Gravity adds Y displacement before the existing local perspective, Layer/Parent 2.5D, and Surface pipeline. It consumes no random draws and remains exact for Timeline direct seek, full playback, Bake, and PNG export.
 
 Particle Emission Resource Layers support `Normal` and `Additive` Blend Modes in the Inspector's Rendering section. Additive uses clamped premultiplied RGB and Alpha contributions while storing valid straight-alpha RGBA, and it applies both between particles in one emitter and between that logical Effect Layer and lower layers. Source alpha, particle opacity, generated-layer opacity, ordering, Color over Lifetime, and Scale over Lifetime remain active. PNG export contains the already baked RGBA result; PNG does not retain a reusable blend-mode instruction for another engine.
 
@@ -36,7 +38,7 @@ The exact Effect renderer composites only each layer's non-zero-alpha ROI, skips
 
 This source currently identifies itself as an **Early Preview Build**. Normal startup—including an explicit `.peffect.json` path—shows a bilingual risk and project-overview notice before loading work. Acceptance can be remembered only for the current app version, project format, and notice revision through QSettings; it is never written to project JSON. The overview remains available from **Help > Project Overview and Development Status…**. `--version` and `--check` bypass the notice for diagnostics.
 
-현재 버전은 **v0.0.18**이며 프로젝트 형식은 v15입니다. Particle Inspector의 **렌더링 / Rendering**에서 일반(Normal)과 가산(Additive)을 선택할 수 있습니다. 가산은 한 Emitter 안의 Particle 겹침과 해당 논리 Effect Layer가 아래 레이어에 합성되는 두 경계 모두에 적용되며, premultiplied 기여도를 clamp한 뒤 valid straight-alpha RGBA로 저장합니다. **수명에 따른 변화 / Over Lifetime**의 Scale·RGB Color와 기존 Alpha/Easing은 독립적으로 유지됩니다. 이전 프로젝트는 Normal로 열립니다. PNG에는 이미 계산된 RGBA 픽셀만 bake되며 다른 엔진이 해석할 Blend Mode 명령은 저장되지 않습니다.
+현재 버전은 **v0.0.19**이며 프로젝트 형식은 v16입니다. Particle Inspector의 **자연스러운 움직임 / Natural Motion**에서 signed constant Gravity를 켜고 강도를 `px/frame²`로 입력할 수 있습니다. 각 Particle의 생성 순간을 age 0으로 삼아 `0.5 × g × age²`를 직접 계산하므로 Timeline 직접 이동과 순차 재생이 같습니다. 양수는 아래, 음수는 위이며 Linear/Orbit/Helix의 기존 경로에 시스템 로컬 Y 변위로 더해집니다. Scale·Color·Alpha over Lifetime 및 Normal/Additive Blend와 독립적으로 공존합니다.
 
 Resource Editor의 **Sprite 2.5D**는 리소스 외형을 만드는 기본 흐름입니다. Effect Editor의 **System Space Transform**은 파티클 생성 위치와 Motion 경로를 포함한 전체 좌표계를 바꾸는 Advanced 기능이며, **Surface Transform**은 기존 최종 RGBA 결과를 보존하는 Compatibility 기능입니다. Particle은 변환된 view Z로 안정 정렬하고 카메라를 향하는 Billboard로 래스터화됩니다. 세 단계의 구분은 `docs/2_5D_TRANSFORM_ARCHITECTURE.md`, 수학적 평가 순서는 `docs/LAYER_SPACE_2_5D_TRANSFORM.md`를 참고합니다.
 

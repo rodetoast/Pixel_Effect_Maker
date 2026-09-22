@@ -62,7 +62,7 @@ def test_rotation_tracks_preserve_total_degrees_interpolation_and_round_trip():
     assert track.keyframe_at(10).value==720 and track.evaluate(5)==360
     project=Project.create_default(frame_count=11);asset=SourceAsset("sprite",__import__("numpy").zeros((2,2,4),dtype="uint8"));project.source_assets.append(asset);composition=ResourceComposition("sprite",2,2,12,11,True);layer=CompositionLayer("sprite","source_asset",asset.id,0,10);layer.tracks["rotation"]=track;composition.layers.append(layer);project.resource_compositions.append(composition)
     loaded=Project.from_dict(project.to_dict());loaded_track=loaded.resource_compositions[0].layers[0].tracks["rotation"]
-    assert loaded_track.keyframe_at(10).value==720 and loaded_track.evaluate(5)==360 and FORMAT_VERSION==15
+    assert loaded_track.keyframe_at(10).value==720 and loaded_track.evaluate(5)==360 and FORMAT_VERSION==16
 
 
 def test_resource_and_effect_rotation_fields_use_total_degree_widget():

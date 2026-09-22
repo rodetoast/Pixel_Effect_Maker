@@ -288,6 +288,10 @@ KO = {
 }
 
 EN.update({
+    "particle.natural_motion":"Natural Motion","particle.gravity":"Gravity","particle.gravity_strength":"Strength",
+    "tooltip.particle.natural_motion":"Adds deterministic motion contributions after the base Linear, Orbit, or Helix path.",
+    "tooltip.particle.gravity":"Applies constant acceleration to each particle from its own birth. Positive values move down; negative values move up.",
+    "tooltip.particle.gravity_strength":"Signed acceleration in pixels per frame squared. It preserves the stored value while Gravity is off.",
     "resource_layer.title": "Resource Layer", "resource_layer.plural": "Resource Layers",
     "resource_layer.add": "Add Resource Layer", "resource_layer.placement_mode": "Placement Mode",
     "resource_layer.name": "Layer Name", "resource_layer.duplicate": "Duplicate Layer", "resource_layer.remove": "Remove Layer", "resource_layer.move_front": "↑ Move Front", "resource_layer.move_back": "↓ Move Back",
@@ -416,6 +420,10 @@ EN.update({
 })
 
 KO.update({
+    "particle.natural_motion":"자연스러운 움직임","particle.gravity":"중력","particle.gravity_strength":"강도",
+    "tooltip.particle.natural_motion":"기본 직선, 궤도 또는 나선 경로 뒤에 결정론적인 움직임을 더합니다.",
+    "tooltip.particle.gravity":"각 Particle이 생성된 순간부터 일정한 가속도를 적용합니다. 양수는 아래 방향, 음수는 위 방향입니다.",
+    "tooltip.particle.gravity_strength":"프레임 제곱당 픽셀 단위의 signed 가속도입니다. 중력을 꺼도 입력한 값은 보존됩니다.",
     "resource_layer.advanced":"고급",
     "resource_layer.transform":"시스템 공간 변형",
     "resource_layer.transform_help":"파티클 생성 위치와 이동 경로를 포함해 레이어 전체 좌표계를 변환합니다. 리소스 이미지만 기울이려면 리소스 에디터의 X/Y/Z 회전을 사용하세요.",

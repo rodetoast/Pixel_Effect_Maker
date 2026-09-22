@@ -6,14 +6,14 @@
 - Project: `C:\Users\SOUTHPAW GAMES\Desktop\Pixel_Effect_Maker`.
 - HEAD: `1bfd865c6396565b9c43d541613b5a58ef590cd9`, main.
 - Working tree: Resource Clip / Overscan 변경이 있는 상태를 감사했다. 해당 변경은 수정하지 않았다.
-- 이 문서의 최초 감사 산출물은 이 문서와 `tools/audit_effect_authoring.py`였고 `baff65b`에 checkpoint됐다. 아래 matrix와 결론은 v0.0.18 Additive 구현 결과에 맞춰 갱신했다.
+- 이 문서의 최초 감사 산출물은 이 문서와 `tools/audit_effect_authoring.py`였고 `baff65b`에 checkpoint됐다. 아래 matrix와 결론은 v0.0.19 Gravity 구현 결과에 맞춰 갱신했다.
 - 코드 추적, 기존 자동 테스트, 합성 fixture, offscreen Inspector introspection을 사용했다. **실제 GUI 수동 제작/시각 QA는 수행하지 않았다.** 외부 제품의 기능 수를 목표로 삼지 않았으며 외부 reference는 사용하지 않았다.
 
 제품 정의: 2D/Pixel Art/Sprite 기반 게임용 이펙트를 Animation·Particle·Layer로 조합하고 엔진에 가져갈 이미지로 출력하는 제작툴. 범용 영상 편집기나 Full 3D 엔진이 아니다.
 
-현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 중간 단계**다. v0.0.16 uniform Scale, v0.0.17 RGB Color over Lifetime에 이어 v0.0.18에서 Normal/Additive의 최소 end-to-end 경로를 추가했다. 남은 큰 표현력 병목은 (1) Gravity/Drag/Noise, (2) multi-point lifetime curve, (3) trail/orientation이다. 별도의 납품 병목은 Sprite Sheet/engine metadata 부재다.
+현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 중간 단계**다. v0.0.16 uniform Scale, v0.0.17 RGB Color over Lifetime, v0.0.18 Normal/Additive에 이어 v0.0.19에서 signed constant Gravity를 추가했다. 남은 큰 표현력 병목은 (1) Drag와 Noise/Turbulence, (2) multi-point lifetime curve, (3) trail/orientation이다. 별도의 납품 병목은 Sprite Sheet/engine metadata 부재다.
 
-v0.0.18은 **Particle Additive Blend**를 emitter 내부와 logical Effect Layer 합성 경계 모두에 구현했다. straight-alpha 저장을 유지하면서 source/destination의 premultiplied RGB 기여도와 Alpha를 각각 더하고 clamp한다. PNG는 이 계산이 bake된 RGBA일 뿐 Blend Mode 지시나 engine runtime metadata를 보존하지 않는다. 다음 기능 1순위는 deterministic Gravity/Force/Drag이며, Sprite Sheet/metadata는 납품 흐름의 별도 높은 우선순위다.
+v0.0.19의 **Gravity**는 각 Particle의 실제 0-based frame age에 `0.5 × g × age²`를 적용하는 analytic local-Y contribution이다. Linear/Orbit/Helix base path 뒤, 기존 Layer/Parent 2.5D와 Surface 변환 전에 합성되며 direct seek와 export가 상태 이력 없이 동일하다. 정의한 constant Gravity end-to-end 경로는 COMPLETE지만 Natural Motion 전체는 Drag와 Noise/Turbulence가 없어 PARTIAL이다.
 
 ## 판정 방법 / 증거 인덱스
 
@@ -101,7 +101,7 @@ Missing-feature 판정은 위 dataclass/serializer/Inspector/renderer dispatch/e
 | Motion M | Center XYZ/radius start-end/angle/turns/axis/perspective tracks | COMPLETE | Y | Y | Y | Y | Y | Y | Y | 유지 |
 | Motion M | Ellipse XY/phase spread/plane rotation tracks | MODEL_ONLY | Y | 0 | Y | Y | 0 | Y | Y | B |
 | Motion P | Radial outward velocity | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
-| Motion P/M | Gravity / acceleration / constant force | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
+| Motion P/M | Signed constant Gravity | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
 | Motion P/M | Drag / damping | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
 | Motion P/M | Noise / turbulence | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
 | Motion P/M | Random walk / random per-particle force | MISSING | 0 | 0 | 0 | 0 | — | — | — | B |
@@ -205,7 +205,7 @@ v0.0.16 unified Particle에는 `LifetimeScalarModulation` 기반의 uniform Scal
 
 v0.0.17의 RGB lifetime channel은 source artwork RGB에 encoded 8-bit component-wise multiplier를 적용하며 Alpha를 포함하지 않는다. Start/End/Easing으로 Fire, Heal, Poison, Magic의 2-point 색 진행을 직접 만들 수 있다. static base tint, random palette, multi-stop gradient, HSV/HSL interpolation은 아직 없다.
 
-Motion은 linear/orbit/helix만 선택하며 additive force stack이 아니다. radial은 initial direction 옵션이다. random initial direction은 random walk가 아니다. Gravity/acceleration/force/drag/noise/turbulence/attraction/follow 없음. Smoke/Fire/Dust/Fog/wisps/electric/Snow는 source 애니메이션·직선 다층·Orbit 근사에 의존한다. 특히 자연스러운 흩어짐/감속은 부족하다.
+Motion은 linear/orbit/helix base path와 signed constant Gravity contribution을 제공하지만 범용 force stack은 아니다. radial은 initial direction 옵션이며 random initial direction은 random walk가 아니다. Drag/noise/turbulence/attraction/follow는 없다. Smoke/Fire/Dust/Fog/wisps/electric/Snow는 source 애니메이션·다층·Orbit·Gravity 조합에 의존하며 자연스러운 감속과 불규칙 흐름은 아직 부족하다.
 
 Particle마다 animated clip 또는 완료된 Resource Composition을 재생한다. clip speed min/max는 양수이고 최소/최대 invariant 및 Undo 회귀 테스트가 있다. GIF frame durations를 소비한다. once는 source 종료 후 sprite 없음, loop는 modulo, hold는 마지막 frame 유지다. imported AnimationClip의 playback_mode는 모델/renderer가 지원하지만 V2 asset Inspector에 once/hold 선택 control이 없다(일부 import가 hold를 정한다). Resource loop checkbox와 imported clip playback mode를 구분한다. asset preview는 자체 modulo 재생이므로 runtime once/hold의 정확한 검토 도구는 아니다. reverse/ping-pong/lifetime sync는 없다.
 
@@ -425,7 +425,7 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 48. Linear: 지원.
 49. Orbit: 지원, 일부 absolute-frame motion tracks.
 50. Helix: 지원, axis/radius/angle lifetime trajectory.
-51. Gravity: 없음.
+51. Gravity: COMPLETE — signed local-Y constant acceleration, actual particle frame age, analytic direct-seek evaluator.
 52. Force: 없음.
 53. Drag: 없음.
 54. Noise: 없음.
@@ -499,7 +499,7 @@ Force/Drag/Noise는 표현력 병목 상위이지만 deterministic seek/현재 �
 122. Reuse: evaluator, seeded instances, compositor, stable-ID commands, final renderer.
 123. Dependency graph: 위 계약→module→UI/export 순서 참조.
 124. High risk: alpha contract/stateful seek/cache/recursive events/history memory.
-125. FORMAT: v0.0.18 Blend Mode 영속화로 15; FORMAT 14 이하는 Normal identity로 migration.
+125. FORMAT: v0.0.19 Gravity 영속화로 16; FORMAT 15 이하는 Gravity OFF/0 identity로 migration.
 126. 다음 5개: deterministic Gravity/Force/Drag → Sheet/metadata → Work Area → multi-point lifetime curve → Trail/Orientation.
 127. 이유: 표현 공백 우선, 이어서 엔진 납품과 반복 속도.
 128. 선행 dependency: normalized age / alpha / canonical output / view bounds.

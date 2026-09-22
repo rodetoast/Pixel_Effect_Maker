@@ -26,7 +26,7 @@ from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 from .layer_parenting import repair_parent_links
 
-FORMAT_VERSION = 15
+FORMAT_VERSION = 16
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
