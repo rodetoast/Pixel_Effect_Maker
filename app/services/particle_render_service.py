@@ -23,7 +23,7 @@ from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.services.layer_space_transform_service import project_local_points
 from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar, normalized_lifetime_age
-from app.services.particle_natural_motion_service import gravity_displacement
+from app.services.particle_natural_motion_service import effective_motion_age, gravity_displacement
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -89,10 +89,12 @@ def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: Partic
     motion=evaluated_motion or settings.motion.evaluated(effect_frame)
     t=max(0.0,min(1.0,float(normalized_age)))
     age=t*instance.lifetime if particle_age is None else max(0.0,float(particle_age))
+    motion_age=effective_motion_age(age,settings.drag_enabled,settings.drag_strength)
     if motion.mode=="linear":
-        base=ParticleMotionPosition(instance.start_x+instance.velocity_x*age,instance.start_y+instance.velocity_y*age,0.0)
+        base=ParticleMotionPosition(instance.start_x+instance.velocity_x*motion_age,instance.start_y+instance.velocity_y*motion_age,0.0)
     else:
-        radius_t=_motion_ease(t,motion.radius_easing);angle_t=_motion_ease(t,motion.angle_easing)
+        motion_t=t if not settings.drag_enabled or settings.drag_strength==0.0 else max(0.0,min(1.0,motion_age/instance.lifetime))
+        radius_t=_motion_ease(t,motion.radius_easing);angle_t=_motion_ease(motion_t,motion.angle_easing)
         radius=motion.radius_start+(motion.radius_end-motion.radius_start)*radius_t
         # Screen Y grows downward, so positive angles are visually clockwise.
         sign=1.0 if motion.direction=="clockwise" else -1.0
@@ -105,7 +107,7 @@ def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: Partic
         cx=instance.start_x+motion.center_x;cy=instance.start_y+motion.center_y;cz=motion.center_z
         if motion.mode=="orbit": base=ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz)
         else:
-            axis_t=_motion_ease(t,motion.axis_easing);axis=motion.axis_start+(motion.axis_end-motion.axis_start)*axis_t
+            axis_t=_motion_ease(motion_t,motion.axis_easing);axis=motion.axis_start+(motion.axis_end-motion.axis_start)*axis_t
             if motion.helix_axis=="x": base=ParticleMotionPosition(cx+axis,cy+orbit_x,cz+orbit_y)
             elif motion.helix_axis=="y": base=ParticleMotionPosition(cx+orbit_x,cy+axis,cz+orbit_y)
             else: base=ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz+axis)
@@ -129,7 +131,14 @@ def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height:
     count=samples or max(32,min(256,32+round(abs(settings.motion.turns)*24)))
     lifetime=max(1,round((settings.lifetime_min+settings.lifetime_max)/2))
     instance=ParticleInstance(0,lifetime,settings.origin_x,settings.origin_y,0,0,1,0,0,0,1,0)
-    return [evaluate_particle_motion(settings,instance,index/max(1,count-1),effect_frame,particle_age=index/max(1,count-1)*max(0,lifetime-1)) for index in range(count)]
+    def guide_point(index: int) -> ParticleMotionPosition:
+        fraction=index/max(1,count-1)
+        age=fraction*max(0,lifetime-1)
+        # Preserve the established undamped guide endpoint; Drag guides represent
+        # actual surviving ages so their radius and phase match rendered particles.
+        normalized=age/lifetime if settings.drag_enabled and settings.drag_strength>0 else fraction
+        return evaluate_particle_motion(settings,instance,normalized,effect_frame,particle_age=age)
+    return [guide_point(index) for index in range(count)]
 
 
 def velocity_from_direction_speed(direction_degrees: float, speed: float) -> tuple[float, float]:
@@ -147,8 +156,8 @@ def representative_particle_guide(settings: ParticleEmitterSettings) -> dict[str
     return {
         "origin_x": float(settings.origin_x),
         "origin_y": float(settings.origin_y),
-        "endpoint_x": float(settings.origin_x) + velocity_x * age,
-        "endpoint_y": float(settings.origin_y) + velocity_y * age + gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength),
+        "endpoint_x": float(settings.origin_x) + velocity_x * effective_motion_age(age,settings.drag_enabled,settings.drag_strength),
+        "endpoint_y": float(settings.origin_y) + velocity_y * effective_motion_age(age,settings.drag_enabled,settings.drag_strength) + gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength),
         "speed": speed,
         "lifetime": lifetime,
     }
@@ -248,7 +257,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 
 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
-    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
+    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
     return repr(values),int(clip_length)
 
 

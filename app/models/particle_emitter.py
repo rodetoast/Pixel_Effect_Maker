@@ -13,6 +13,7 @@ from .blend_mode import BLEND_NORMAL, validate_blend_mode
 
 LIFETIME_SCALE_MAX = 16.0
 GRAVITY_STRENGTH_MAX = 1024.0
+DRAG_STRENGTH_MAX = 10.0
 RGB_MIN = 0
 RGB_MAX = 255
 
@@ -273,6 +274,8 @@ class ParticleEmitterSettings:
     blend_mode: str = BLEND_NORMAL
     gravity_enabled: bool = False
     gravity_strength: float = 0.0
+    drag_enabled: bool = False
+    drag_strength: float = 0.0
     seed: int = 0
     scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
     color_over_lifetime: LifetimeColorModulation = field(default_factory=LifetimeColorModulation)
@@ -308,6 +311,8 @@ class ParticleEmitterSettings:
         if not isinstance(self.gravity_enabled, bool): raise ValueError("particle gravity enabled must be a boolean")
         if not math.isfinite(float(self.gravity_strength)): raise ValueError("particle gravity strength must be finite")
         if abs(float(self.gravity_strength)) > GRAVITY_STRENGTH_MAX: raise ValueError(f"particle gravity strength must be -{GRAVITY_STRENGTH_MAX:g}..{GRAVITY_STRENGTH_MAX:g}")
+        if not isinstance(self.drag_enabled, bool): raise ValueError("particle drag enabled must be a boolean")
+        if not math.isfinite(float(self.drag_strength)) or not 0.0 <= float(self.drag_strength) <= DRAG_STRENGTH_MAX: raise ValueError(f"particle drag strength must be 0..{DRAG_STRENGTH_MAX:g}")
         self.scale_over_lifetime.validate()
         self.color_over_lifetime.validate()
         self.motion.validate()

@@ -191,4 +191,4 @@ def test_preview_notice_escape_rejects(tmp_path):
 
 def test_build_and_format_identity_remain_stable():
     from app.version import get_display_name
-    assert get_display_name() == "Pixel Effect Maker v0.0.19" and FORMAT_VERSION == 16
+    assert get_display_name() == "Pixel Effect Maker v0.0.20" and FORMAT_VERSION == 17

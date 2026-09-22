@@ -288,6 +288,9 @@ KO = {
 }
 
 EN.update({
+    "particle.drag":"Drag","particle.drag_strength":"Strength",
+    "tooltip.particle.drag":"Gradually slows each particle's base Linear, Orbit, or Helix progression after birth. It does not damp Gravity or extend particle lifetime.",
+    "tooltip.particle.drag_strength":"Non-negative damping strength in 1/frame. Larger values slow base motion sooner; Gravity acceleration and lifetime channels are unchanged.",
     "particle.natural_motion":"Natural Motion","particle.gravity":"Gravity","particle.gravity_strength":"Strength",
     "tooltip.particle.natural_motion":"Adds deterministic motion contributions after the base Linear, Orbit, or Helix path.",
     "tooltip.particle.gravity":"Applies constant acceleration to each particle from its own birth. Positive values move down; negative values move up.",
@@ -420,6 +423,9 @@ EN.update({
 })
 
 KO.update({
+    "particle.drag":"움직임 감쇠","particle.drag_strength":"강도",
+    "tooltip.particle.drag":"각 Particle의 기본 직선·궤도·나선 움직임을 생성 이후 점점 느리게 합니다. 중력 가속도나 Particle 수명은 감쇠하지 않습니다.",
+    "tooltip.particle.drag_strength":"프레임당 감쇠 강도(1/frame)입니다. 클수록 기본 움직임이 빨리 느려지며 중력과 수명 변화는 그대로입니다.",
     "particle.natural_motion":"자연스러운 움직임","particle.gravity":"중력","particle.gravity_strength":"강도",
     "tooltip.particle.natural_motion":"기본 직선, 궤도 또는 나선 경로 뒤에 결정론적인 움직임을 더합니다.",
     "tooltip.particle.gravity":"각 Particle이 생성된 순간부터 일정한 가속도를 적용합니다. 양수는 아래 방향, 음수는 위 방향입니다.",

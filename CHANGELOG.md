@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.20 - 2026-09-22 (working tree; not committed)
+
+- Added persistent Drag enable/strength controls to the localized Particle Natural Motion Inspector. Strength is `0..10 1/frame`, with five decimal places and a `0.01` step; disabled values are preserved.
+- Evaluated base-motion effective age analytically as `-expm1(-d × actual_age) / d`, with exact identity when Drag is off or strength is zero. No frame-by-frame velocity state or random draw is introduced.
+- Damped Linear travel, Orbit phase, and Helix phase/axial progress while retaining Orbit/Helix radius, center, axis, and initial phase. Gravity remains an independent `0.5 × g × actual_age²` displacement, not physical air resistance.
+- Kept particle death, sprite playback, and Scale/Color/Alpha over Lifetime on actual age; updated motion guides, render/playback cache identities, Undo/no-op behavior, and current/full/generated/PNG output parity.
+- Advanced project saves to format v17; format v16 and older supported projects load with Drag off/zero without rewriting their source files. Added analytic, migration, UI, deterministic seek, cache, transform, export, and benchmark coverage.
+
 ## v0.0.19 - 2026-09-17
 
 - Added persistent signed constant Gravity in a dedicated localized Natural Motion Inspector section, with preserved disabled values and a `-1024..1024 px/frame²` numeric policy.

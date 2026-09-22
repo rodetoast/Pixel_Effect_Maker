@@ -1,4 +1,20 @@
-# Pixel Effect Maker v0.0.19 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.20 수동 테스트 체크리스트
+
+## v0.0.20 Particle Drag — Windows 네이티브 GUI에서 사용자 확인 필요 (Codex 미수행)
+
+- [ ] Drag OFF 및 Drag ON/Strength 0에서 v0.0.19과 같은 경로·픽셀을 확인한다.
+- [ ] 빠른 Linear particle에 Drag 0.001, 0.01, 0.1, 0.2를 적용해 이동 간격이 점차 줄고 강도가 클수록 더 빠르게 감쇠하는지 확인한다.
+- [ ] 수평 Linear + Gravity + Drag에서 수평 이동은 느려지지만 Gravity의 아래쪽 가속은 계속되는지 확인한다. Drag는 Gravity의 물리적 공기 저항이 아니다.
+- [ ] Orbit에서 반지름·중심·초기 위상은 유지되고 회전만 느려지는지 확인한다.
+- [ ] Helix에서 반지름·축·초기 위상은 유지되고 회전과 축 방향 진행이 함께 느려지는지 확인한다.
+- [ ] 생성 시점이 다른 particle에서 오래된 particle이 더 감쇠되고 새 particle은 초기 속도를 유지하는지 확인한다.
+- [ ] 순차 재생 후 프레임 N, 다른 프레임에서 N 직접 클릭, frame step N, export N의 픽셀이 일치하는지 확인한다.
+- [ ] Gravity + Drag + Scale + Color + Alpha + Additive 조합이 서로 독립적으로 유지되는지 확인한다.
+- [ ] Drag toggle 및 Strength 수락 편집이 각각 Undo/Redo 한 단계인지, 동일 값과 Inspector refresh는 Undo/Dirty를 만들지 않는지 확인한다.
+- [ ] Layer A Drag ON/0.1375, Layer B Drag OFF/0.03125 설정 후 A→B→A 선택에서 값과 비활성 값이 정확히 보존되는지 확인한다.
+- [ ] 저장·재열기에서 Drag 설정이 유지되고 format v16 파일은 Drag OFF/0으로 열리되 열기만으로 원본이 변경되지 않는지 확인한다.
+- [ ] Parenting, parent_offset, Keep World, System/Surface Transform, 2.5D와 Drag를 함께 켜고 경로 이상이 없는지 확인한다.
+- [ ] Resource Editor Overscan은 편집 미리보기만 확장하고 최종 PNG는 원래 출력 크기에 엄격히 잘리는지 확인한다.
 
 ## v0.0.19 Particle Gravity
 
