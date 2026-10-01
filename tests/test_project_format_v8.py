@@ -23,7 +23,7 @@ def project_with_particle():
 def test_v8_motion_round_trip_and_tracks():
     project,layer=project_with_particle();layer.particle_settings.motion.set_keyframe("radius_end",4,18,"Ease Out")
     data=project.to_dict();loaded=Project.from_dict(data);motion=loaded.effect_resource_layers[0].particle_settings.motion
-    assert data["format_version"]==FORMAT_VERSION==18 and motion.mode=="helix" and motion.helix_axis=="y" and motion.value("radius_end",4)==18
+    assert data["format_version"]==FORMAT_VERSION==19 and motion.mode=="helix" and motion.helix_axis=="y" and motion.value("radius_end",4)==18
 
 
 def test_v7_missing_motion_migrates_to_linear():
@@ -47,7 +47,7 @@ def test_v1_through_v7_migrate_existing_particles_to_linear(version):
     else:
         data["effect_resource_layers"]=[]
     loaded=Project.from_dict(data)
-    assert loaded.format_version==18
+    assert loaded.format_version==19
     assert all(item.particle_settings.motion.mode=="linear" for item in loaded.effect_resource_layers)
 
 

@@ -74,7 +74,7 @@ def test_resource_2_5d_does_not_change_motion_path_or_center(mode):
 def test_resource_2_5d_round_trip_without_format_bump():
     project,composition,layer,_=context();layer.add_property("rotation_x").set_keyframe(0,25,"Ease In");layer.add_property("rotation_y").set_keyframe(1,-35);layer.add_property("perspective_strength").set_keyframe(0,.5)
     loaded=Project.from_dict(project.to_dict());restored=loaded.resource_compositions[0].layers[0]
-    assert loaded.format_version==FORMAT_VERSION==18
+    assert loaded.format_version==FORMAT_VERSION==19
     assert restored.value("rotation_x",0)==25 and restored.value("rotation_y",1)==-35 and restored.value("perspective_strength",0)==.5
 
 

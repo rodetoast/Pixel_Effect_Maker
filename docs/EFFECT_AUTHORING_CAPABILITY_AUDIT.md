@@ -1,5 +1,16 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## v0.0.22 Cyclic Steady overlay
+
+좁은 **Deterministic Cyclic Steady Emission** 경로는 Model/UI/Render/Undo/Save/PNG까지
+COMPLETE다. 요청 frame의 살아 있는 cycle copies만 계산하며 첫 gate frame부터 이전
+cycle의 수명·sprite·modulation 상태를 포함한다. One Shot은 v0.0.21 pixel goldens와 일치한다.
+전체 Emission은 PARTIAL: particles/sec Rate, multi-burst schedule, filled disk, annulus
+thickness, mask/path spawn, evolving random stream은 추가하지 않았다. Fire/Dust/Rain의
+지속형 목표를 코드/합성 fixture로 검증했으며 자연스러움/전체 프로젝트 seamless를
+자동 보장하지 않는다. [v0.0.22 상세 보고](V0_0_22_CYCLIC_EMISSION_REPORT.md)를 참조.
+아래 v0.0.21 및 최초 감사는 이력으로 보존한다. Native GUI manual **수행하지 않음**.
+
 ## 2026-10-01 Post-v0.0.21 재점검 overlay
 
 현재 기준은 [Post-v0.0.21 Recheck](POST_V0_0_21_EFFECT_CAPABILITY_RECHECK.md)를 참조한다.

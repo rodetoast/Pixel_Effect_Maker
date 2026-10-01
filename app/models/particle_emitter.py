@@ -16,6 +16,10 @@ GRAVITY_STRENGTH_MAX = 1024.0
 DRAG_STRENGTH_MAX = 10.0
 NOISE_STRENGTH_MAX = 4096.0
 NOISE_FREQUENCY_MAX = 1.0
+EMISSION_ONE_SHOT = "one_shot"
+EMISSION_CYCLIC_STEADY = "cyclic_steady"
+EMISSION_PERIOD_MAX = 512
+CYCLIC_ACTIVE_COPY_LIMIT = 4096
 RGB_MIN = 0
 RGB_MAX = 255
 
@@ -285,6 +289,8 @@ class ParticleEmitterSettings:
     scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
     color_over_lifetime: LifetimeColorModulation = field(default_factory=LifetimeColorModulation)
     motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
+    emission_cycle_mode: str = EMISSION_ONE_SHOT
+    emission_period_frames: int = 24
 
     def __post_init__(self) -> None:
         self._normalize_clip_speed_range()
@@ -296,6 +302,10 @@ class ParticleEmitterSettings:
 
     def validate(self) -> None:
         self._normalize_clip_speed_range()
+        if not isinstance(self.emission_cycle_mode, str) or self.emission_cycle_mode not in {EMISSION_ONE_SHOT, EMISSION_CYCLIC_STEADY}:
+            raise ValueError("unsupported emission cycle mode")
+        if type(self.emission_period_frames) is not int or not 1 <= self.emission_period_frames <= EMISSION_PERIOD_MAX:
+            raise ValueError("emission period must be an integer in 1..512")
         if not self.clip_asset_id: raise ValueError("an animation clip is required")
         if self.resource_type not in {"animation_clip", "source_asset", "resource_composition"}: raise ValueError("unsupported particle resource type")
         if not 1 <= self.output_frame_count <= 512: raise ValueError("output frame count must be 1..512")
@@ -324,6 +334,21 @@ class ParticleEmitterSettings:
         self.scale_over_lifetime.validate()
         self.color_over_lifetime.validate()
         self.motion.validate()
+        if self.emission_cycle_mode == EMISSION_CYCLIC_STEADY:
+            for name in ("start_frame", "emission_duration", "particle_count_min", "particle_count_max", "lifetime_min", "lifetime_max", "start_delay_min", "start_delay_max"):
+                if type(getattr(self, name)) is not int:
+                    raise ValueError("cyclic timing and counts must be integers")
+            if self.start_frame < 0 or self.emission_duration < 1:
+                raise ValueError("invalid cyclic start or duration")
+            spread = max(0, self.emission_duration - 1) if self.emission_mode == "over_time" and self.particle_count_max > 1 else 0
+            if self.particle_count_max and spread + self.start_delay_max >= self.emission_period_frames:
+                raise ValueError("cyclic birth offset must be inside the period; increase period or reduce duration/delay")
+            if self.cyclic_active_copy_bound() > CYCLIC_ACTIVE_COPY_LIMIT:
+                raise ValueError("cyclic configuration exceeds 4096 active particles; increase period or reduce count/lifetime")
+
+    def cyclic_active_copy_bound(self) -> int:
+        """Worst-case copies: each integer lifetime spans at most ceil(L/P) births."""
+        return self.particle_count_max * ((self.lifetime_max + self.emission_period_frames - 1) // self.emission_period_frames)
 
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()

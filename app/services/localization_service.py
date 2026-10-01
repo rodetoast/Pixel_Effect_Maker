@@ -1014,6 +1014,29 @@ KO.update({
 })
 
 
+EN.update({
+    "particle.cycle_mode":"Emission Mode", "particle.cycle_period":"Cycle Period",
+    "particle.cycle_one_shot":"One Shot", "particle.cycle_steady":"Cyclic Steady",
+    "particle.cycle_active":"Maximum active particles: {count}. Layer/parent/global animation must also be periodic for a seamless effect.",
+    "particle.cycle_error_birth":"Births must fit inside the cycle. Increase the period or reduce duration/delay. Edit rejected.",
+    "particle.cycle_error_limit":"More than 4096 particles could be active. Increase period or reduce count/lifetime. Edit rejected.",
+    "particle.cycle_error":"Invalid emission settings. Edit rejected; previous settings preserved.",
+    "tooltip.particle.cycle_mode":"One Shot emits the existing finite pattern once. Cyclic Steady repeats identical seeded slots and includes surviving previous-cycle particles from the first visible frame. No new random samples per cycle.",
+    "tooltip.particle.cycle_period":"Frames between repeated births. Layer, parent and global animation must also be periodic for the whole effect to loop seamlessly. Export N frames with N a period multiple: virtual frame N equals frame 0, not necessarily the last PNG.",
+    "tooltip.particle.cycle_count":"Total sampled particles per one-shot pattern, or per cycle. Not particles per frame or per second. Long lifetimes can keep multiple cycle copies alive.",
+})
+KO.update({
+    "particle.cycle_mode":"방출 모드", "particle.cycle_period":"반복 주기",
+    "particle.cycle_one_shot":"한 번만", "particle.cycle_steady":"지속 반복",
+    "particle.cycle_active":"최대 동시 파티클: {count}. 전체 이펙트가 매끄럽게 반복되려면 레이어/부모/전역 애니메이션도 같은 주기에 맞아야 합니다.",
+    "particle.cycle_error_birth":"생성 시점이 반복 주기 안에 들어와야 합니다. 주기를 늘리거나 방출 기간/지연을 줄여주세요. 변경을 거부했습니다.",
+    "particle.cycle_error_limit":"동시에 4096개를 초과할 수 있습니다. 주기를 늘리거나 개수/수명을 줄여주세요. 변경을 거부했습니다.",
+    "particle.cycle_error":"잘못된 방출 설정입니다. 변경을 거부하고 이전 값을 보존했습니다.",
+    "tooltip.particle.cycle_mode":"한 번만: 기존의 유한 패턴을 한 번 방출합니다. 지속 반복: 같은 Seed 패턴을 매 주기 반복하며 첫 표시 프레임부터 이전 반복의 살아 있는 파티클도 포함합니다. 반복마다 새 난수를 만들지 않습니다.",
+    "tooltip.particle.cycle_period":"방출 패턴이 다시 시작되는 프레임 간격입니다. 전체 이펙트의 반복에는 레이어/부모/전역 애니메이션도 주기에 맞아야 합니다. 출력 길이가 주기의 배수라면 가상 N 프레임과 0 프레임이 같으며 마지막 PNG와 첫 PNG가 같아야 하는 것은 아닙니다.",
+    "tooltip.particle.cycle_count":"한 번 방출할 전체 개수 또는 반복 한 주기당 전체 개수입니다. 프레임당/초당 개수가 아닙니다. 수명이 길면 여러 반복의 파티클이 동시에 살아 있을 수 있습니다.",
+})
+
 class LocalizationService(QObject):
     language_changed = Signal(str)
     SETTINGS_KEY = "ui/language"

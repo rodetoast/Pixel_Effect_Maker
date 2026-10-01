@@ -38,7 +38,7 @@ def test_resource_click_ctrl_shift_reverse_and_ctrl_a_are_runtime_only(tmp_path)
     editor.select_layer_with_modifiers(ui[1],Qt.KeyboardModifier.ControlModifier);assert editor.selected_layer_ids=={ui[3]} and editor.primary_layer_id==ui[3]
     editor.select_layer_with_modifiers(ui[1]);editor.select_layer_with_modifiers(ui[4],Qt.KeyboardModifier.ShiftModifier);assert editor.selected_layer_ids==set(ui[1:5]) and editor.primary_layer_id==ui[4] and editor.selection_anchor_id==ui[1]
     editor.select_layer_with_modifiers(ui[0],Qt.KeyboardModifier.ShiftModifier);assert editor.selected_layer_ids==set(ui[:2])
-    editor.select_all_layers();assert editor.selected_layer_ids==set(ui) and editor.primary_layer_id==ui[0] and stack.count()==0 and composition.revision==revision and FORMAT_VERSION==18
+    editor.select_all_layers();assert editor.selected_layer_ids==set(ui) and editor.primary_layer_id==ui[0] and stack.count()==0 and composition.revision==revision and FORMAT_VERSION==19
     payload=json.dumps(editor.project.to_dict());assert "selected_layer_ids" not in payload and "primary_layer_id" not in payload and "selection_anchor_id" not in payload
     editor.close()
 

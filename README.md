@@ -6,7 +6,11 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v18. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.21`.
+New saves use project format v19. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.22`.
+
+Particle Emission adds **One Shot / Cyclic Steady** and **Cycle Period** (1..512 frames, default 24). One Shot preserves the v0.0.21 sampled slots and pixels. Cyclic Steady repeats the same seeded burst/over-time schedule, including surviving negative-cycle copies at the first visible frame; it does not simulate history or resample each cycle. Count means total particles per cycle, not a particles/sec API. Birth offsets must fit inside the period and the worst-case simultaneous count must not exceed 4096; invalid edits are rejected without dropping particles. Short periods intentionally repeat the same visual pattern.
+
+Local/static cyclic output satisfies `F(t+P)=F(t)`. Whole-effect seamless loops also require layer, parent and global animation to be periodic. For N output frames with N a period multiple, virtual frame N equals frame 0; the last exported PNG (N-1) need not equal the first. See [Cyclic Emission report](docs/V0_0_22_CYCLIC_EMISSION_REPORT.md) for evidence, limits and manual QA checklist.
 
 Particle Emission now has a localized **Natural Motion** section with signed constant Gravity. Gravity is evaluated analytically from each particle's 0-based age as `0.5 × strength × age²` in the existing particle/system-local frame unit: positive values move down and negative values move up. Linear, Orbit, and Helix remain the base paths; Gravity adds Y displacement before the existing local perspective, Layer/Parent 2.5D, and Surface pipeline. It consumes no random draws and remains exact for Timeline direct seek, full playback, Bake, and PNG export.
 

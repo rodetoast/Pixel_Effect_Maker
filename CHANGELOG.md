@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.22 — Deterministic Cyclic Steady Emission
+
+- One Shot / Cyclic Steady and Cycle Period in the localized Particle Emission Inspector.
+- Analytic alive-copy enumeration, including previous cycles at the start gate. Canonical RNG/Noise identity repeats; copy identity supplies stable depth ordering.
+- Birth-span validation and a 4096 simultaneous-copy safety bound; invalid edits revert without Undo/dirty changes.
+- Format 19 stores cycle fields; missing legacy fields default to One Shot/24 without rewriting source files.
+- Current/full/generated/playback/PNG parity, 75 focused cyclic tests, actual v0.0.21 One Shot pixel goldens and representative Fire/Dust/Rain diagnostics.
+- Whole-project seamless loops are not automatic. No rate API, new shape, trails, sub-emitter, force stack or evolving cycle randomness.
+
 ## v0.0.21 - 2026-09-22 (working tree; not committed)
 
 - Added persistent Noise enable, strength, and frequency controls in the localized Natural Motion Inspector. Strength is `0..4096` local pixels per axis; frequency is `0..1` lattice intervals per frame. Disabled values are preserved.

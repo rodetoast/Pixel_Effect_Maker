@@ -25,6 +25,8 @@ from app.services.layer_space_transform_service import project_local_points
 from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar, normalized_lifetime_age
 from app.services.particle_natural_motion_service import effective_motion_age, gravity_displacement
 from app.services.particle_noise_service import particle_noise_offset
+from app.services.particle_cyclic_emission_service import iter_particle_cycle_copies
+from app.models.particle_emitter import EMISSION_CYCLIC_STEADY
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -48,7 +50,7 @@ class ParticleMotionPosition:
 class ParticleFrameDiagnostic:
     """Immutable test/diagnostic snapshot of one visible particle evaluation."""
     particle_id: int
-    generation_order: int
+    generation_order: int | tuple[int, int]
     spawn_frame: int
     lifetime: int
     age: int
@@ -60,7 +62,7 @@ class ParticleFrameDiagnostic:
     rotation: float
     scale: float
     opacity: float
-    depth_key: tuple[float, int]
+    depth_key: tuple[float, int | tuple[int, int]]
     local_x: float = 0.0
     local_y: float = 0.0
     local_z: float = 0.0
@@ -68,6 +70,8 @@ class ParticleFrameDiagnostic:
     lifetime_tint_r: float = 1.0
     lifetime_tint_g: float = 1.0
     lifetime_tint_b: float = 1.0
+    cycle_index: int | None = None
+    copy_key: tuple[int, int] | None = None
 
 
 def _motion_ease(value: float, easing: str) -> float:
@@ -262,6 +266,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
     values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("noise_enabled",None);values.pop("noise_strength",None);values.pop("noise_frequency",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
+    values.pop("emission_cycle_mode",None);values.pop("emission_period_frames",None)
     return repr(values),int(clip_length)
 
 
@@ -282,7 +287,11 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     layer_value = layer_space_transform.evaluated(frame_index)
     motion_value=settings.motion.evaluated(frame_index)
     motion_perspective=motion_value.perspective_strength
+    cyclic = settings.emission_cycle_mode == EMISSION_CYCLIC_STEADY
+    if cyclic:
+        instances = iter_particle_cycle_copies(settings, instances, frame_index)
     for order,instance in enumerate(instances):
+            if cyclic: order = instance.copy_key
             age = frame_index - instance.birth_frame
             if age < 0 or age >= instance.lifetime: continue
             pixels=particle_clip_frame(clip,instance,age,project.fps)
@@ -325,6 +334,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
                     (scale_x+scale_y)*0.5,
                     settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
                     (view_z,order),position.x,position.y,position.z,lifetime_scale,tint_r,tint_g,tint_b,
+                    instance.cycle_index if cyclic else None,instance.copy_key if cyclic else None,
                 ))
             alive.append((view_z,order,instance,pixels,amount,x,y,scale_x,scale_y,tint_r,tint_g,tint_b,age))
     alive.sort(key=lambda item:(item[0],item[1]))

@@ -38,7 +38,7 @@ def test_format15_defaults_gravity_disabled_and_preserves_old_render():
     for item in payload["effect_resource_layers"]:
         item["particle_settings"].pop("gravity_enabled");item["particle_settings"].pop("gravity_strength")
     loaded=Project.from_dict(payload);restored=loaded.effect_resource_layers[0]
-    assert loaded.format_version==FORMAT_VERSION==18
+    assert loaded.format_version==FORMAT_VERSION==19
     assert not restored.particle_settings.gravity_enabled and restored.particle_settings.gravity_strength==0
     assert all(np.array_equal(a,b) for a,b in zip(before,render_effect_resource_layer(loaded,restored),strict=True))
 
@@ -46,7 +46,7 @@ def test_format15_defaults_gravity_disabled_and_preserves_old_render():
 @pytest.mark.parametrize("strength",[1.375,-.625,0.0])
 def test_format16_gravity_round_trip_is_exact(strength):
     project,_layer=_project(True,strength);loaded=Project.from_dict(project.to_dict());actual=loaded.effect_resource_layers[0].particle_settings
-    assert loaded.to_dict()["format_version"]==18 and actual.gravity_enabled and actual.gravity_strength==strength
+    assert loaded.to_dict()["format_version"]==19 and actual.gravity_enabled and actual.gravity_strength==strength
 
 
 @pytest.mark.parametrize(("field","value"),[("gravity_enabled",1),("gravity_enabled","true"),("gravity_strength",float("nan")),("gravity_strength",float("inf")),("gravity_strength",1024.001),("gravity_strength",-1024.001)])

@@ -60,7 +60,7 @@ def test_resource_layer_v6_round_trip_omits_legacy_effect_arrays(tmp_path):
     layer.particle_settings.random_start_frame = True
     project.effect_resource_layers.append(layer)
     data = project.to_dict()
-    assert data["format_version"] == FORMAT_VERSION == 18
+    assert data["format_version"] == FORMAT_VERSION == 19
     assert "effect_composition_layers" not in data and "particle_emitters" not in data
     loaded = load_project(save_project(project, tmp_path / "v6.peffect.json"))
     assert loaded.effect_resource_layers[0].to_dict() == layer.to_dict()
@@ -85,7 +85,7 @@ def test_opening_v5_project_does_not_rewrite_source(tmp_path):
     data["particle_emitters"] = []; data["effect_composition_layers"] = []
     path = tmp_path / "legacy.peffect.json"; path.write_text(json.dumps(data), encoding="utf-8")
     before = path.read_bytes(); loaded = load_project(path)
-    assert path.read_bytes() == before and loaded.format_version == 18
+    assert path.read_bytes() == before and loaded.format_version == 19
 
 
 def test_unified_render_dispatch_matches_legacy_renderers():

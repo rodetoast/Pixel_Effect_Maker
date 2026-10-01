@@ -1,4 +1,30 @@
-# Pixel Effect Maker v0.0.21 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.22 수동 테스트 체크리스트
+
+## v0.0.22 Cyclic Steady — 사용자 Windows GUI 확인 필요
+
+Codex Windows native GUI manual: **수행하지 않음**. 아래는 체크리스트이며 통과했다고 표시하지 않는다.
+
+- [ ] 기존 One Shot 프로젝트가 v0.0.21과 시각적으로 같은지 (Normal/Additive).
+- [ ] Fire/Ember: 첫 visible frame부터 이전 반복의 파티클이 있는지.
+- [ ] Dust: empty→fill ramp 없이 반복되는 분포인지.
+- [ ] Rain/Snow: 첫 frame부터 화면 위/중간/아래에 수명상 적절한 파티클이 있는지.
+- [ ] frame 5와 5+Period의 local pattern이 같은지.
+- [ ] Period 6/12/24 차이와 같은 Seed 패턴 반복의 미감을 확인.
+- [ ] Lifetime>Period에서 여러 cycle copies가 함께 표시되는지.
+- [ ] frame N playback/direct seek/step 결과가 같은지.
+- [ ] One Shot→Cyclic→One Shot 즉시 preview가 갱신되는지.
+- [ ] 주기 편집이 preview/generated output을 갱신하는지.
+- [ ] Mode/Period 각각 Undo/Redo 한 단계, refresh/no-op는 Undo 없음.
+- [ ] Invalid period/birth span/active count는 이전 값으로 돌아가고 이유를 표시하는지.
+- [ ] Save/Reload 후 mode/period와 출력 보존.
+- [ ] G+D+N+Scale+Color+Opacity+Additive 전체 조합.
+- [ ] Parent/parent_offset/Keep World/System/Surface/2.5D/Revolution 보존.
+- [ ] gate 전에는 없음, gate 순간에는 prewarm 상태로 등장.
+- [ ] N이 Period 배수인 PNG sequence: 마지막 PNG=첫 PNG가 아닌 가상 F(N)=F(0) 계약.
+- [ ] Layer/Parent/global tracks가 비주기적이면 전체 seamless가 보장되지 않는다는 설명이 보이는지.
+
+반복 주기는 1..512, 기본24. Count는 주기당 전체 개수이며 Rate API가 아니다.
+동시 copy 상한4096은 실시간 FPS 보장이 아니다. 자동 테스트는 자연스러움을 판단하지 않는다.
 
 ## v0.0.21 Smooth Positional Noise — Windows 네이티브 GUI에서 사용자 확인 필요 (Codex 미수행)
 
