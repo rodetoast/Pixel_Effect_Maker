@@ -25,7 +25,7 @@ def test_v11_group_roundtrip_retains_flat_leaf_objects_and_order():
     group=LayerGroup("Pair",children=ids[:2]);composition.groups=[group]
     composition.root_order=[group_node(group.id),layer_node(ids[2])];composition.sync_flat_order()
     data=project.to_dict();loaded=Project.from_dict(deepcopy(data));result=loaded.resource_compositions[0]
-    assert FORMAT_VERSION==17 and data["format_version"]==17
+    assert FORMAT_VERSION==18 and data["format_version"]==18
     assert [item.id for item in result.layers]==ids
     assert result.groups[0].children==ids[:2] and result.root_order==composition.root_order
 

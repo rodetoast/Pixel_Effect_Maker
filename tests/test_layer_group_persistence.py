@@ -7,7 +7,7 @@ from app.models.project import Project
 def test_v10_migration_creates_flat_v11_root_order():
     project=Project.create_default(width=4,height=4,frame_count=2);data=project.to_dict();data["format_version"]=10;data.pop("effect_layer_groups",None);data.pop("effect_root_order",None)
     loaded=Project.from_dict(deepcopy(data));saved=loaded.to_dict()
-    assert loaded.effect_layer_groups==[] and saved["format_version"]==17 and "effect_root_order" in saved
+    assert loaded.effect_layer_groups==[] and saved["format_version"]==18 and "effect_root_order" in saved
 
 
 def test_duplicate_and_unknown_root_references_are_repaired():

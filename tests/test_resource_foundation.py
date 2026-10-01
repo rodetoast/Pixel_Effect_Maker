@@ -12,7 +12,7 @@ def test_png_and_gif_import_and_v4_roundtrip(tmp_path):
     gif=tmp_path/"x.GIF"; frames=[Image.new("RGBA",(2,2),(255,0,0,255)),Image.new("RGBA",(2,2),(0,255,0,128))]; frames[0].save(gif,save_all=True,append_images=frames[1:],duration=[40,120],loop=0)
     clip=import_resource(gif); assert clip.frame_durations_ms==[40,120] and len(clip.frames)==2
     project=Project.create_default(width=8,height=8); project.source_assets.append(source); project.animation_clips.append(clip)
-    loaded=Project.from_dict(project.to_dict()); assert loaded.format_version==FORMAT_VERSION==17 and loaded.animation_clips[0].frame_durations_ms==[40,120]
+    loaded=Project.from_dict(project.to_dict()); assert loaded.format_version==FORMAT_VERSION==18 and loaded.animation_clips[0].frame_durations_ms==[40,120]
 def test_static_resource_particle_and_visibility():
     project=Project.create_default(width=8,height=8); from app.models.source_asset import SourceAsset
     pixels=np.zeros((1,1,4),dtype=np.uint8);pixels[0,0]=255; source=SourceAsset("s",pixels);project.source_assets.append(source)

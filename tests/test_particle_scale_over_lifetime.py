@@ -132,7 +132,7 @@ def test_format12_defaults_disabled_and_old_render_is_preserved():
 def test_current_format_round_trip_is_exact(tmp_path,easing):
     project,layer=_project(modulation=_channel(True,.25,2,easing));path=save_project(project,tmp_path/"lifetime")
     loaded=load_project(path);value=loaded.effect_resource_layers[0].particle_settings.scale_over_lifetime
-    assert FORMAT_VERSION==17 and loaded.format_version==17 and value==_channel(True,.25,2,easing)
+    assert FORMAT_VERSION==18 and loaded.format_version==18 and value==_channel(True,.25,2,easing)
 
 
 def test_preview_current_full_materialized_and_export_match(tmp_path):

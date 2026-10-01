@@ -117,7 +117,7 @@ def test_line_edit_and_spinbox_keep_native_copy_paste_focus_behavior(tmp_path):
 
 
 def test_invalid_and_plain_clipboards_are_safe_noops(tmp_path):
-    editor,stack,project,_composition=_resource_editor(tmp_path);before=deepcopy(project.to_dict());APP.clipboard().setText("plain text");assert not editor.paste_copied_keys();mime=QMimeData();mime.setData(TIMELINE_KEY_MIME,b'{"version":999}');APP.clipboard().setMimeData(mime);assert not editor.paste_copied_keys() and project.to_dict()==before and stack.count()==0 and FORMAT_VERSION==17;editor.close()
+    editor,stack,project,_composition=_resource_editor(tmp_path);before=deepcopy(project.to_dict());APP.clipboard().setText("plain text");assert not editor.paste_copied_keys();mime=QMimeData();mime.setData(TIMELINE_KEY_MIME,b'{"version":999}');APP.clipboard().setMimeData(mime);assert not editor.paste_copied_keys() and project.to_dict()==before and stack.count()==0 and FORMAT_VERSION==18;editor.close()
 
 
 def test_pasted_keys_round_trip_frames_values_easing_and_revolutions(tmp_path):

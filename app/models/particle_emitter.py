@@ -14,6 +14,8 @@ from .blend_mode import BLEND_NORMAL, validate_blend_mode
 LIFETIME_SCALE_MAX = 16.0
 GRAVITY_STRENGTH_MAX = 1024.0
 DRAG_STRENGTH_MAX = 10.0
+NOISE_STRENGTH_MAX = 4096.0
+NOISE_FREQUENCY_MAX = 1.0
 RGB_MIN = 0
 RGB_MAX = 255
 
@@ -276,6 +278,9 @@ class ParticleEmitterSettings:
     gravity_strength: float = 0.0
     drag_enabled: bool = False
     drag_strength: float = 0.0
+    noise_enabled: bool = False
+    noise_strength: float = 1.0
+    noise_frequency: float = 0.1
     seed: int = 0
     scale_over_lifetime: LifetimeScalarModulation = field(default_factory=LifetimeScalarModulation)
     color_over_lifetime: LifetimeColorModulation = field(default_factory=LifetimeColorModulation)
@@ -313,6 +318,9 @@ class ParticleEmitterSettings:
         if abs(float(self.gravity_strength)) > GRAVITY_STRENGTH_MAX: raise ValueError(f"particle gravity strength must be -{GRAVITY_STRENGTH_MAX:g}..{GRAVITY_STRENGTH_MAX:g}")
         if not isinstance(self.drag_enabled, bool): raise ValueError("particle drag enabled must be a boolean")
         if not math.isfinite(float(self.drag_strength)) or not 0.0 <= float(self.drag_strength) <= DRAG_STRENGTH_MAX: raise ValueError(f"particle drag strength must be 0..{DRAG_STRENGTH_MAX:g}")
+        if not isinstance(self.noise_enabled, bool): raise ValueError("particle noise enabled must be a boolean")
+        if not math.isfinite(float(self.noise_strength)) or not 0.0 <= float(self.noise_strength) <= NOISE_STRENGTH_MAX: raise ValueError(f"particle noise strength must be 0..{NOISE_STRENGTH_MAX:g}")
+        if not math.isfinite(float(self.noise_frequency)) or not 0.0 <= float(self.noise_frequency) <= NOISE_FREQUENCY_MAX: raise ValueError(f"particle noise frequency must be 0..{NOISE_FREQUENCY_MAX:g}")
         self.scale_over_lifetime.validate()
         self.color_over_lifetime.validate()
         self.motion.validate()

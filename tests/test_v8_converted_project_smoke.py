@@ -25,7 +25,7 @@ def file_hash(path):
 def test_converted_v8_project_read_only_smoke(source,tmp_path):
     if not source.exists():pytest.skip(f"local converted fixture is unavailable: {source}")
     before=file_hash(source);project=load_project(source)
-    assert project.format_version==FORMAT_VERSION==17
+    assert project.format_version==FORMAT_VERSION==18
     source_ids={item.id for item in project.source_assets};clip_ids={item.id for item in project.animation_clips};composition_ids={item.id for item in project.resource_compositions};layer_ids={item.id for item in project.layers}
     for composition in project.resource_compositions:
         for layer in composition.layers:
@@ -38,6 +38,6 @@ def test_converted_v8_project_read_only_smoke(source,tmp_path):
     rendered={index:project.compose_frame(index) for index in samples}
     target=save_project(project,tmp_path/source.name)
     reloaded=load_project(target)
-    assert reloaded.format_version==17
+    assert reloaded.format_version==18
     assert all(np.array_equal(rendered[index],reloaded.compose_frame(index)) for index in samples)
     assert file_hash(source)==before

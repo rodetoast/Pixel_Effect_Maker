@@ -6,14 +6,16 @@
 - Project: `C:\Users\SOUTHPAW GAMES\Desktop\Pixel_Effect_Maker`.
 - HEAD: `1bfd865c6396565b9c43d541613b5a58ef590cd9`, main.
 - Working tree: Resource Clip / Overscan 변경이 있는 상태를 감사했다. 해당 변경은 수정하지 않았다.
-- 이 문서의 최초 감사 산출물은 이 문서와 `tools/audit_effect_authoring.py`였고 `baff65b`에 checkpoint됐다. 아래 matrix와 결론은 v0.0.20 Drag 작업 트리에 맞춰 갱신했다.
+- 이 문서의 최초 감사 산출물은 이 문서와 `tools/audit_effect_authoring.py`였고 `baff65b`에 checkpoint됐다. 아래 matrix와 결론은 v0.0.21 deterministic positional Noise 작업 트리에 맞춰 갱신했다.
 - 코드 추적, 기존 자동 테스트, 합성 fixture, offscreen Inspector introspection을 사용했다. **실제 GUI 수동 제작/시각 QA는 수행하지 않았다.** 외부 제품의 기능 수를 목표로 삼지 않았으며 외부 reference는 사용하지 않았다.
 
 제품 정의: 2D/Pixel Art/Sprite 기반 게임용 이펙트를 Animation·Particle·Layer로 조합하고 엔진에 가져갈 이미지로 출력하는 제작툴. 범용 영상 편집기나 Full 3D 엔진이 아니다.
 
-현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 중간 단계**다. v0.0.16 uniform Scale, v0.0.17 RGB Color over Lifetime, v0.0.18 Normal/Additive, v0.0.19 signed constant Gravity에 이어 v0.0.20에서 analytic base-motion Drag를 추가했다. 남은 큰 표현력 병목은 (1) Noise/Turbulence, (2) multi-point lifetime curve, (3) trail/orientation이다. 별도의 납품 병목은 Sprite Sheet/engine metadata 부재다.
+현재는 **레이어 애니메이션 편집 기반은 강하고, 절차적 Particle 표현력은 중간 단계**다. v0.0.16 uniform Scale, v0.0.17 RGB Color over Lifetime, v0.0.18 Normal/Additive, v0.0.19 signed constant Gravity, v0.0.20 analytic Drag에 이어 v0.0.21에서 deterministic smooth XY positional Noise를 추가했다. 남은 큰 표현력 병목은 (1) true turbulence/force stack, (2) multi-point lifetime curve, (3) trail/orientation이다. 별도의 납품 병목은 Sprite Sheet/engine metadata 부재다.
 
-v0.0.19의 **Gravity**는 각 Particle의 실제 0-based frame age에 `0.5 × g × age²`를 적용하는 analytic local-Y contribution이다. v0.0.20의 **Drag**는 `-expm1(-d × age) / d` 유효 이동 시간으로 Linear 이동과 Orbit/Helix 진행을 감쇠하는 별도 analytic 경로다. Orbit/Helix의 기하 반지름·중심·축은 유지하고 Gravity 자체는 감쇠시키지 않는다. 두 기능의 정의한 end-to-end 경로는 COMPLETE지만 Noise/Turbulence와 범용 force stack이 없어 Natural Motion 전체는 PARTIAL이다.
+v0.0.19의 **Gravity**는 각 Particle의 실제 0-based frame age에 `0.5 × g × age²`를 적용하는 analytic local-Y contribution이다. v0.0.20의 **Drag**는 `-expm1(-d × age) / d` 유효 이동 시간으로 Linear 이동과 Orbit/Helix 진행을 감쇠하는 별도 analytic 경로다. Orbit/Helix의 기하 반지름·중심·축은 유지하고 Gravity 자체는 감쇠시키지 않는다. 두 기능의 정의한 end-to-end 경로는 COMPLETE다.
+
+v0.0.21 **Noise**는 stable particle ID/emitter seed에서 고정 64-bit mixer로 분리된 X/Y 값을 만들고, 실제 frame age의 lattice 사이를 quintic으로 보간하는 순수 positional displacement다. 생성 순간 변위는 정확히 0이다. 좁은 `Deterministic Smooth Positional Noise` 경로는 Model/UI/Render/Undo/Save/Export까지 COMPLETE지만, acceleration noise·true turbulence·Z/world-space noise·multi-octave·force stack은 여전히 없으므로 Natural Motion 전체는 PARTIAL이다.
 
 ## 판정 방법 / 증거 인덱스
 
@@ -103,7 +105,8 @@ Missing-feature 판정은 위 dataclass/serializer/Inspector/renderer dispatch/e
 | Motion P | Radial outward velocity | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
 | Motion P/M | Signed constant Gravity | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
 | Motion P/M | Analytic base-motion Drag / damping | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
-| Motion P/M | Noise / turbulence | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
+| Motion P/M | Deterministic smooth XY positional Noise | COMPLETE | Y | Y | Y | 0 | Y | Y | Y | 유지 |
+| Motion P/M | Turbulence / acceleration Noise / force stack | MISSING | 0 | 0 | 0 | 0 | — | — | — | A |
 | Motion P/M | Random walk / random per-particle force | MISSING | 0 | 0 | 0 | 0 | — | — | — | B |
 | Motion P/M | Attraction / repulsion / target follow | MISSING | 0 | 0 | 0 | 0 | — | — | — | B |
 | Sprite A/P/R | Animated Resource / per-instance sprite animation | COMPLETE | Y | Y | Y | P | Y | Y | Y | 유지 |
@@ -205,7 +208,7 @@ v0.0.16 unified Particle에는 `LifetimeScalarModulation` 기반의 uniform Scal
 
 v0.0.17의 RGB lifetime channel은 source artwork RGB에 encoded 8-bit component-wise multiplier를 적용하며 Alpha를 포함하지 않는다. Start/End/Easing으로 Fire, Heal, Poison, Magic의 2-point 색 진행을 직접 만들 수 있다. static base tint, random palette, multi-stop gradient, HSV/HSL interpolation은 아직 없다.
 
-Motion은 linear/orbit/helix base path, signed constant Gravity, analytic Drag를 제공하지만 범용 force stack은 아니다. Drag는 base-motion 진행만 느리게 하며 Gravity를 감쇠시키는 물리 공기 저항이 아니다. radial은 initial direction 옵션이며 random initial direction은 random walk가 아니다. Noise/turbulence/attraction/follow는 없다. Smoke/Fire/Dust/Fog/wisps/electric/Snow는 source 애니메이션·다층·Orbit·Gravity·Drag 조합에 의존하며 불규칙 흐름은 아직 부족하다.
+Motion은 linear/orbit/helix base path, signed constant Gravity, analytic Drag, smooth positional Noise를 제공하지만 범용 force stack은 아니다. Drag는 base-motion 진행만 느리게 하며 Gravity를 감쇠시키는 물리 공기 저항이 아니다. Noise는 위치 변위이지 turbulence 힘 적분이 아니다. radial은 initial direction 옵션이며 random initial direction은 random walk가 아니다. Acceleration turbulence/attraction/follow는 없다. Smoke/Fire/Dust/Fog/wisps/electric/Snow는 source 애니메이션·다층·Orbit·Gravity·Drag·Noise 조합에 의존한다.
 
 Particle마다 animated clip 또는 완료된 Resource Composition을 재생한다. clip speed min/max는 양수이고 최소/최대 invariant 및 Undo 회귀 테스트가 있다. GIF frame durations를 소비한다. once는 source 종료 후 sprite 없음, loop는 modulo, hold는 마지막 frame 유지다. imported AnimationClip의 playback_mode는 모델/renderer가 지원하지만 V2 asset Inspector에 once/hold 선택 control이 없다(일부 import가 hold를 정한다). Resource loop checkbox와 imported clip playback mode를 구분한다. asset preview는 자체 modulo 재생이므로 runtime once/hold의 정확한 검토 도구는 아니다. reverse/ping-pong/lifetime sync는 없다.
 

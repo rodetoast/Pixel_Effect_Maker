@@ -288,6 +288,10 @@ KO = {
 }
 
 EN.update({
+    "particle.noise":"Noise","particle.noise_strength":"Strength","particle.noise_frequency":"Frequency",
+    "tooltip.particle.noise":"Adds a smooth, independent XY position variation to each particle. Same seed and frame give the same result; Gravity and Drag timing do not change.",
+    "tooltip.particle.noise_strength":"Maximum offset on each local X/Y axis in pixels. Particle birth position is preserved.",
+    "tooltip.particle.noise_frequency":"Smooth value-noise intervals per frame. Lower values drift slowly; higher values change faster. Zero disables the offset.",
     "particle.drag":"Drag","particle.drag_strength":"Strength",
     "tooltip.particle.drag":"Gradually slows each particle's base Linear, Orbit, or Helix progression after birth. It does not damp Gravity or extend particle lifetime.",
     "tooltip.particle.drag_strength":"Non-negative damping strength in 1/frame. Larger values slow base motion sooner; Gravity acceleration and lifetime channels are unchanged.",
@@ -423,6 +427,10 @@ EN.update({
 })
 
 KO.update({
+    "particle.noise":"노이즈","particle.noise_strength":"강도","particle.noise_frequency":"변화 속도",
+    "tooltip.particle.noise":"각 파티클에 서로 다른 부드러운 XY 위치 흔들림을 적용합니다. 같은 Seed와 Frame에서는 항상 같고 중력과 감쇠의 시간 계산은 바뀌지 않습니다.",
+    "tooltip.particle.noise_strength":"로컬 X/Y 각 축의 최대 위치 변위(px)입니다. 생성 순간의 위치는 유지됩니다.",
+    "tooltip.particle.noise_frequency":"프레임당 부드러운 값 노이즈 구간 수입니다. 낮을수록 천천히 흐르고 높을수록 빨리 바뀝니다. 0이면 변위가 없습니다.",
     "particle.drag":"움직임 감쇠","particle.drag_strength":"강도",
     "tooltip.particle.drag":"각 Particle의 기본 직선·궤도·나선 움직임을 생성 이후 점점 느리게 합니다. 중력 가속도나 Particle 수명은 감쇠하지 않습니다.",
     "tooltip.particle.drag_strength":"프레임당 감쇠 강도(1/frame)입니다. 클수록 기본 움직임이 빨리 느려지며 중력과 수명 변화는 그대로입니다.",

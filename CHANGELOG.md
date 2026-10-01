@@ -1,6 +1,14 @@
 # Changelog
 
-## v0.0.20 - 2026-09-22 (working tree; not committed)
+## v0.0.21 - 2026-09-22 (working tree; not committed)
+
+- Added persistent Noise enable, strength, and frequency controls in the localized Natural Motion Inspector. Strength is `0..4096` local pixels per axis; frequency is `0..1` lattice intervals per frame. Disabled values are preserved.
+- Added deterministic, stateless XY smooth value noise with fixed 64-bit integer mixing, separate X/Y salts, and quintic interpolation. Lattice index zero is exactly zero, preserving the particle birth position. No Python `hash()`, per-frame random draw, or mutable simulation history is used.
+- Composed `BaseMotion(DragEffectiveAge) + Gravity(ActualAge) + Noise(ActualAge, stable particle ID)` before existing local perspective and Layer/Parent/Surface transforms. Noise is a positional variation, not physical turbulence or velocity integration.
+- Preserved spawn RNG identity, lifetime/Scale/Color/Opacity/sprite timing, Normal/Additive, deterministic direct seek, Undo/no-op integrity, and current/full/generated/PNG parity. Noise setting edits invalidate render/playback output while retaining cached spawn instances.
+- Advanced project saves to format v18; format v17 and older supported projects load Noise disabled without rewriting source files. Added fixed-hash/smoothness, model/UI/Undo/migration, motion/seed/cache, transform/export, and benchmark coverage.
+
+## v0.0.20 - 2026-09-22 (local checkpoint `d0173ef`)
 
 - Added persistent Drag enable/strength controls to the localized Particle Natural Motion Inspector. Strength is `0..10 1/frame`, with five decimal places and a `0.01` step; disabled values are preserved.
 - Evaluated base-motion effective age analytically as `-expm1(-d × actual_age) / d`, with exact identity when Drag is off or strength is zero. No frame-by-frame velocity state or random draw is introduced.

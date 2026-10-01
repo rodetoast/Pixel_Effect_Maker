@@ -24,6 +24,7 @@ from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.services.layer_space_transform_service import project_local_points
 from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar, normalized_lifetime_age
 from app.services.particle_natural_motion_service import effective_motion_age, gravity_displacement
+from app.services.particle_noise_service import particle_noise_offset
 
 
 _SPAWN_STATE_CACHE: dict[tuple, tuple[ParticleInstance, ...]] = {}
@@ -112,7 +113,8 @@ def evaluate_particle_motion(settings: ParticleEmitterSettings, instance: Partic
             elif motion.helix_axis=="y": base=ParticleMotionPosition(cx+orbit_x,cy+axis,cz+orbit_y)
             else: base=ParticleMotionPosition(cx+orbit_x,cy+orbit_y,cz+axis)
     gravity_y=gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength)
-    return ParticleMotionPosition(base.x,base.y+gravity_y,base.z)
+    noise_x,noise_y=particle_noise_offset(settings.seed,instance.particle_id,age,settings.noise_enabled,settings.noise_strength,settings.noise_frequency)
+    return ParticleMotionPosition(base.x+noise_x,base.y+gravity_y+noise_y,base.z)
 
 
 def project_particle_billboard(position: ParticleMotionPosition, strength: float, width: int, height: int) -> tuple[float,float,float,bool]:
@@ -134,9 +136,10 @@ def particle_motion_guide(settings: ParticleEmitterSettings, width: int, height:
     def guide_point(index: int) -> ParticleMotionPosition:
         fraction=index/max(1,count-1)
         age=fraction*max(0,lifetime-1)
-        # Preserve the established undamped guide endpoint; Drag guides represent
-        # actual surviving ages so their radius and phase match rendered particles.
-        normalized=age/lifetime if settings.drag_enabled and settings.drag_strength>0 else fraction
+        # Preserve the established undamped guide endpoint. Drag/Noise guides
+        # represent actual surviving ages to match the renderer's path.
+        path_is_age_based=(settings.drag_enabled and settings.drag_strength>0) or (settings.noise_enabled and settings.noise_strength>0 and settings.noise_frequency>0)
+        normalized=age/lifetime if path_is_age_based else fraction
         return evaluate_particle_motion(settings,instance,normalized,effect_frame,particle_age=age)
     return [guide_point(index) for index in range(count)]
 
@@ -153,11 +156,12 @@ def representative_particle_guide(settings: ParticleEmitterSettings) -> dict[str
     lifetime = (settings.lifetime_min + settings.lifetime_max) / 2.0
     velocity_x, velocity_y = velocity_from_direction_speed(settings.direction_degrees, speed)
     age = max(0.0, lifetime - 1.0)
+    noise_x,noise_y=particle_noise_offset(settings.seed,0,age,settings.noise_enabled,settings.noise_strength,settings.noise_frequency)
     return {
         "origin_x": float(settings.origin_x),
         "origin_y": float(settings.origin_y),
-        "endpoint_x": float(settings.origin_x) + velocity_x * effective_motion_age(age,settings.drag_enabled,settings.drag_strength),
-        "endpoint_y": float(settings.origin_y) + velocity_y * effective_motion_age(age,settings.drag_enabled,settings.drag_strength) + gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength),
+        "endpoint_x": float(settings.origin_x) + velocity_x * effective_motion_age(age,settings.drag_enabled,settings.drag_strength) + noise_x,
+        "endpoint_y": float(settings.origin_y) + velocity_y * effective_motion_age(age,settings.drag_enabled,settings.drag_strength) + gravity_displacement(age,settings.gravity_enabled,settings.gravity_strength) + noise_y,
         "speed": speed,
         "lifetime": lifetime,
     }
@@ -257,7 +261,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 
 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
-    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
+    values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("noise_enabled",None);values.pop("noise_strength",None);values.pop("noise_frequency",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
     return repr(values),int(clip_length)
 
 

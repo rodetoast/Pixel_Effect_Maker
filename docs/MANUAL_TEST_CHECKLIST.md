@@ -1,4 +1,20 @@
-# Pixel Effect Maker v0.0.20 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.21 수동 테스트 체크리스트
+
+## v0.0.21 Smooth Positional Noise — Windows 네이티브 GUI에서 사용자 확인 필요 (Codex 미수행)
+
+- [ ] Noise OFF에서 v0.0.20과 같은 경로·픽셀인지 확인한다.
+- [ ] Strength 2, Frequency 0.03에서 부드럽고 느린 drift, 0.1에서 조금 빠른 흔들림, 0.5~1.0에서 빠른 변화가 보이는지 확인한다.
+- [ ] 새 Particle가 태어나는 프레임에서 Noise 때문에 생성 위치가 튀지 않는지 확인한다.
+- [ ] 같은 emitter의 여러 Particle가 동일한 흔들림을 공유하지 않는지, 같은 Seed로 재생하면 각각의 path가 재현되는지 확인한다.
+- [ ] 프레임 N까지 재생·N 직접 클릭·frame step·full render·PNG 출력의 위치와 픽셀이 같은지 확인한다.
+- [ ] Gravity + Drag + Noise에서 기본 움직임만 감속하고 Gravity와 Noise는 실제 시간대로 계속 진행하는지 확인한다.
+- [ ] Smoke/Dust/Ember/Orbit Wisp/Hit Spark 예시에서 Noise가 부드러운 경로 변화인지 확인한다. 유체 난류처럼 보인다고 단정하지 않는다.
+- [ ] Gravity + Drag + Noise + Scale + Color + Opacity + Additive를 동시에 켜도 각 채널이 독립적으로 유지되는지 확인한다.
+- [ ] Noise 활성화, 강도, 변화 속도 편집이 각각 Undo/Redo 한 단계이고 동일 값/Inspector refresh에는 Undo가 생기지 않는지 확인한다.
+- [ ] Layer A Noise ON/3.125/0.0375와 Layer B OFF/8.75/0.2 사이 A→B→A 선택에서 값과 비활성 상태가 보존되는지 확인한다.
+- [ ] 저장·재열기에서 Noise가 보존되고 format v17 파일은 Noise OFF로 열리며 열기만으로 원본을 수정하지 않는지 확인한다.
+- [ ] Parenting, parent_offset, Keep World, System/Surface Transform, 2.5D에서 Noise 방향·변위가 기존 로컬 motion과 일관적인지 확인한다.
+- [ ] Resource Editor Overscan은 편집 미리보기만 확장하고 PNG는 원래 출력 크기로 엄격히 잘리는지 확인한다.
 
 ## v0.0.20 Particle Drag — Windows 네이티브 GUI에서 사용자 확인 필요 (Codex 미수행)
 
