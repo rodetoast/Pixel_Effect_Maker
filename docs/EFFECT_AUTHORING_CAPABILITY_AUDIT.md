@@ -1,5 +1,16 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## 2026-10-01 Post-v0.0.21 재점검 overlay
+
+현재 기준은 [Post-v0.0.21 Recheck](POST_V0_0_21_EFFECT_CAPABILITY_RECHECK.md)를 참조한다.
+아래 최초 감사/번호별 보고와 과거 우선순위는 이력으로 보존했다. 오래된 Color/Additive
+MISSING 문장은 현재 구현 판정이 아니다. 현재 좁은 Scale/Color/Additive/Gravity/Drag/Noise
+경로는 존재하며, Circle은 filled disk가 아닌 원둘레/호다. 10종의 finite 기본형은 제작 가능하다.
+다음 우선순위는 true-force 추가가 아니라 **Deterministic Cyclic Emission**: 지속형
+Fire/Area Dust/Rain의 반복 방출/steady 시작 밀도를 해결하는 최소 범위. Multi-point Lifetime,
+Trail/Ribbon은 각각 2/3순위다. 코드/합성 fixture/자동 검증에 근거하며 native GUI manual은
+**수행하지 않음**. v0.0.21/format18 유지, 이번 재점검 production 변경 없음.
+
 ## 기준과 결론
 
 - Audited: **v0.0.15 / FORMAT_VERSION 12**, 2026-09-08 시작, 2026-09-10 보고 마무리.
