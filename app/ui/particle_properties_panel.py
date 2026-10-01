@@ -13,6 +13,7 @@ from .focus_wheel_widgets import FocusWheelComboBox, ScrollSafeDoubleSpinBox, Sc
 from .tooltip_helper import apply_tooltip
 from .resource_layer_transform_panel import ResourceLayerTransformPanel
 from .hierarchy_display import layer_display_labels
+from .lifetime_point_editor import LifetimePointEditor
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
@@ -77,6 +78,23 @@ class ParticlePropertiesPanel(QScrollArea):
             signal=w.currentIndexChanged if isinstance(w,FocusWheelComboBox) else w.valueChanged; signal.connect(self._changed)
         self.random_start_frame.toggled.connect(self._changed);self.gravity_enabled.toggled.connect(self._gravity_enabled_changed);self.drag_enabled.toggled.connect(self._drag_enabled_changed);self.scale_lifetime_enabled.toggled.connect(self._lifetime_enabled_changed);self.color_lifetime_enabled.toggled.connect(self._color_lifetime_enabled_changed);self.color_lifetime_start.clicked.connect(lambda:self._choose_lifetime_color(True));self.color_lifetime_end.clicked.connect(lambda:self._choose_lifetime_color(False)); self.motion_mode.currentIndexChanged.connect(self._motion_mode_changed);self.motion_keyframe_property.currentIndexChanged.connect(self._sync_motion_key_state);self.reset_motion.clicked.connect(self._reset_motion);self.add_motion_keyframe.clicked.connect(self._add_motion_keyframe); self.randomize.clicked.connect(self._randomize); self.refresh.clicked.connect(lambda: self.emitter_id and self.refresh_requested.emit(self.emitter_id)); self.bake.clicked.connect(lambda: self.emitter_id and self.bake_requested.emit(self.emitter_id,self.settings())); self.export.clicked.connect(lambda: self.emitter_id and self.export_requested.emit(self.emitter_id)); self.revert.clicked.connect(lambda: self.emitter_id and self.revert_requested.emit(self.emitter_id))
         self.noise_enabled.toggled.connect(self._noise_enabled_changed)
+        self.scale_point_editor=LifetimePointEditor("scale")
+        self.opacity_point_editor=LifetimePointEditor("opacity")
+        self.color_point_editor=LifetimePointEditor("color")
+        self._point_editors=(self.scale_point_editor,self.opacity_point_editor,self.color_point_editor)
+        for editor in self._point_editors:
+            self.lifetime_group.layout().addRow(editor)
+            editor.changed.connect(self._changed)
+        hidden={self.opacity_start,self.opacity_end,self.alpha_easing,self.scale_lifetime_start,self.scale_lifetime_end,self.scale_lifetime_easing,self.color_lifetime_start,self.color_lifetime_end,self.color_lifetime_easing}
+        self.color_lifetime_start.setToolTip("RGB start endpoint adapter; alpha is separate.")
+        self.color_lifetime_end.setToolTip("RGB end endpoint adapter; alpha is separate.")
+        for _,_,form,records in self._group_records:
+            for _,widget in records:
+                if widget in hidden:
+                    row=form.takeRow(widget)
+                    row.labelItem.widget().hide();row.labelItem.widget().setParent(body)
+                    widget.hide();widget.setParent(body)
+            records[:]=[(name,widget) for name,widget in records if widget not in hidden]
     def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _bounded(self,name):
@@ -146,7 +164,9 @@ class ParticlePropertiesPanel(QScrollArea):
         self.random_start_frame.setChecked(s.random_start_frame);self.alpha_easing.setCurrentIndex(max(0,self.alpha_easing.findData(s.easing)));self.blend_mode.setCurrentIndex(max(0,self.blend_mode.findData(s.blend_mode)));self.gravity_enabled.setChecked(s.gravity_enabled);self.gravity_strength.setValue(s.gravity_strength);self._update_gravity_enabled();self.drag_enabled.setChecked(s.drag_enabled);self.drag_strength.setValue(s.drag_strength);self._update_drag_enabled()
         self.noise_enabled.setChecked(s.noise_enabled);self.noise_strength.setValue(s.noise_strength);self.noise_frequency.setValue(s.noise_frequency);self._update_noise_enabled()
         modulation=s.scale_over_lifetime;self.scale_lifetime_enabled.setChecked(modulation.enabled);self.scale_lifetime_start.setValue(modulation.start);self.scale_lifetime_end.setValue(modulation.end);self.scale_lifetime_easing.setCurrentIndex(max(0,self.scale_lifetime_easing.findData(modulation.easing)))
-        color=s.color_over_lifetime;self.color_lifetime_enabled.setChecked(color.enabled);self._color_lifetime_start=tuple(color.start_rgb);self._color_lifetime_end=tuple(color.end_rgb);self.color_lifetime_easing.setCurrentIndex(max(0,self.color_lifetime_easing.findData(color.easing)));self._sync_color_buttons();self._update_lifetime_enabled(); self._loading=False
+        color=s.color_over_lifetime;self.color_lifetime_enabled.setChecked(color.enabled);self._color_lifetime_start=tuple(color.start_rgb);self._color_lifetime_end=tuple(color.end_rgb);self.color_lifetime_easing.setCurrentIndex(max(0,self.color_lifetime_easing.findData(color.easing)));self._sync_color_buttons()
+        self.scale_point_editor.set_curve(s.scale_over_lifetime);self.opacity_point_editor.set_curve(s.opacity_over_lifetime);self.color_point_editor.set_curve(s.color_over_lifetime)
+        self._update_lifetime_enabled(); self._loading=False
         motion=s.motion
         motion_mapping={"motion_mode":motion.mode,"motion_center_x":motion.center_x,"motion_center_y":motion.center_y,"motion_center_z":motion.center_z,"motion_radius_start":motion.radius_start,"motion_radius_end":motion.radius_end,"motion_ellipse_x":motion.ellipse_scale_x,"motion_ellipse_y":motion.ellipse_scale_y,"motion_start_angle":motion.start_angle_degrees,"motion_turns":motion.turns,"motion_direction":motion.direction,"motion_phase_spread":motion.phase_spread_degrees,"motion_plane_rotation":motion.orbit_plane_rotation_degrees,"motion_helix_axis":motion.helix_axis,"motion_axis_start":motion.axis_start,"motion_axis_end":motion.axis_end,"motion_radius_easing":motion.radius_easing,"motion_angle_easing":motion.angle_easing,"motion_axis_easing":motion.axis_easing,"motion_perspective":motion.perspective_strength}
         self._loading=True
@@ -174,10 +194,11 @@ class ParticlePropertiesPanel(QScrollArea):
         motion=ParticleMotionSettings(mode=str(v("motion_mode")),center_x=v("motion_center_x"),center_y=v("motion_center_y"),center_z=v("motion_center_z"),radius_start=v("motion_radius_start"),radius_end=v("motion_radius_end"),ellipse_scale_x=v("motion_ellipse_x"),ellipse_scale_y=v("motion_ellipse_y"),start_angle_degrees=v("motion_start_angle"),turns=v("motion_turns"),direction=str(v("motion_direction")),phase_spread_degrees=v("motion_phase_spread"),orbit_plane_rotation_degrees=v("motion_plane_rotation"),helix_axis=str(v("motion_helix_axis")),axis_start=v("motion_axis_start"),axis_end=v("motion_axis_end"),perspective_strength=v("motion_perspective"),radius_easing=str(v("motion_radius_easing")),angle_easing=str(v("motion_angle_easing")),axis_easing=str(v("motion_axis_easing")),tracks=deepcopy(self._motion_tracks),revision=self._motion_revision)
         for property_id,value in self._motion_base_values.items():
             if property_id in motion.tracks and motion.tracks[property_id].keyframes:setattr(motion,property_id,value)
-        lifetime_scale=LifetimeScalarModulation(enabled=self.scale_lifetime_enabled.isChecked(),start=v("scale_lifetime_start"),end=v("scale_lifetime_end"),easing=str(v("scale_lifetime_easing")))
-        lifetime_color=LifetimeColorModulation(enabled=self.color_lifetime_enabled.isChecked(),start_rgb=self._color_lifetime_start,end_rgb=self._color_lifetime_end,easing=str(v("color_lifetime_easing")))
+        lifetime_scale=deepcopy(self.scale_point_editor.curve);lifetime_scale.enabled=self.scale_lifetime_enabled.isChecked()
+        lifetime_color=deepcopy(self.color_point_editor.curve);lifetime_color.enabled=self.color_lifetime_enabled.isChecked()
         result=ParticleEmitterSettings(clip_asset_id=str(resource[1]),resource_type=str(resource[0]),output_frame_count=v("output_frame_count"),start_frame=v("start_frame"),emission_mode=str(v("emission_mode")),particle_count_min=v("count_min"),particle_count_max=v("count_max"),emission_duration=v("emission_duration"),spawn_shape=str(v("spawn_shape")),origin_x=v("origin_x"),origin_y=v("origin_y"),line_end_x=v("line_end_x"),line_end_y=v("line_end_y"),radius=v("radius"),box_width=v("box_width"),box_height=v("box_height"),start_angle=v("start_angle"),end_angle=v("end_angle"),direction_mode=str(v("direction_mode")),direction_degrees=v("direction_degrees"),direction_spread_degrees=v("direction_spread_degrees"),speed_min=v("speed_min"),speed_max=v("speed_max"),lifetime_min=v("lifetime_min"),lifetime_max=v("lifetime_max"),scale_min=v("scale_min"),scale_max=v("scale_max"),rotation_min=v("rotation_min"),rotation_max=v("rotation_max"),angular_velocity_min=v("angular_velocity_min"),angular_velocity_max=v("angular_velocity_max"),start_delay_min=v("start_delay_min"),start_delay_max=v("start_delay_max"),clip_speed_min=v("clip_speed_min"),clip_speed_max=v("clip_speed_max"),random_start_frame=self.random_start_frame.isChecked(),opacity_start=v("opacity_start"),opacity_end=v("opacity_end"),easing=str(v("alpha_easing")),blend_mode=str(v("blend_mode")),gravity_enabled=self.gravity_enabled.isChecked(),gravity_strength=v("gravity_strength"),drag_enabled=self.drag_enabled.isChecked(),drag_strength=v("drag_strength"),noise_enabled=self.noise_enabled.isChecked(),noise_strength=v("noise_strength"),noise_frequency=v("noise_frequency"),seed=v("seed"),scale_over_lifetime=lifetime_scale,color_over_lifetime=lifetime_color,motion=motion)
         result.emission_cycle_mode=str(v("emission_cycle_mode"));result.emission_period_frames=v("emission_period_frames")
+        result.opacity_over_lifetime=deepcopy(self.opacity_point_editor.curve)
         return result
     def _gravity_enabled_changed(self,*args):
         self._update_gravity_enabled();self._changed()
@@ -200,6 +221,7 @@ class ParticlePropertiesPanel(QScrollArea):
         scale_enabled=self.scale_lifetime_enabled.isChecked();color_enabled=self.color_lifetime_enabled.isChecked()
         for widget in (self.scale_lifetime_start,self.scale_lifetime_end,self.scale_lifetime_easing):widget.setEnabled(scale_enabled)
         for widget in (self.color_lifetime_start,self.color_lifetime_end,self.color_lifetime_easing):widget.setEnabled(color_enabled)
+        self.scale_point_editor.setEnabled(scale_enabled);self.color_point_editor.setEnabled(color_enabled)
     def _choose_lifetime_color(self,start: bool):
         current=self._color_lifetime_start if start else self._color_lifetime_end
         title=(self._localization.text("particle.choose_start_color" if start else "particle.choose_end_color") if self._localization else ("Choose Start Color" if start else "Choose End Color"))
@@ -209,6 +231,10 @@ class ParticlePropertiesPanel(QScrollArea):
         if value==current:return
         if start:self._color_lifetime_start=value
         else:self._color_lifetime_end=value
+        curve=deepcopy(self.color_point_editor.curve)
+        if start:curve.start_rgb=value
+        else:curve.end_rgb=value
+        self.color_point_editor.set_curve(curve)
         self._sync_color_buttons();self._changed()
     def _sync_color_buttons(self):
         for button,value in ((self.color_lifetime_start,self._color_lifetime_start),(self.color_lifetime_end,self._color_lifetime_end)):
@@ -236,6 +262,9 @@ class ParticlePropertiesPanel(QScrollArea):
     def _changed(self,*args):
         if not self._loading and self.emitter_id:
             changed=self.sender()
+            adapters={self.scale_lifetime_start:(self.scale_point_editor,"start"),self.scale_lifetime_end:(self.scale_point_editor,"end"),self.scale_lifetime_easing:(self.scale_point_editor,"easing"),self.opacity_start:(self.opacity_point_editor,"start"),self.opacity_end:(self.opacity_point_editor,"end"),self.alpha_easing:(self.opacity_point_editor,"easing"),self.color_lifetime_easing:(self.color_point_editor,"easing")}
+            if changed in adapters:
+                editor,attribute=adapters[changed];curve=deepcopy(editor.curve);setattr(curve,attribute,changed.currentData() if isinstance(changed,QComboBox) else changed.value());editor.set_curve(curve)
             if changed is self.clip_speed_min and self.clip_speed_min.value()>self.clip_speed_max.value():
                 with QSignalBlocker(self.clip_speed_max):self.clip_speed_max.setValue(self.clip_speed_min.value())
             elif changed is self.clip_speed_max and self.clip_speed_max.value()<self.clip_speed_min.value():
@@ -272,6 +301,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self.cycle_status.setText(text.format(count=settings.cyclic_active_copy_bound()))
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
+        for editor in self._point_editors:editor.retranslate(l.language=="ko")
         self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.common_form.labelForField(self.name).setText(t("resource_layer.name"));self.common_form.labelForField(self.parent_layer).setText(t("layer.parent"));self.mode_label.setText(t("resource_layer.placement_mode"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False);self.transform_panel.retranslate_ui(l); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"));self.blend_mode.setItemText(0,t("particle.blend_normal"));self.blend_mode.setItemText(1,t("particle.blend_additive"))
         group_keys={"Particle Resource":"particle.resource","Emission":"particle.emission","Spawn Shape":"particle.spawn_shape","Direction":"particle.direction","Motion Basic":"particle.motion_basic","Orbit Center":"particle.motion_center","Orbit Shape":"particle.motion_shape","Helix":"particle.motion_helix","Motion Interpolation":"particle.motion_interpolation","Motion Advanced":"particle.motion_advanced","Random Range":"particle.random_range","Rendering":"particle.rendering","Natural Motion":"particle.natural_motion","Over Lifetime":"particle.over_lifetime"}
         field_keys={"Resource":"particle.resource_label","Output Frames":"particle.output_frames","Start Frame":"particle.start_frame","Mode":"particle.mode","Count Min":"particle.count_min","Count Max":"particle.count_max","Duration":"particle.duration","Shape":"particle.shape","Origin X":"particle.origin_x","Origin Y":"particle.origin_y","Line End X":"particle.line_end_x","Line End Y":"particle.line_end_y","Radius":"particle.radius","Box Width":"particle.box_width","Box Height":"particle.box_height","Start Angle":"particle.motion_start_angle","End Angle":"particle.end_angle","Direction":"particle.motion_direction","Spread":"particle.spread","Speed Min":"particle.speed_min","Speed Max":"particle.speed_max","Motion Mode":"particle.motion_mode","Center X":"particle.motion_center_x","Center Y":"particle.motion_center_y","Center Z":"particle.motion_center_z","Radius Start":"particle.motion_radius_start","Radius End":"particle.motion_radius_end","Ellipse X":"particle.motion_ellipse_x","Ellipse Y":"particle.motion_ellipse_y","Turns":"particle.motion_turns","Phase Spread":"particle.motion_phase_spread","Orbit Plane Rotation":"particle.motion_plane_rotation","Helix Axis":"particle.motion_helix_axis","Axis Start":"particle.motion_axis_start","Axis End":"particle.motion_axis_end","Radius Easing":"particle.motion_radius_easing","Angle Easing":"particle.motion_angle_easing","Axis Easing":"particle.motion_axis_easing","Local Perspective":"particle.motion_perspective","Keyframe Property":"particle.motion_keyframe_property","Keyframe Easing":"particle.motion_keyframe_easing","Add Keyframe":"particle.motion_add_keyframe","Reset Motion":"particle.motion_reset","Lifetime Min":"particle.lifetime_min","Lifetime Max":"particle.lifetime_max","Scale Min":"particle.scale_min","Scale Max":"particle.scale_max","Rotation Min":"particle.rotation_min","Rotation Max":"particle.rotation_max","Angular Velocity Min":"particle.angular_velocity_min","Angular Velocity Max":"particle.angular_velocity_max","Start Delay Min":"particle.start_delay_min","Start Delay Max":"particle.start_delay_max","Clip Speed Min":"particle.clip_speed_min","Clip Speed Max":"particle.clip_speed_max","Random Start Frame":"particle.random_start_frame","Opacity Start":"particle.opacity_start","Opacity End":"particle.opacity_end","Seed":"particle.seed","Blend Mode":"particle.blend_mode","Gravity":"particle.gravity","Strength":"particle.gravity_strength","Alpha Easing":"particle.alpha_easing","Scale over Lifetime":"particle.scale_lifetime_enabled","Lifetime Start Scale":"particle.scale_lifetime_start","Lifetime End Scale":"particle.scale_lifetime_end","Lifetime Scale Easing":"particle.scale_lifetime_easing","Color over Lifetime":"particle.color_lifetime_enabled","Lifetime Start Color":"particle.color_lifetime_start","Lifetime End Color":"particle.color_lifetime_end","Lifetime Color Easing":"particle.color_lifetime_easing"}

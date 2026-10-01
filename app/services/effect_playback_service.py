@@ -106,6 +106,7 @@ def playback_relevant_revision(project) -> tuple:
         tuple((item.id,item.revision) for item in project.resource_compositions),
         tuple((item.id,item.parent_id,item.parent_offset,item.advanced_transform_enabled,item.layer_space_transform.revision,item.surface_transform.revision,item.particle_settings.motion.revision,item.particle_settings.blend_mode,item.particle_settings.gravity_enabled,item.particle_settings.gravity_strength,item.particle_settings.drag_enabled,item.particle_settings.drag_strength,item.particle_settings.noise_enabled,item.particle_settings.noise_strength,item.particle_settings.noise_frequency,item.particle_settings.emission_cycle_mode,item.particle_settings.emission_period_frames) for item in project.effect_resource_layers),
         tuple((layer.id,layer.visible,layer.opacity) for layer in project.layers),
+        tuple((item.id, item.particle_settings.scale_over_lifetime.enabled, item.particle_settings.scale_over_lifetime.points, item.particle_settings.opacity_over_lifetime.points, item.particle_settings.color_over_lifetime.enabled, item.particle_settings.color_over_lifetime.points) for item in project.effect_resource_layers),
         project.width,project.height,project.fps,project.loop,
     )
 

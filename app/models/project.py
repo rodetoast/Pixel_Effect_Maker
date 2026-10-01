@@ -26,7 +26,7 @@ from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 from .layer_parenting import repair_parent_links
 
-FORMAT_VERSION = 19
+FORMAT_VERSION = 20
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -264,6 +264,13 @@ class Project:
                 elif isinstance(value, list):
                     pending.extend(value)
         try:
+            if int(version) >= 20:
+                for item in data.get("effect_resource_layers", []):
+                    settings = item.get("particle_settings", {})
+                    for name in ("scale_over_lifetime", "opacity_over_lifetime", "color_over_lifetime"):
+                        channel = settings.get(name)
+                        if not isinstance(channel, dict) or "points" not in channel:
+                            raise ProjectError("format 20 requires canonical lifetime points")
             canvas = data["canvas"]
             animation = data["animation"]
             project = cls(

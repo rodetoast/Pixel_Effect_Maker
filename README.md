@@ -6,7 +6,11 @@ Particle Emission supports deterministic `Linear`, `Orbit`, and `Helix` motion. 
 
 Paused Effect Timeline clicks treat persisted Generated Layer pixels as cache/bake artifacts: each visible Particle Resource Layer is evaluated directly for the requested 0-based frame before Canvas composition. This keeps manual scrub output bit-exact with full-sequence, Playback, Bake, and PNG output even after reopening a metadata-only Motion save. See [Particle Current-frame Consistency](docs/PARTICLE_CURRENT_FRAME_CONSISTENCY.md).
 
-New saves use project format v19. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.22`.
+New saves use project format v20. Older supported projects load without rewriting the source file. The application identifies itself as `Pixel Effect Maker v0.0.23`.
+
+Particle **Over Lifetime** now has bounded point editors for uniform Scale, Opacity, and RGB-only Color (2..8 points each). Select a point to edit its value and outgoing easing; internal times use percentages and cannot cross neighbors. 0%/100% times cannot be changed or removed. Add Point inserts the largest gap midpoint with the current evaluated value and Linear outgoing easing; it is an editing action, not a promise of shape preservation. Each accepted action has one Undo. Scale/Color can be disabled without losing points; neutral Opacity is 1→1. Lifetime points do not create composition timeline keys.
+
+Format 19 Start/End/Easing values migrate to two points, preserving the existing raster arithmetic and source/layer alpha pipeline. Cyclic prewarm evaluates each copy's actual age. No graph canvas, Bezier handles, tangents, per-axis curves, HSV, randomized curves, trails, or sub-emitters are included. See [Multi-point Lifetime report](docs/V0_0_23_MULTI_POINT_LIFETIME_REPORT.md) for test evidence, measured limits, and the pending Windows GUI checklist.
 
 Particle Emission adds **One Shot / Cyclic Steady** and **Cycle Period** (1..512 frames, default 24). One Shot preserves the v0.0.21 sampled slots and pixels. Cyclic Steady repeats the same seeded burst/over-time schedule, including surviving negative-cycle copies at the first visible frame; it does not simulate history or resample each cycle. Count means total particles per cycle, not a particles/sec API. Birth offsets must fit inside the period and the worst-case simultaneous count must not exceed 4096; invalid edits are rejected without dropping particles. Short periods intentionally repeat the same visual pattern.
 

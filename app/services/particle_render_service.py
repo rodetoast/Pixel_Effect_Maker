@@ -22,7 +22,7 @@ from app.services.emitter_service import ease
 from app.services.resource_composition_render_service import composition_as_clip
 from app.services.effect_layer_transform_3d_render_service import focal_length
 from app.services.layer_space_transform_service import project_local_points
-from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar, normalized_lifetime_age
+from app.services.lifetime_modulation_service import eased_lifetime_amount, evaluate_lifetime_color_component, evaluate_lifetime_scalar_for_render, normalized_lifetime_age
 from app.services.particle_natural_motion_service import effective_motion_age, gravity_displacement
 from app.services.particle_noise_service import particle_noise_offset
 from app.services.particle_cyclic_emission_service import iter_particle_cycle_copies
@@ -267,6 +267,7 @@ def _resolve_particle_clip(project: Project, settings: ParticleEmitterSettings) 
 def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tuple:
     values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("noise_enabled",None);values.pop("noise_strength",None);values.pop("noise_frequency",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
     values.pop("emission_cycle_mode",None);values.pop("emission_period_frames",None)
+    values.pop("opacity_over_lifetime",None)
     return repr(values),int(clip_length)
 
 
@@ -297,15 +298,15 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
             pixels=particle_clip_frame(clip,instance,age,project.fps)
             if pixels is None: continue
             lifetime_age = normalized_lifetime_age(age, instance.lifetime)
-            amount = ease(lifetime_age, settings.easing)
+            amount = evaluate_lifetime_scalar_for_render(settings.opacity_over_lifetime, lifetime_age)
             normalized=0.0 if instance.lifetime<=0 else age/instance.lifetime
             position=evaluate_particle_motion(settings,instance,normalized,frame_index,evaluated_motion=motion_value,particle_age=age)
             local_x,local_y,motion_scale,visible=project_particle_billboard(position,motion_perspective,project.width,project.height)
             if not visible:continue
-            lifetime_scale=evaluate_lifetime_scalar(settings.scale_over_lifetime,lifetime_age)
+            lifetime_scale=evaluate_lifetime_scalar_for_render(settings.scale_over_lifetime,lifetime_age)
             color=settings.color_over_lifetime
             if color.enabled:
-                color_amount=eased_lifetime_amount(lifetime_age,color.easing)
+                color_amount=eased_lifetime_amount(lifetime_age,color.easing) if len(color.points)==2 else None
                 tint_r=evaluate_lifetime_color_component(color,lifetime_age,0,eased_amount=color_amount)
                 tint_g=evaluate_lifetime_color_component(color,lifetime_age,1,eased_amount=color_amount)
                 tint_b=evaluate_lifetime_color_component(color,lifetime_age,2,eased_amount=color_amount)
@@ -332,7 +333,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
                     instance.particle_id,order,instance.birth_frame,instance.lifetime,age,normalized,source_frame,
                     x,y,view_z,instance.rotation+instance.angular_velocity*age,
                     (scale_x+scale_y)*0.5,
-                    settings.opacity_start+(settings.opacity_end-settings.opacity_start)*amount,
+                    amount,
                     (view_z,order),position.x,position.y,position.z,lifetime_scale,tint_r,tint_g,tint_b,
                     instance.cycle_index if cyclic else None,instance.copy_key if cyclic else None,
                 ))
@@ -345,7 +346,7 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
                 rotation=instance.rotation + instance.angular_velocity * age,
                 scale_x=scale_x, scale_y=scale_y,
                 horizontal_tilt=0, vertical_tilt=0, perspective=0,
-                opacity=settings.opacity_start + (settings.opacity_end - settings.opacity_start) * amount,
+                opacity=amount,
                 tint_r=tint_r,tint_g=tint_g,tint_b=tint_b,
                 blend_mode=settings.blend_mode)
     if layer_value.opacity < 1.0:

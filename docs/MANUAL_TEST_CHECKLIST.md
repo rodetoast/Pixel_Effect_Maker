@@ -1,4 +1,27 @@
-# Pixel Effect Maker v0.0.22 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.23 수동 테스트 체크리스트
+
+## v0.0.23 Multi-point Lifetime — 사용자 Windows GUI 승인 필요
+
+Codex Windows native GUI manual: **수행하지 않음**. 아래 항목은 미실행 체크리스트다.
+
+- [ ] Scale 0→1.2→0의 빠른 peak와 shrink 확인.
+- [ ] Opacity 0→1→0 fade-in/out 및 hold 구간 확인.
+- [ ] RGB White→Yellow→Red 중간 색과 원본 곱셈 tint 확인.
+- [ ] 첫 구간 Ease Out / 다음 Linear의 차이 확인.
+- [ ] Add Point가 가장 큰 gap의 midpoint, 평가값, Linear easing으로 생성되는지.
+- [ ] Remove는 선택된 내부 지점만 가능하고 선택 없으면 비활성인지.
+- [ ] 0%/100% 끝점 시간 수정·삭제가 불가능한지.
+- [ ] 중복·crossing·범위 밖 시간이 거부·복원되는지.
+- [ ] Add/Remove/Time/Value/RGB/Easing/Enabled 각각 Undo/Redo exact인지.
+- [ ] A→B→A 선택, 언어 변경, timeline scrub 뒤 서로 다른 curves 보존.
+- [ ] 모든 point/time/value/RGB/easing/enabled Save/Reload 보존.
+- [ ] 기존 FORMAT19 2-point 효과가 시각적으로 같은지, Alpha Easing 유지.
+- [ ] Cyclic Fire 첫 gate부터 prewarm 입자가 중간 lifetime 상태인지.
+- [ ] Cyclic+Gravity+Drag+Noise+세 곡선+Additive full stack 조작 확인.
+- [ ] 같은 frame Preview/PNG와 크기/clip/overscan 확인.
+- [ ] 좁은 Inspector와 125%/150% 표시 배율에서 선택·입력·버튼이 잘리지 않는지.
+
+GUI 승인 전 v0.0.23 stage/commit/tag/push/build 하지 않는다.
 
 ## v0.0.22 Cyclic Steady — 사용자 Windows GUI 확인 필요
 

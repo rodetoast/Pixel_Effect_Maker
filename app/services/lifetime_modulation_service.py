@@ -25,8 +25,34 @@ def evaluate_lifetime_scalar(
     """Evaluate one scalar channel without mutation or per-frame allocation."""
     if not modulation.enabled:
         return disabled_value
-    amount = eased_lifetime_amount(normalized_age, modulation.easing)
-    return modulation.start + (modulation.end - modulation.start) * amount
+    return evaluate_scalar_points(modulation.points, normalized_age)
+
+
+def evaluate_scalar_points(points, normalized_age: float) -> float:
+    if normalized_age <= 0: return points[0].value
+    if normalized_age >= 1: return points[-1].value
+    left = points[0]
+    for right in points[1:]:
+        if normalized_age == right.time: return right.value
+        if normalized_age < right.time:
+            amount = ease((normalized_age-left.time)/(right.time-left.time), left.easing_to_next)
+            return left.value + (right.value-left.value)*amount
+        left = right
+    return points[-1].value
+
+
+def evaluate_lifetime_scalar_for_render(modulation, normalized_age):
+    """Preserve legacy two-point endpoint rounding at the raster boundary.
+
+    The public evaluator returns exact knots. Old alpha lerp at u=1 can differ
+    by one floating ULP, affecting uint8 half-even rounding. Keep that arithmetic
+    for two-point raster inputs only; multi-point curves use exact knot values.
+    """
+    if modulation.enabled and len(modulation.points) == 2:
+        left, right = modulation.points
+        amount = eased_lifetime_amount(normalized_age, left.easing_to_next)
+        return left.value + (right.value-left.value)*amount
+    return evaluate_lifetime_scalar(modulation, normalized_age)
 
 
 def eased_lifetime_amount(normalized_age: float, easing: str) -> float:
@@ -44,5 +70,19 @@ def evaluate_lifetime_color_component(
     """Return one RGB tint factor in 0..1 without creating a color object."""
     if not modulation.enabled:
         return 1.0
-    amount = eased_lifetime_amount(normalized_age, modulation.easing) if eased_amount is None else eased_amount
-    return (modulation.start_rgb[channel] + (modulation.end_rgb[channel] - modulation.start_rgb[channel]) * amount) / 255.0
+    points = modulation.points
+    if normalized_age <= 0: return points[0].rgb[channel] / 255.0
+    if normalized_age >= 1: return points[-1].rgb[channel] / 255.0
+    left = points[0]
+    if len(points) == 2:
+        right = points[1]
+        amount = eased_lifetime_amount(normalized_age, left.easing_to_next) if eased_amount is None else eased_amount
+        return (left.rgb[channel] + (right.rgb[channel]-left.rgb[channel])*amount) / 255.0
+    for index in range(1, len(points)):
+        right = points[index]
+        if normalized_age == right.time: return right.rgb[channel] / 255.0
+        if normalized_age < right.time:
+            amount = ease((normalized_age-left.time)/(right.time-left.time), left.easing_to_next)
+            return (left.rgb[channel] + (right.rgb[channel]-left.rgb[channel])*amount) / 255.0
+        left = right
+    return points[-1].rgb[channel] / 255.0

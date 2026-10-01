@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import InitVar, asdict, dataclass, field, replace
 import math
 from typing import Any
 from uuid import uuid4
@@ -22,32 +22,79 @@ EMISSION_PERIOD_MAX = 512
 CYCLIC_ACTIVE_COPY_LIMIT = 4096
 RGB_MIN = 0
 RGB_MAX = 255
+LIFETIME_POINT_MAX = 8
 
 
-@dataclass
+@dataclass(frozen=True)
+class LifetimeScalarPoint:
+    time: float
+    value: float
+    easing_to_next: str = "Linear"
+
+
+@dataclass(frozen=True)
+class LifetimeColorPoint:
+    time: float
+    rgb: tuple[int, int, int]
+    easing_to_next: str = "Linear"
+
+    def __post_init__(self):
+        if isinstance(self.rgb, list): object.__setattr__(self, "rgb", tuple(self.rgb))
+
+
+def validate_lifetime_points(points) -> None:
+    if not isinstance(points, (tuple, list)) or not 2 <= len(points) <= LIFETIME_POINT_MAX:
+        raise ValueError("lifetime curve requires 2..8 points")
+    previous = -1.0
+    for point in points:
+        if not isinstance(point, (LifetimeScalarPoint, LifetimeColorPoint)):
+            raise ValueError("invalid lifetime point type")
+        if isinstance(point.time, bool) or not isinstance(point.time, (int, float)) or not math.isfinite(point.time):
+            raise ValueError("lifetime point time must be finite")
+        if not 0 <= point.time <= 1 or point.time <= previous:
+            raise ValueError("lifetime point times must be strictly increasing in 0..1")
+        if not isinstance(point.easing_to_next, str) or point.easing_to_next not in EASINGS:
+            raise ValueError("unsupported lifetime segment easing")
+        previous = point.time
+    if points[0].time != 0 or points[-1].time != 1:
+        raise ValueError("lifetime curve requires endpoints at 0 and 1")
+
+
+@dataclass(init=False)
 class LifetimeScalarModulation:
-    """Minimal reusable scalar channel evaluated over one particle lifetime."""
+    """Canonical bounded points; legacy accessors edit those same points."""
 
     enabled: bool = False
-    start: float = 1.0
-    end: float = 1.0
-    easing: str = "Linear"
+    points: tuple[LifetimeScalarPoint, ...] = ()
+
+    def __init__(self, enabled=False, start=1.0, end=1.0, easing="Linear", *, points=None):
+        self.enabled = enabled
+        self.points = tuple(points) if points is not None else (LifetimeScalarPoint(0.0, start, easing), LifetimeScalarPoint(1.0, end))
+
+    @property
+    def start(self): return self.points[0].value
+    @start.setter
+    def start(self, value): self.points = (replace(self.points[0], value=value), *self.points[1:])
+    @property
+    def end(self): return self.points[-1].value
+    @end.setter
+    def end(self, value): self.points = (*self.points[:-1], replace(self.points[-1], value=value))
+    @property
+    def easing(self): return self.points[0].easing_to_next
+    @easing.setter
+    def easing(self, value): self.points = (replace(self.points[0], easing_to_next=value), *self.points[1:])
 
     def validate(self) -> None:
         if not isinstance(self.enabled, bool):
             raise ValueError("lifetime scalar enabled must be a boolean")
-        start = float(self.start)
-        end = float(self.end)
-        if not all(math.isfinite(value) for value in (start, end)):
-            raise ValueError("lifetime scalar values must be finite")
-        if not 0.0 <= start <= LIFETIME_SCALE_MAX or not 0.0 <= end <= LIFETIME_SCALE_MAX:
-            raise ValueError(f"lifetime scalar values must be 0..{LIFETIME_SCALE_MAX:g}")
-        if self.easing not in EASINGS:
-            raise ValueError("unsupported lifetime scalar easing")
+        validate_lifetime_points(self.points)
+        for point in self.points:
+            if not isinstance(point, LifetimeScalarPoint) or isinstance(point.value, bool) or not isinstance(point.value, (int, float)) or not math.isfinite(point.value) or not 0 <= point.value <= LIFETIME_SCALE_MAX:
+                raise ValueError(f"lifetime scalar values must be finite in 0..{LIFETIME_SCALE_MAX:g}")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
-        return {"enabled": bool(self.enabled), "start": float(self.start), "end": float(self.end), "easing": self.easing}
+        return {"enabled": self.enabled, "points": [asdict(point) for point in self.points]}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "LifetimeScalarModulation":
@@ -58,6 +105,15 @@ class LifetimeScalarModulation:
         enabled = data.get("enabled", False)
         if not isinstance(enabled, bool):
             raise ValueError("lifetime scalar enabled must be a boolean")
+        if "points" in data:
+            if any(key in data for key in ("start", "end", "easing")):
+                raise ValueError("ambiguous lifetime scalar representation")
+            raw = data["points"]
+            if not isinstance(raw, list): raise ValueError("lifetime points must be an array")
+            try: value = cls(enabled, points=tuple(LifetimeScalarPoint(**point) for point in raw))
+            except (TypeError, KeyError) as error: raise ValueError("invalid scalar point") from error
+            value.validate()
+            return value
         value = cls(
             enabled=enabled,
             start=float(data.get("start", 1.0)),
@@ -68,33 +124,47 @@ class LifetimeScalarModulation:
         return value
 
 
-@dataclass
+@dataclass(init=False)
 class LifetimeColorModulation:
-    """Two-point RGB-only tint modulation over one particle lifetime."""
+    """Bounded encoded-sRGB tint points, never containing alpha."""
 
     enabled: bool = False
-    start_rgb: tuple[int, int, int] = (255, 255, 255)
-    end_rgb: tuple[int, int, int] = (255, 255, 255)
-    easing: str = "Linear"
+    points: tuple[LifetimeColorPoint, ...] = ()
+
+    def __init__(self, enabled=False, start_rgb=(255,255,255), end_rgb=(255,255,255), easing="Linear", *, points=None):
+        self.enabled = enabled
+        self.points = tuple(points) if points is not None else (LifetimeColorPoint(0.0, start_rgb, easing), LifetimeColorPoint(1.0, end_rgb))
+
+    @property
+    def start_rgb(self): return self.points[0].rgb
+    @start_rgb.setter
+    def start_rgb(self, value): self.points = (replace(self.points[0], rgb=value), *self.points[1:])
+    @property
+    def end_rgb(self): return self.points[-1].rgb
+    @end_rgb.setter
+    def end_rgb(self, value): self.points = (*self.points[:-1], replace(self.points[-1], rgb=value))
+    @property
+    def easing(self): return self.points[0].easing_to_next
+    @easing.setter
+    def easing(self, value): self.points = (replace(self.points[0], easing_to_next=value), *self.points[1:])
 
     def validate(self) -> None:
         if not isinstance(self.enabled, bool):
             raise ValueError("lifetime color enabled must be a boolean")
-        for name, color in (("start", self.start_rgb), ("end", self.end_rgb)):
+        validate_lifetime_points(self.points)
+        for point in self.points:
+            if not isinstance(point, LifetimeColorPoint): raise ValueError("invalid lifetime color point")
+            name, color = "point", point.rgb
             if not isinstance(color, (tuple, list)) or len(color) != 3:
                 raise ValueError(f"lifetime color {name} must contain exactly three RGB channels")
             if any(isinstance(channel, bool) or not isinstance(channel, int) or not RGB_MIN <= channel <= RGB_MAX for channel in color):
                 raise ValueError(f"lifetime color {name} channels must be integers from {RGB_MIN} to {RGB_MAX}")
-        if self.easing not in EASINGS:
-            raise ValueError("unsupported lifetime color easing")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
         return {
             "enabled": self.enabled,
-            "start_rgb": list(self.start_rgb),
-            "end_rgb": list(self.end_rgb),
-            "easing": self.easing,
+            "points": [{"time": p.time, "rgb": list(p.rgb), "easing_to_next": p.easing_to_next} for p in self.points],
         }
 
     @classmethod
@@ -106,6 +176,17 @@ class LifetimeColorModulation:
         enabled = data.get("enabled", False)
         if not isinstance(enabled, bool):
             raise ValueError("lifetime color enabled must be a boolean")
+        if "points" in data:
+            if any(key in data for key in ("start_rgb", "end_rgb", "easing")):
+                raise ValueError("ambiguous lifetime color representation")
+            raw = data["points"]
+            if not isinstance(raw, list): raise ValueError("lifetime points must be an array")
+            try:
+                value = cls(enabled, points=tuple(LifetimeColorPoint(p["time"], tuple(p["rgb"]), p.get("easing_to_next", "Linear")) for p in raw))
+                if any(set(p) - {"time", "rgb", "easing_to_next"} for p in raw): raise ValueError("RGB points cannot contain alpha or unknown fields")
+            except (TypeError, KeyError) as error: raise ValueError("invalid RGB point") from error
+            value.validate()
+            return value
         start = data.get("start_rgb", (255, 255, 255))
         end = data.get("end_rgb", (255, 255, 255))
         value = cls(enabled, tuple(start) if isinstance(start, (tuple, list)) else start, tuple(end) if isinstance(end, (tuple, list)) else end, str(data.get("easing", "Linear")))
@@ -274,9 +355,9 @@ class ParticleEmitterSettings:
     clip_speed_min: float = 1.0
     clip_speed_max: float = 1.0
     random_start_frame: bool = False
-    opacity_start: float = 1.0
-    opacity_end: float = 0.0
-    easing: str = "Linear"
+    opacity_start: InitVar[float] = 1.0
+    opacity_end: InitVar[float] = 0.0
+    easing: InitVar[str] = "Linear"
     blend_mode: str = BLEND_NORMAL
     gravity_enabled: bool = False
     gravity_strength: float = 0.0
@@ -291,8 +372,11 @@ class ParticleEmitterSettings:
     motion: ParticleMotionSettings = field(default_factory=ParticleMotionSettings)
     emission_cycle_mode: str = EMISSION_ONE_SHOT
     emission_period_frames: int = 24
+    opacity_over_lifetime: LifetimeScalarModulation | None = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, opacity_start, opacity_end, easing) -> None:
+        if self.opacity_over_lifetime is None:
+            self.opacity_over_lifetime = LifetimeScalarModulation(True, opacity_start, opacity_end, easing)
         self._normalize_clip_speed_range()
 
     def _normalize_clip_speed_range(self) -> None:
@@ -320,8 +404,8 @@ class ParticleEmitterSettings:
         if self.particle_count_min < 0 or self.particle_count_max > 4096: raise ValueError("particle count must be 0..4096")
         if self.lifetime_min < 1 or self.start_delay_min < 0: raise ValueError("invalid lifetime or start delay")
         if self.scale_min <= 0 or self.clip_speed_min <= 0: raise ValueError("scale and clip speed must be positive")
-        if not (0 <= self.opacity_start <= 1 and 0 <= self.opacity_end <= 1): raise ValueError("opacity must be 0..1")
-        if self.easing not in EASINGS: raise ValueError("unsupported particle alpha easing")
+        self.opacity_over_lifetime.validate()
+        if not self.opacity_over_lifetime.enabled or any(p.value > 1 for p in self.opacity_over_lifetime.points): raise ValueError("opacity curve must be enabled with values in 0..1")
         self.blend_mode = validate_blend_mode(self.blend_mode)
         if not isinstance(self.gravity_enabled, bool): raise ValueError("particle gravity enabled must be a boolean")
         if not math.isfinite(float(self.gravity_strength)): raise ValueError("particle gravity strength must be finite")
@@ -352,7 +436,7 @@ class ParticleEmitterSettings:
 
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()
-        value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["color_over_lifetime"]=self.color_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
+        value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["color_over_lifetime"]=self.color_over_lifetime.to_dict(); value["opacity_over_lifetime"]=self.opacity_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
 
     @property
     def resource_id(self) -> str:
@@ -366,7 +450,21 @@ class ParticleEmitterSettings:
         values["scale_over_lifetime"] = LifetimeScalarModulation.from_dict(values.get("scale_over_lifetime"))
         values["color_over_lifetime"] = LifetimeColorModulation.from_dict(values.get("color_over_lifetime"))
         values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
+        if "opacity_over_lifetime" in values:
+            if any(key in values for key in ("opacity_start", "opacity_end", "easing")): raise ValueError("ambiguous opacity representation")
+            values["opacity_over_lifetime"] = LifetimeScalarModulation.from_dict(values["opacity_over_lifetime"])
         value = cls(**values); value.validate(); return value
+
+
+# InitVars preserve constructor compatibility without adding persistent state.
+def _opacity_adapter(name):
+    return property(lambda self: getattr(self.opacity_over_lifetime, name),
+                    lambda self, value: setattr(self.opacity_over_lifetime, name, value))
+
+
+ParticleEmitterSettings.opacity_start = _opacity_adapter("start")
+ParticleEmitterSettings.opacity_end = _opacity_adapter("end")
+ParticleEmitterSettings.easing = _opacity_adapter("easing")
 
 
 @dataclass(frozen=True)

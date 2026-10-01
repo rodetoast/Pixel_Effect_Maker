@@ -124,7 +124,7 @@ def test_format12_defaults_disabled_and_old_render_is_preserved():
     for item in payload["effect_resource_layers"]:item["particle_settings"].pop("scale_over_lifetime",None)
     loaded=Project.from_dict(payload);restored=loaded.effect_resource_layers[0]
     assert not restored.particle_settings.scale_over_lifetime.enabled
-    assert restored.particle_settings.scale_over_lifetime.to_dict()=={"enabled":False,"start":1.0,"end":1.0,"easing":"Linear"}
+    assert restored.particle_settings.scale_over_lifetime==LifetimeScalarModulation()
     assert all(np.array_equal(x,y) for x,y in zip(old_frames,render_effect_resource_layer(loaded,restored),strict=True))
 
 
@@ -132,7 +132,7 @@ def test_format12_defaults_disabled_and_old_render_is_preserved():
 def test_current_format_round_trip_is_exact(tmp_path,easing):
     project,layer=_project(modulation=_channel(True,.25,2,easing));path=save_project(project,tmp_path/"lifetime")
     loaded=load_project(path);value=loaded.effect_resource_layers[0].particle_settings.scale_over_lifetime
-    assert FORMAT_VERSION==19 and loaded.format_version==19 and value==_channel(True,.25,2,easing)
+    assert FORMAT_VERSION==20 and loaded.format_version==20 and value==_channel(True,.25,2,easing)
 
 
 def test_preview_current_full_materialized_and_export_match(tmp_path):

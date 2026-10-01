@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.23 — Multi-point Lifetime Foundation (uncommitted)
+
+- Canonical bounded Scale/Opacity/RGB points in format 20, with independently eased segments and strict 0/1 endpoints, ordering and 2..8-point validation.
+- Compact point-selection editors in Over Lifetime: add/remove, percentage time, numeric value, RGB picker and outgoing easing; KO/EN labels and tooltips. No composition auto-key.
+- One accepted point action per Undo; no-op, refresh and cancelled color picker produce no mutation or command.
+- Format 19 migration preserves old two-point raster output, including alpha endpoint floating-point rounding. Load never rewrites the source file.
+- Curve edits invalidate rendered/playback/generated output without resampling canonical spawn slots. Cyclic copies use actual ages.
+- Synthetic Hit Spark, Explosion, Smoke, Magic Wisp, Sword Slash and Cyclic Fire fixtures verify save/load/playback/PNG parity. Native Windows GUI manual QA remains pending.
+- No Graph Editor, Bezier/tangents, per-axis/HSV/random curves, trails or sub-emitters. Existing particle safety limits remain unchanged.
+
 ## v0.0.22 — Deterministic Cyclic Steady Emission
 
 - One Shot / Cyclic Steady and Cycle Period in the localized Particle Emission Inspector.

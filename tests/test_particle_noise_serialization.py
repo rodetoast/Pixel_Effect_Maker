@@ -51,7 +51,7 @@ def test_format17_defaults_noise_disabled_and_preserves_render():
         item["particle_settings"].pop("noise_strength")
         item["particle_settings"].pop("noise_frequency")
     loaded=Project.from_dict(payload);restored=loaded.effect_resource_layers[0]
-    assert loaded.format_version==FORMAT_VERSION==19
+    assert loaded.format_version==FORMAT_VERSION==20
     assert not restored.particle_settings.noise_enabled
     assert restored.particle_settings.noise_strength==1 and restored.particle_settings.noise_frequency==.1
     assert all(np.array_equal(a,b) for a,b in zip(before,render_effect_resource_layer(loaded,restored),strict=True))
@@ -61,7 +61,7 @@ def test_format17_defaults_noise_disabled_and_preserves_render():
 def test_format18_noise_roundtrip(strength,frequency):
     project,_=_project(True,strength,frequency)
     loaded=Project.from_dict(project.to_dict());settings=loaded.effect_resource_layers[0].particle_settings
-    assert loaded.format_version==19 and settings.noise_enabled
+    assert loaded.format_version==20 and settings.noise_enabled
     assert settings.noise_strength==strength and settings.noise_frequency==frequency
 
 

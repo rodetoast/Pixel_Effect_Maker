@@ -1,5 +1,18 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## v0.0.23 Multi-point Lifetime overlay
+
+좁은 Multi-point Lifetime Scale / Opacity / RGB Color는 모델, Inspector, 렌더,
+Undo, FORMAT20 저장·마이그레이션, Playback·PNG까지 자동 검증된 COMPLETE다.
+2..8개의 normalized points와 기존 segment easing을 사용한다. Scale은 uniform
+multiplier이며 base X/Y ratio를 유지하고 RGB tint와 Alpha는 분리된다.
+전체 Curve System은 PARTIAL: Graph Editor, Bezier handles, tangents, per-axis Scale,
+HSV, randomized curves, composition Timeline point animation은 없다. Trail/Ribbon과
+Sub-emitter도 없다. 현재 roadmap의 bounded lifetime 작업을 완료한 다음 후보는
+최소 Trail/Ribbon 기반이다. GUI 승인 및 시각적 품질 판단은 별도이며 native GUI
+manual은 **수행하지 않음**. [v0.0.23 상세 보고](V0_0_23_MULTI_POINT_LIFETIME_REPORT.md).
+아래 overlay 및 과거 우선순위는 이력이다.
+
 ## v0.0.22 Cyclic Steady overlay
 
 좁은 **Deterministic Cyclic Steady Emission** 경로는 Model/UI/Render/Undo/Save/PNG까지
