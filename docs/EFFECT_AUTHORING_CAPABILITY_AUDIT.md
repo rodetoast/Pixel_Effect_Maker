@@ -1,5 +1,23 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## v0.0.24 Deterministic Sprite Trail overlay
+
+**Deterministic Particle Sprite Trail**의 좁은 Model/Inspector/Undo/Save/Render/Playback/PNG
+경로는 자동 검증 기준 COMPLETE다. 과거 frame buffer 없이 sample_age를 다시 평가하고,
+multi-point Scale/RGB/Opacity 및 Linear/Orbit/Helix/Gravity/Drag/Noise와 결합한다.
+사후 잔상과 Cyclic gate의 이전 주기 tail-only copies를 포함한다. 모든 sample은 현재
+target frame의 Layer/Parent/System/Surface snapshot을 사용한다. World-space transform
+history는 지원하지 않는다. 성능 safety cap은 실시간 보장이 아니다.
+
+**Ribbon Mesh: MISSING**, **World-space historical Trail: MISSING**. 따라서 전체
+Trail/Ribbon family는 PARTIAL이며 sprite stamps를 연속 Ribbon이라고 부르지 않는다.
+Velocity-aligned geometry, ribbon UV/width/tessellation, collision도 추가하지 않았다.
+Sub-emitter/event spawning, true force/turbulence stack, Graph Editor/Bezier/tangents는
+여전히 MISSING이다. 기존 Cyclic → Multi-point → 최소 Trail roadmap과 일치한다.
+다음 추천은 deterministic birth/death event 기반의 제한된 Sub-emitter foundation이며,
+사용자 native GUI 승인과 잔상 밀도/비용 판단을 먼저 받는다. GUI manual **수행하지 않음**.
+[v0.0.24 보고](V0_0_24_PARTICLE_TRAIL_REPORT.md). 아래 overlay는 각 시점의 이력이다.
+
 ## v0.0.23 Multi-point Lifetime overlay
 
 좁은 Multi-point Lifetime Scale / Opacity / RGB Color는 모델, Inspector, 렌더,

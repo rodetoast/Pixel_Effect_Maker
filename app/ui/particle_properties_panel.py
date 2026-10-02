@@ -14,6 +14,7 @@ from .tooltip_helper import apply_tooltip
 from .resource_layer_transform_panel import ResourceLayerTransformPanel
 from .hierarchy_display import layer_display_labels
 from .lifetime_point_editor import LifetimePointEditor
+from app.models.particle_emitter import ParticleTrailSettings
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
@@ -95,6 +96,18 @@ class ParticlePropertiesPanel(QScrollArea):
                     row.labelItem.widget().hide();row.labelItem.widget().setParent(body)
                     widget.hide();widget.setParent(body)
             records[:]=[(name,widget) for name,widget in records if widget not in hidden]
+        self.trail_group=QGroupBox();self.trail_group.setMinimumWidth(0);self.trail_group.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+        self.trail_form=QFormLayout(self.trail_group);self.trail_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.trail_enabled=QCheckBox();self.trail_duration=self._i(2,240);self.trail_duration.setValue(12)
+        self.trail_interval=self._i(1,239);self.trail_interval.setValue(2)
+        self.trail_opacity=self._n(0,1);self.trail_opacity.setDecimals(6);self.trail_opacity.setValue(.75)
+        for name,control in (("Enabled",self.trail_enabled),("Duration",self.trail_duration),("Sample Every",self.trail_interval),("Opacity",self.trail_opacity)):
+            self.trail_form.addRow(name,control)
+        self.trail_status=QLabel();self.trail_status.setWordWrap(True);self.trail_status.setMinimumWidth(0);self.trail_form.addRow(self.trail_status)
+        self.layout.insertWidget(self.layout.indexOf(self.lifetime_group),self.trail_group)
+        self.trail_enabled.toggled.connect(self._changed)
+        for control in (self.trail_duration,self.trail_interval,self.trail_opacity):control.valueChanged.connect(self._changed)
+        self._retranslate_trail();self._update_trail_status()
     def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _bounded(self,name):
@@ -166,6 +179,7 @@ class ParticlePropertiesPanel(QScrollArea):
         modulation=s.scale_over_lifetime;self.scale_lifetime_enabled.setChecked(modulation.enabled);self.scale_lifetime_start.setValue(modulation.start);self.scale_lifetime_end.setValue(modulation.end);self.scale_lifetime_easing.setCurrentIndex(max(0,self.scale_lifetime_easing.findData(modulation.easing)))
         color=s.color_over_lifetime;self.color_lifetime_enabled.setChecked(color.enabled);self._color_lifetime_start=tuple(color.start_rgb);self._color_lifetime_end=tuple(color.end_rgb);self.color_lifetime_easing.setCurrentIndex(max(0,self.color_lifetime_easing.findData(color.easing)));self._sync_color_buttons()
         self.scale_point_editor.set_curve(s.scale_over_lifetime);self.opacity_point_editor.set_curve(s.opacity_over_lifetime);self.color_point_editor.set_curve(s.color_over_lifetime)
+        self.trail_enabled.setChecked(s.trail.enabled);self.trail_duration.setValue(s.trail.duration_frames);self.trail_interval.setValue(s.trail.sample_interval_frames);self.trail_opacity.setValue(s.trail.opacity);self._update_trail_status()
         self._update_lifetime_enabled(); self._loading=False
         motion=s.motion
         motion_mapping={"motion_mode":motion.mode,"motion_center_x":motion.center_x,"motion_center_y":motion.center_y,"motion_center_z":motion.center_z,"motion_radius_start":motion.radius_start,"motion_radius_end":motion.radius_end,"motion_ellipse_x":motion.ellipse_scale_x,"motion_ellipse_y":motion.ellipse_scale_y,"motion_start_angle":motion.start_angle_degrees,"motion_turns":motion.turns,"motion_direction":motion.direction,"motion_phase_spread":motion.phase_spread_degrees,"motion_plane_rotation":motion.orbit_plane_rotation_degrees,"motion_helix_axis":motion.helix_axis,"motion_axis_start":motion.axis_start,"motion_axis_end":motion.axis_end,"motion_radius_easing":motion.radius_easing,"motion_angle_easing":motion.angle_easing,"motion_axis_easing":motion.axis_easing,"motion_perspective":motion.perspective_strength}
@@ -199,6 +213,7 @@ class ParticlePropertiesPanel(QScrollArea):
         result=ParticleEmitterSettings(clip_asset_id=str(resource[1]),resource_type=str(resource[0]),output_frame_count=v("output_frame_count"),start_frame=v("start_frame"),emission_mode=str(v("emission_mode")),particle_count_min=v("count_min"),particle_count_max=v("count_max"),emission_duration=v("emission_duration"),spawn_shape=str(v("spawn_shape")),origin_x=v("origin_x"),origin_y=v("origin_y"),line_end_x=v("line_end_x"),line_end_y=v("line_end_y"),radius=v("radius"),box_width=v("box_width"),box_height=v("box_height"),start_angle=v("start_angle"),end_angle=v("end_angle"),direction_mode=str(v("direction_mode")),direction_degrees=v("direction_degrees"),direction_spread_degrees=v("direction_spread_degrees"),speed_min=v("speed_min"),speed_max=v("speed_max"),lifetime_min=v("lifetime_min"),lifetime_max=v("lifetime_max"),scale_min=v("scale_min"),scale_max=v("scale_max"),rotation_min=v("rotation_min"),rotation_max=v("rotation_max"),angular_velocity_min=v("angular_velocity_min"),angular_velocity_max=v("angular_velocity_max"),start_delay_min=v("start_delay_min"),start_delay_max=v("start_delay_max"),clip_speed_min=v("clip_speed_min"),clip_speed_max=v("clip_speed_max"),random_start_frame=self.random_start_frame.isChecked(),opacity_start=v("opacity_start"),opacity_end=v("opacity_end"),easing=str(v("alpha_easing")),blend_mode=str(v("blend_mode")),gravity_enabled=self.gravity_enabled.isChecked(),gravity_strength=v("gravity_strength"),drag_enabled=self.drag_enabled.isChecked(),drag_strength=v("drag_strength"),noise_enabled=self.noise_enabled.isChecked(),noise_strength=v("noise_strength"),noise_frequency=v("noise_frequency"),seed=v("seed"),scale_over_lifetime=lifetime_scale,color_over_lifetime=lifetime_color,motion=motion)
         result.emission_cycle_mode=str(v("emission_cycle_mode"));result.emission_period_frames=v("emission_period_frames")
         result.opacity_over_lifetime=deepcopy(self.opacity_point_editor.curve)
+        result.trail=ParticleTrailSettings(self.trail_enabled.isChecked(),v("trail_duration"),v("trail_interval"),v("trail_opacity"))
         return result
     def _gravity_enabled_changed(self,*args):
         self._update_gravity_enabled();self._changed()
@@ -281,12 +296,38 @@ class ParticlePropertiesPanel(QScrollArea):
             if self.sender() in {self.motion_mode,self.motion_center_x,self.motion_center_y,self.motion_center_z,self.motion_radius_start,self.motion_radius_end,self.motion_ellipse_x,self.motion_ellipse_y,self.motion_start_angle,self.motion_turns,self.motion_direction,self.motion_phase_spread,self.motion_plane_rotation,self.motion_helix_axis,self.motion_axis_start,self.motion_axis_end,self.motion_radius_easing,self.motion_angle_easing,self.motion_axis_easing,self.motion_perspective}:self._motion_revision+=1
             candidate=self.settings()
             try:
-                if candidate.emission_cycle_mode=="cyclic_steady":candidate.validate()
+                candidate.trail.validate()
+                if candidate.emission_cycle_mode=="cyclic_steady" or candidate.trail.enabled:candidate.validate()
             except ValueError as error:
                 if self._last_accepted_settings is not None:self.set_settings(self._last_accepted_settings)
+                if "trail" in str(error) or candidate.trail.enabled:
+                    self.trail_status.setText(self._trail_error_text(error));return
                 self.cycle_status.setText(self._cycle_error_text(error));return
-            self._last_accepted_settings=deepcopy(candidate);self._update_cycle_status()
+            self._last_accepted_settings=deepcopy(candidate);self._update_cycle_status();self._update_trail_status()
             self.draft_changed.emit(self.emitter_id,candidate)
+    def _retranslate_trail(self):
+        ko=bool(self._localization and self._localization.language=="ko")
+        self.trail_group.setTitle("잔상 궤적" if ko else "Trail")
+        for control,en,kr in ((self.trail_enabled,"Enable Trail","잔상 사용"),(self.trail_duration,"Duration","지속 시간"),(self.trail_interval,"Sample Every","샘플 간격"),(self.trail_opacity,"Opacity","불투명도")):
+            self.trail_form.labelForField(control).setText(kr if ko else en)
+            control.setToolTip(("과거 나이의 위치와 외형을 직접 재평가하여 스프라이트 잔상을 표시합니다. 이전 프레임을 저장하지 않아 직접 탐색과 내보내기가 같습니다. Particle/System 공간 궤적이며 모든 잔상에 현재 Layer/Parent 변환을 적용합니다. World 이동 이력이나 Ribbon Mesh가 아닙니다." if ko else "Analytically reevaluate past particle positions and appearance as sprite afterimages. No frame history; direct seek and export agree. Particle/System local trail uses the current Layer/Parent transform for every sample, not world-transform history or ribbon mesh."))
+        for control in (self.trail_duration,self.trail_interval):control.setSuffix(" 프레임" if ko else " frames")
+        details={self.trail_enabled:("잔상을 켜거나 끕니다. 꺼도 설정값은 보존됩니다.","Enable afterimages; disabled settings are preserved."),self.trail_duration:("잔상을 조회하는 프레임 길이입니다. 머리가 죽은 뒤에도 유효한 샘플이 남습니다.","Historical span in frames; valid samples can persist after head death."),self.trail_interval:("과거 샘플 사이 프레임 간격입니다. 작을수록 밀도와 비용이 증가합니다.","Frame gap between historical stamps. Smaller gaps increase density and cost."),self.trail_opacity:("각 샘플의 수명별 알파와 선형 꼬리 감쇠에 곱하는 값입니다. RGB와 독립입니다.","Multiplies historical lifetime alpha and linear tail fade, independently of RGB.")}
+        for control,pair in details.items():control.setToolTip(pair[0 if ko else 1]+"\n\n"+control.toolTip())
+    def _trail_error_text(self,error):
+        ko=bool(self._localization and self._localization.language=="ko")
+        if "8192" in str(error):
+            return "잔상 샘플이 8192개를 초과합니다. 간격을 늘리거나 지속 시간·입자 수·수명·반복 겹침을 줄이세요." if ko else "Trail configuration can produce too many trail samples (8192 limit). Increase Sample Interval or reduce Duration, particle count, lifetime/cyclic overlap."
+        return "설정을 거부했습니다. 지속 시간 2..240, 간격 1..지속 시간-1, 불투명도 0..1 및 잔상 포함 활성 입자 제한을 확인하세요." if ko else "Rejected: duration 2..240, interval 1..duration-1, opacity 0..1 and visual-copy safety limits must be valid."
+    def _update_trail_status(self):
+        if not hasattr(self,"trail_enabled"):return
+        enabled=self.trail_enabled.isChecked()
+        for control in (self.trail_duration,self.trail_interval,self.trail_opacity):control.setEnabled(enabled)
+        if not enabled:self.trail_status.clear();return
+        settings=self.settings()
+        ko=bool(self._localization and self._localization.language=="ko")
+        copies=settings.cyclic_active_copy_bound() if settings.emission_cycle_mode=="cyclic_steady" else settings.particle_count_max
+        self.trail_status.setText(("최대 가시 입자 {copies}, 잔상 샘플 {stamps}/8192. 실시간 속도 보장은 아닙니다." if ko else "Maximum visual copies {copies}, trail samples {stamps}/8192. Not a realtime guarantee.").format(copies=copies,stamps=settings.trail_stamp_bound()))
     def _cycle_error_text(self,error):
         key="particle.cycle_error_birth" if "birth offset" in str(error) else "particle.cycle_error_limit" if "active particles" in str(error) else "particle.cycle_error"
         return self._localization.text(key) if self._localization else str(error)
@@ -301,6 +342,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self.cycle_status.setText(text.format(count=settings.cyclic_active_copy_bound()))
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
+        self._localization=l;self._retranslate_trail();self._update_trail_status()
         for editor in self._point_editors:editor.retranslate(l.language=="ko")
         self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.common_form.labelForField(self.name).setText(t("resource_layer.name"));self.common_form.labelForField(self.parent_layer).setText(t("layer.parent"));self.mode_label.setText(t("resource_layer.placement_mode"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False);self.transform_panel.retranslate_ui(l); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"));self.blend_mode.setItemText(0,t("particle.blend_normal"));self.blend_mode.setItemText(1,t("particle.blend_additive"))
         group_keys={"Particle Resource":"particle.resource","Emission":"particle.emission","Spawn Shape":"particle.spawn_shape","Direction":"particle.direction","Motion Basic":"particle.motion_basic","Orbit Center":"particle.motion_center","Orbit Shape":"particle.motion_shape","Helix":"particle.motion_helix","Motion Interpolation":"particle.motion_interpolation","Motion Advanced":"particle.motion_advanced","Random Range":"particle.random_range","Rendering":"particle.rendering","Natural Motion":"particle.natural_motion","Over Lifetime":"particle.over_lifetime"}

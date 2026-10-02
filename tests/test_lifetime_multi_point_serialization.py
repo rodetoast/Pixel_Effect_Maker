@@ -48,7 +48,7 @@ def test_format19_migrates_all_channels_exact_and_does_not_rewrite(tmp_path,easi
     data["color_over_lifetime"]={"enabled":True,"start_rgb":[241,162,3],"end_rgb":[153,34,204],"easing":easing}
     data.pop("opacity_over_lifetime");data.update(opacity_start=.8,opacity_end=.1,easing=easing)
     path=tmp_path/"legacy.pemproj";path.write_text(json.dumps(payload),encoding="utf-8");raw=path.read_bytes()
-    loaded=load_project(path);assert path.read_bytes()==raw and loaded.format_version==20
+    loaded=load_project(path);assert path.read_bytes()==raw and loaded.format_version==21
     actual=loaded.effect_resource_layers[0].particle_settings
     assert actual==emitter.settings
     for t in (0,1,5,12,23):assert np.array_equal(render_particle_frame(project,emitter,t),render_particle_frame(loaded,loaded.effect_resource_layers[0].as_particle_emitter(),t))
@@ -59,7 +59,7 @@ def test_format20_roundtrip_canonical_only_and_legacy_accessors_share_points(tmp
     project,emitter=setup();curves(emitter.settings)
     layer=EffectResourceLayer.from_particle_emitter(emitter);project.effect_resource_layers.append(layer);project.repair_effect_hierarchy()
     path=save_project(project,tmp_path/"points");loaded=load_project(path)
-    assert FORMAT_VERSION==20 and loaded.effect_resource_layers[0].particle_settings==emitter.settings
+    assert FORMAT_VERSION==21 and loaded.effect_resource_layers[0].particle_settings==emitter.settings
     serialized=emitter.settings.to_dict()
     assert not set(serialized)&{"opacity_start","opacity_end","easing"}
     for name in ("scale_over_lifetime","opacity_over_lifetime","color_over_lifetime"):

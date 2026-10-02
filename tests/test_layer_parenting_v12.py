@@ -28,7 +28,7 @@ def _resource_scene():
 
 def test_v12_roundtrip_and_v11_migration_default_to_no_parent():
     project,composition,parent,child=_resource_scene();child.parent_id=parent.id
-    data=project.to_dict();assert FORMAT_VERSION==20 and data["format_version"]==20
+    data=project.to_dict();assert FORMAT_VERSION==21 and data["format_version"]==21
     loaded=Project.from_dict(deepcopy(data));assert loaded.resource_compositions[0].layers[1].parent_id==parent.id
     old=deepcopy(data);old["format_version"]=11
     for layer in old["resource_compositions"][0]["layers"]:layer.pop("parent_id",None);layer.pop("parent_offset",None)

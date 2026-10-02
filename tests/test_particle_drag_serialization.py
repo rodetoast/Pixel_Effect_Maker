@@ -41,14 +41,14 @@ def test_format16_defaults_drag_disabled_and_preserves_render():
     for item in payload["effect_resource_layers"]:
         item["particle_settings"].pop("drag_enabled");item["particle_settings"].pop("drag_strength")
     loaded=Project.from_dict(payload);restored=loaded.effect_resource_layers[0]
-    assert loaded.format_version==FORMAT_VERSION==20 and not restored.particle_settings.drag_enabled and restored.particle_settings.drag_strength==0
+    assert loaded.format_version==FORMAT_VERSION==21 and not restored.particle_settings.drag_enabled and restored.particle_settings.drag_strength==0
     assert all(np.array_equal(a,b) for a,b in zip(before,render_effect_resource_layer(loaded,restored),strict=True))
 
 
 @pytest.mark.parametrize("strength",[0,.03125,.1375,10])
 def test_format17_drag_round_trip(strength):
     project,_=_project(True,strength);loaded=Project.from_dict(project.to_dict());settings=loaded.effect_resource_layers[0].particle_settings
-    assert loaded.format_version==20 and settings.drag_enabled and settings.drag_strength==strength
+    assert loaded.format_version==21 and settings.drag_enabled and settings.drag_strength==strength
 
 
 @pytest.mark.parametrize(("name","value"),[("drag_enabled",1),("drag_enabled","true"),("drag_strength",-.01),("drag_strength",10.01),("drag_strength",float("inf")),("drag_strength",float("nan"))])

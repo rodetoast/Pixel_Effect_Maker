@@ -23,6 +23,43 @@ CYCLIC_ACTIVE_COPY_LIMIT = 4096
 RGB_MIN = 0
 RGB_MAX = 255
 LIFETIME_POINT_MAX = 8
+TRAIL_DURATION_MAX = 240
+TRAIL_STAMP_LIMIT = 8192
+
+
+@dataclass
+class ParticleTrailSettings:
+    """History-free local sprite afterimages, not ribbon/world-history data."""
+    enabled: bool = False
+    duration_frames: int = 12
+    sample_interval_frames: int = 2
+    opacity: float = .75
+
+    def validate(self):
+        if not isinstance(self.enabled, bool): raise ValueError("trail enabled must be a boolean")
+        if type(self.duration_frames) is not int or not 2 <= self.duration_frames <= TRAIL_DURATION_MAX:
+            raise ValueError("trail duration must be an integer in 2..240")
+        if type(self.sample_interval_frames) is not int or not 1 <= self.sample_interval_frames < self.duration_frames:
+            raise ValueError("trail interval must be an integer in 1..duration-1")
+        if isinstance(self.opacity, bool) or not isinstance(self.opacity, (float, int)) or not math.isfinite(self.opacity) or not 0 <= self.opacity <= 1:
+            raise ValueError("trail opacity must be finite in 0..1")
+
+    @property
+    def sample_count(self): return (self.duration_frames-1)//self.sample_interval_frames
+    @property
+    def delta_max(self): return self.sample_count*self.sample_interval_frames if self.enabled else 0
+
+    def to_dict(self):
+        self.validate()
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data):
+        if data is None:return cls()
+        if not isinstance(data, dict):raise ValueError("trail settings must be an object")
+        try:value=cls(**data)
+        except TypeError as error:raise ValueError("invalid trail settings") from error
+        value.validate();return value
 
 
 @dataclass(frozen=True)
@@ -373,6 +410,7 @@ class ParticleEmitterSettings:
     emission_cycle_mode: str = EMISSION_ONE_SHOT
     emission_period_frames: int = 24
     opacity_over_lifetime: LifetimeScalarModulation | None = None
+    trail: ParticleTrailSettings = field(default_factory=ParticleTrailSettings)
 
     def __post_init__(self, opacity_start, opacity_end, easing) -> None:
         if self.opacity_over_lifetime is None:
@@ -386,6 +424,7 @@ class ParticleEmitterSettings:
 
     def validate(self) -> None:
         self._normalize_clip_speed_range()
+        self.trail.validate()
         if not isinstance(self.emission_cycle_mode, str) or self.emission_cycle_mode not in {EMISSION_ONE_SHOT, EMISSION_CYCLIC_STEADY}:
             raise ValueError("unsupported emission cycle mode")
         if type(self.emission_period_frames) is not int or not 1 <= self.emission_period_frames <= EMISSION_PERIOD_MAX:
@@ -429,13 +468,21 @@ class ParticleEmitterSettings:
                 raise ValueError("cyclic birth offset must be inside the period; increase period or reduce duration/delay")
             if self.cyclic_active_copy_bound() > CYCLIC_ACTIVE_COPY_LIMIT:
                 raise ValueError("cyclic configuration exceeds 4096 active particles; increase period or reduce count/lifetime")
+        if self.trail.enabled and self.trail_stamp_bound() > TRAIL_STAMP_LIMIT:
+            raise ValueError("trail configuration exceeds 8192 trail samples; increase interval or reduce duration/count/lifetime/cyclic overlap")
 
     def cyclic_active_copy_bound(self) -> int:
         """Worst-case copies: each integer lifetime spans at most ceil(L/P) births."""
-        return self.particle_count_max * ((self.lifetime_max + self.emission_period_frames - 1) // self.emission_period_frames)
+        lifetime = self.lifetime_max + self.trail.delta_max
+        return self.particle_count_max * ((lifetime + self.emission_period_frames - 1) // self.emission_period_frames)
+
+    def trail_stamp_bound(self) -> int:
+        copies = self.cyclic_active_copy_bound() if self.emission_cycle_mode == EMISSION_CYCLIC_STEADY else self.particle_count_max
+        return copies*self.trail.sample_count if self.trail.enabled else 0
 
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()
+        self.trail.validate()
         value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["color_over_lifetime"]=self.color_over_lifetime.to_dict(); value["opacity_over_lifetime"]=self.opacity_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
 
     @property
@@ -450,6 +497,7 @@ class ParticleEmitterSettings:
         values["scale_over_lifetime"] = LifetimeScalarModulation.from_dict(values.get("scale_over_lifetime"))
         values["color_over_lifetime"] = LifetimeColorModulation.from_dict(values.get("color_over_lifetime"))
         values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
+        values["trail"] = ParticleTrailSettings.from_dict(values.get("trail"))
         if "opacity_over_lifetime" in values:
             if any(key in values for key in ("opacity_start", "opacity_end", "easing")): raise ValueError("ambiguous opacity representation")
             values["opacity_over_lifetime"] = LifetimeScalarModulation.from_dict(values["opacity_over_lifetime"])

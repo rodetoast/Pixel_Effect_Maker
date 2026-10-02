@@ -72,6 +72,8 @@ class ParticleFrameDiagnostic:
     lifetime_tint_b: float = 1.0
     cycle_index: int | None = None
     copy_key: tuple[int, int] | None = None
+    trail_delta: int = 0
+    copy_age: int | None = None
 
 
 def _motion_ease(value: float, easing: str) -> float:
@@ -268,6 +270,7 @@ def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tup
     values=settings.to_dict();values.pop("motion",None);values.pop("output_frame_count",None);values.pop("scale_over_lifetime",None);values.pop("color_over_lifetime",None);values.pop("gravity_enabled",None);values.pop("gravity_strength",None);values.pop("drag_enabled",None);values.pop("drag_strength",None);values.pop("noise_enabled",None);values.pop("noise_strength",None);values.pop("noise_frequency",None);values.pop("blend_mode",None);values.pop("easing",None);values.pop("opacity_start",None);values.pop("opacity_end",None)
     values.pop("emission_cycle_mode",None);values.pop("emission_period_frames",None)
     values.pop("opacity_over_lifetime",None)
+    values.pop("trail",None)
     return repr(values),int(clip_length)
 
 
@@ -283,6 +286,9 @@ def render_particle_frame(project: Project, emitter: ParticleEmitter, frame_inde
     """Render one exact frame while reusing deterministic spawn/resource state."""
     settings=emitter.settings;settings.validate();clip=clip or _resolve_particle_clip(project,settings)
     instances=particle_spawn_states(settings,len(clip.frames)) if instances is None else instances
+    if settings.trail.enabled:
+        from app.services.particle_trail_render_service import render_particle_trails
+        return render_particle_trails(project,emitter,frame_index,clip,instances,diagnostic_collector,layer_space_transform,layer_space_affine)
     output=empty_pixels(project.width,project.height);alive=[];candidates=[];local_points=[]
     layer_space_transform = layer_space_transform or EffectLayerTransform3D()
     layer_value = layer_space_transform.evaluated(frame_index)

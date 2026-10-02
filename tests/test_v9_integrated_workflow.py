@@ -77,7 +77,7 @@ def test_asset_to_resource_to_effect_round_trip(tmp_path):
     before=[render_effect_resource_layer_current_frame(project,effect,frame) for frame in range(12)]
     loaded=load_project(save_project(project,tmp_path/"integrated"));loaded_effect=loaded.effect_resource_layers[0]
     after=[render_effect_resource_layer_current_frame(loaded,loaded_effect,frame) for frame in range(12)]
-    assert loaded.format_version==FORMAT_VERSION==20
+    assert loaded.format_version==FORMAT_VERSION==21
     assert all(np.array_equal(a,b) for a,b in zip(before,after,strict=True))
     assert loaded_effect.layer_space_transform.rotation_y==15 and loaded_effect.surface_transform.rotation_z==-7
 

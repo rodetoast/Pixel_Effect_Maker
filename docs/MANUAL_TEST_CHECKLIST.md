@@ -1,4 +1,33 @@
-# Pixel Effect Maker v0.0.23 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.24 수동 테스트 체크리스트
+
+## v0.0.24 Sprite Trail — 사용자 Windows GUI 승인 필요
+
+Codex Windows native GUI manual: **수행하지 않음**. 아래는 모두 미실행이다.
+
+- [ ] KO/EN Trail 그룹과 필드, frame suffix, tooltip이 잘림 없이 보이는지.
+- [ ] 좁은 Inspector 및 확대 글꼴에서 가로 잘림/중첩 없는지.
+- [ ] 기본 OFF/12/2/0.75 및 OFF의 세 값 비활성 상태 확인.
+- [ ] OFF로 전환해도 값이 보존되는지.
+- [ ] A ON/17/3/0.625와 B OFF/41/5/0.3125를 A→B→A 선택 후 확인.
+- [ ] 언어 변경/refresh/Timeline scrub 뒤 A/B 값 유지 확인.
+- [ ] Enable/Duration/Interval/Opacity 각각 Undo 1회 및 Redo exact 확인.
+- [ ] no-op/invalid/refresh가 Undo나 dirty를 만들지 않는지.
+- [ ] Interval >= Duration, 범위 밖 입력이 원래 값으로 복원되는지.
+- [ ] 4096 visual-copy 및 8192 stamp 초과 시 명시된 안내 확인.
+- [ ] birth frame에 잔상 없음, head 밝기가 이중 렌더되지 않는지.
+- [ ] head death 뒤 잔상 유지 및 마지막 유효 age 뒤 소멸 확인.
+- [ ] Projectile의 경로 잔상과 느린 fade 확인.
+- [ ] Magic Wisp/Comet의 곡선 잔상 확인.
+- [ ] Hit Spark와 Sword Slash Helper의 잔상 밀도 확인.
+- [ ] Cyclic Ember 첫 gate에 이전 주기 tail-only 잔상 확인.
+- [ ] Cyclic static/local 조건에서 주기 반복 확인.
+- [ ] Current/Play/Step/Reverse/Seek/Generated/PNG의 시각적 일치 확인.
+- [ ] Layer/Parent 이동은 모든 잔상을 함께 이동시키는 current snapshot인지.
+- [ ] 2.5D/System/Surface/Rotation Revolution 변환 및 strict output clipping 확인.
+- [ ] Save/Reload에서 Trail 설정 보존 및 legacy format20 기본 OFF 확인.
+- [ ] 낮은 Count부터 비용을 확인하고, 실시간 보장으로 safety cap을 오인하지 않는지.
+
+Ribbon/world-history는 이번 구현 범위가 아니다. GUI 승인 전 v0.0.24 stage/commit 금지.
 
 ## v0.0.23 Multi-point Lifetime — 사용자 Windows GUI 승인 필요
 

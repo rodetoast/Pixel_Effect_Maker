@@ -69,7 +69,7 @@ def test_resource_can_hold_three_distinct_image_layers_and_sources():
     assert len(composition.layers)==3
     assert [layer.source_id for layer in layers]==[asset.id for asset in assets]
     assert len({layer.name for layer in layers})==3
-    assert FORMAT_VERSION==20 and project.to_dict()["format_version"]==20
+    assert FORMAT_VERSION==21 and project.to_dict()["format_version"]==21
 
 
 def test_layer_visibility_range_transform_and_pivot_are_independent():

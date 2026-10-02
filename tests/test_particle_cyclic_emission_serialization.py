@@ -32,7 +32,7 @@ def test_format19_roundtrip_regeneration(tmp_path,mode,period):
     expected=render_effect_resource_layer(project,layer)
     saved=save_project(project,tmp_path/"roundtrip.peffect.json")
     loaded=load_project(saved);actual=loaded.effect_resource_layers[0]
-    assert FORMAT_VERSION==20 and loaded.format_version==20
+    assert FORMAT_VERSION==21 and loaded.format_version==21
     assert actual.particle_settings.emission_cycle_mode==mode and actual.particle_settings.emission_period_frames==period
     assert actual.particle_settings.to_dict()==layer.particle_settings.to_dict()
     assert all(np.array_equal(a,b) for a,b in zip(expected,render_effect_resource_layer(loaded,actual),strict=True))
@@ -47,7 +47,7 @@ def test_format18_defaults_one_shot_and_load_does_not_rewrite(tmp_path):
         item["particle_settings"].pop("emission_cycle_mode");item["particle_settings"].pop("emission_period_frames")
     path=tmp_path/"legacy.json";path.write_text(json.dumps(data),encoding="utf-8")
     before=path.read_bytes();loaded=load_project(path);s=loaded.effect_resource_layers[0].particle_settings
-    assert path.read_bytes()==before and loaded.format_version==20
+    assert path.read_bytes()==before and loaded.format_version==21
     assert s.emission_cycle_mode=="one_shot" and s.emission_period_frames==24
     assert all(np.array_equal(a,b) for a,b in zip(expected,render_effect_resource_layer(loaded,loaded.effect_resource_layers[0]),strict=True))
 

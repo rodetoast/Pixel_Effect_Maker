@@ -2063,7 +2063,7 @@ class MainWindow(QMainWindow):
         else:self._clear_preview()
 
     def update_particle_draft(self, emitter_id: str, settings: ParticleEmitterSettings) -> None:
-        if settings.emission_cycle_mode=="cyclic_steady":settings.validate()
+        if settings.emission_cycle_mode=="cyclic_steady" or settings.trail.enabled:settings.validate()
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
         if unified:
             if self._effect_layer_locked(unified):return
@@ -2082,6 +2082,7 @@ class MainWindow(QMainWindow):
     def _particle_settings_merge_id(before: ParticleEmitterSettings, after: ParticleEmitterSettings) -> int:
         """Keep distinct lifetime commits separate while merging one control's repeats."""
         if before.emission_cycle_mode!=after.emission_cycle_mode or before.emission_period_frames!=after.emission_period_frames:return -1
+        if before.trail!=after.trail:return -1
         if before.scale_over_lifetime!=after.scale_over_lifetime or before.color_over_lifetime!=after.color_over_lifetime or before.opacity_over_lifetime!=after.opacity_over_lifetime:return -1
         left=before.to_dict();right=after.to_dict();left_scale=left.pop("scale_over_lifetime");right_scale=right.pop("scale_over_lifetime");left_color=left.pop("color_over_lifetime");right_color=right.pop("color_over_lifetime");left_easing=left.pop("easing",None);right_easing=right.pop("easing",None);left_blend=left.pop("blend_mode");right_blend=right.pop("blend_mode");left_gravity=(left.pop("gravity_enabled"),left.pop("gravity_strength"));right_gravity=(right.pop("gravity_enabled"),right.pop("gravity_strength"));left_drag=(left.pop("drag_enabled"),left.pop("drag_strength"));right_drag=(right.pop("drag_enabled"),right.pop("drag_strength"));left_noise=(left.pop("noise_enabled"),left.pop("noise_strength"),left.pop("noise_frequency"));right_noise=(right.pop("noise_enabled"),right.pop("noise_strength"),right.pop("noise_frequency"))
         scale_changed=[name for name in left_scale if left_scale[name]!=right_scale[name]]

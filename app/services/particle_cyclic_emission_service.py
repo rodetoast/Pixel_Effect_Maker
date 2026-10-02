@@ -22,7 +22,7 @@ class ParticleCycleCopy:
 
 
 def iter_particle_cycle_copies(settings: ParticleEmitterSettings,
-                              slots: Sequence[ParticleInstance], frame: int) -> Iterator[ParticleCycleCopy]:
+                              slots: Sequence[ParticleInstance], frame: int, *, visibility_extension_frames: int = 0) -> Iterator[ParticleCycleCopy]:
     """Caller validates settings. Work is O(slots + alive copies), not history.
 
     Existing births are composition-absolute. Subtract the emitter gate ONCE
@@ -34,7 +34,7 @@ def iter_particle_cycle_copies(settings: ParticleEmitterSettings,
     period = settings.emission_period_frames
     for slot in slots:
         b = slot.birth_frame - settings.start_frame
-        minimum = -(-(q - b - (slot.lifetime - 1)) // period)
+        minimum = -(-(q - b - (slot.lifetime + visibility_extension_frames - 1)) // period)
         maximum = (q - b) // period
         for cycle in range(minimum, maximum + 1):
             yield ParticleCycleCopy(slot, slot.birth_frame + cycle * period, cycle)

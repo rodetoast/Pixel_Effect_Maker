@@ -1,6 +1,18 @@
 # Changelog
 
-## v0.0.23 — Multi-point Lifetime Foundation (uncommitted)
+## v0.0.24 — Deterministic Particle Sprite Trail (unstaged / uncommitted)
+
+- Format 21 nested Trail settings: Enabled off, Duration 12, Interval 2, Opacity 0.75; strict validation and format 20 default-off migration without rewriting files.
+- History-free arbitrary-age sprite stamps share Linear/Orbit/Helix, Gravity/Drag/Noise, source playback, angular rotation and multi-point lifetime evaluators. No RNG draws or reseeding.
+- Positive interval multiples below Duration only; no duplicate head. Post-death tails and analytic previous-cycle tail-only prewarm use extended visual lifetime.
+- Current-target-frame Layer/Parent/System/Surface snapshots apply to all local-history stamps. No world-history Trail or Ribbon mesh.
+- Stable copy-depth groups with oldest-to-newest/head ordering preserve Normal/Additive semantics; dimensions and output range stay unchanged.
+- Localized static Inspector fields preserve disabled values, validate without silent truncation and produce one Undo per accepted action. Render/playback/generated invalidation excludes spawn cache.
+- Conservative 4096 visual-copy and 8192 trail-stamp safety bounds; dense settings can be slow even below these limits.
+- Synthetic Projectile, Magic Wisp/Comet, Hit Spark, Sword Slash Helper and Cyclic Ember evidence; automated parity and benchmark tools. Native Windows GUI manual QA: 수행하지 않음.
+- v0.0.24 is not staged or committed; no tag, push, build, PyInstaller or ZIP.
+
+## v0.0.23 — Multi-point Lifetime Foundation (local checkpoint 9cf4a41)
 
 - Canonical bounded Scale/Opacity/RGB points in format 20, with independently eased segments and strict 0/1 endpoints, ordering and 2..8-point validation.
 - Compact point-selection editors in Over Lifetime: add/remove, percentage time, numeric value, RGB picker and outgoing easing; KO/EN labels and tooltips. No composition auto-key.
