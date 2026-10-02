@@ -29,7 +29,7 @@ def test_format13_project_defaults_color_lifetime_to_disabled_identity_and_prese
 def test_format14_color_lifetime_round_trip_is_exact(tmp_path,easing):
     expected=LifetimeColorModulation(True,(241,13,73),(17,199,226),easing);project,_layer=_project(expected);path=save_project(project,tmp_path/f"color-{easing}")
     loaded=load_project(path);actual=loaded.effect_resource_layers[0].particle_settings.color_over_lifetime
-    assert FORMAT_VERSION==21 and loaded.format_version==21 and actual==expected
+    assert FORMAT_VERSION==22 and loaded.format_version==22 and actual==expected
     data=actual.to_dict();assert data=={"enabled":True,"points":[{"time":0.0,"rgb":[241,13,73],"easing_to_next":easing},{"time":1.0,"rgb":[17,199,226],"easing_to_next":"Linear"}]} and "alpha" not in data
 
 

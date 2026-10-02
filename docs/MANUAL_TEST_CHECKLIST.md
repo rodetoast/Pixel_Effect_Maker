@@ -1,4 +1,36 @@
-# Pixel Effect Maker v0.0.24 수동 테스트 체크리스트
+# Pixel Effect Maker v0.0.25 수동 테스트 체크리스트
+
+## v0.0.25 Sub-emitter — 사용자 Windows GUI 승인 필요
+
+Codex Windows native GUI manual: **수행하지 않음**. 아래는 모두 미실행이다.
+
+- [ ] OFF가 v24와 동일한지.
+- [ ] 기본 OFF/None에서 Enable → 대상 선택 흐름이 사용 가능하고 선택 전 Undo/dirty가 없는지.
+- [ ] KO/EN, 좁은 Inspector/확대 글꼴에서 Sub-emitter가 잘리지 않는지.
+- [ ] Birth Flash가 실제 부모 birth 위치/프레임에 생기는지.
+- [ ] Death Impact가 마지막 visible L-1 위치에서 다음 프레임에 시작하는지.
+- [ ] Parent Trail이 Death를 늦추거나 두 번 발생시키지 않는지.
+- [ ] random lifetime/delay/Over Time 부모의 개별 timing을 따르는지.
+- [ ] child Burst/Over Time/Delay가 event-relative schedule인지.
+- [ ] target absolute Start가 event delay로 추가되지 않는지.
+- [ ] Hidden/Solo/Locked target도 template 사용은 유지되는지.
+- [ ] Target Layer/Parent/Surface transform은 child에 영향 없는지.
+- [ ] Parent Layer/Parent/System/Surface와 2.5D/revolutions가 전체 child에 적용되는지.
+- [ ] Birth+Death 동시 및 같은 Target 사용 확인.
+- [ ] Target Cyclic은 한 canonical emission만, Target nested events는 실행되지 않는지.
+- [ ] Cyclic Parent에서 주기 반복 및 gate prewarm 확인.
+- [ ] Sequential/Direct/Reverse/Step/current/full/generated/playback/PNG 시각적 일치 확인.
+- [ ] A BirthON→X/DeathOFF→Y, B BirthOFF→Z/DeathON→W 선택·언어·scrub 보존.
+- [ ] Enable/Target 네 액션 Undo1/Redo exact; no-op/invalid/refresh0 확인.
+- [ ] Target rename display만 변경, duplicate가 기존 target을 retarget하지 않는지.
+- [ ] Target Delete 하나의 Undo에 target/모든 surviving references가 함께 복원되는지.
+- [ ] Target emitter/source/lifetime/Trail/Blend 변경이 부모 preview/generated에 반영되는지.
+- [ ] Save/Reload에서 설정 보존 및 missing target 안전 disable/clear 확인.
+- [ ] Child Trail/Multi-point/G/D/N/Normal/Additive full-stack 확인.
+- [ ] 4096 visual/8192 stamp 초과 거부, silent drop 없음, output duration 자동 확장 없음.
+- [ ] 수백 Parent editing cost 확인; safety limit을 실시간 보장으로 오인하지 않는지.
+
+Collision splash가 아닌 lifetime death diagnostic이다. GUI 승인 전 v25 stage/commit 금지.
 
 ## v0.0.24 Sprite Trail — 사용자 Windows GUI 승인 필요
 

@@ -28,6 +28,34 @@ TRAIL_STAMP_LIMIT = 8192
 
 
 @dataclass
+class ParticleSubEmitterEventSettings:
+    """One read-only Particle Layer template invocation, never recursive."""
+    enabled: bool = False
+    target_layer_id: str | None = None
+
+    def validate(self):
+        if type(self.enabled) is not bool:
+            raise ValueError("sub-emitter enabled must be a boolean")
+        if self.target_layer_id is not None and (not isinstance(self.target_layer_id, str) or not self.target_layer_id.strip()):
+            raise ValueError("sub-emitter target must be a nonempty layer ID or None")
+        if self.enabled and self.target_layer_id is None:
+            raise ValueError("sub-emitter requires a target Particle Layer")
+
+    def to_dict(self):
+        self.validate()
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data):
+        if data is None: return cls()
+        if not isinstance(data, dict): raise ValueError("sub-emitter settings must be an object")
+        try: value = cls(**data)
+        except TypeError as error: raise ValueError("invalid sub-emitter settings") from error
+        value.validate()
+        return value
+
+
+@dataclass
 class ParticleTrailSettings:
     """History-free local sprite afterimages, not ribbon/world-history data."""
     enabled: bool = False
@@ -411,6 +439,8 @@ class ParticleEmitterSettings:
     emission_period_frames: int = 24
     opacity_over_lifetime: LifetimeScalarModulation | None = None
     trail: ParticleTrailSettings = field(default_factory=ParticleTrailSettings)
+    birth_sub_emitter: ParticleSubEmitterEventSettings = field(default_factory=ParticleSubEmitterEventSettings)
+    death_sub_emitter: ParticleSubEmitterEventSettings = field(default_factory=ParticleSubEmitterEventSettings)
 
     def __post_init__(self, opacity_start, opacity_end, easing) -> None:
         if self.opacity_over_lifetime is None:
@@ -425,6 +455,8 @@ class ParticleEmitterSettings:
     def validate(self) -> None:
         self._normalize_clip_speed_range()
         self.trail.validate()
+        self.birth_sub_emitter.validate()
+        self.death_sub_emitter.validate()
         if not isinstance(self.emission_cycle_mode, str) or self.emission_cycle_mode not in {EMISSION_ONE_SHOT, EMISSION_CYCLIC_STEADY}:
             raise ValueError("unsupported emission cycle mode")
         if type(self.emission_period_frames) is not int or not 1 <= self.emission_period_frames <= EMISSION_PERIOD_MAX:
@@ -483,6 +515,7 @@ class ParticleEmitterSettings:
     def to_dict(self) -> dict[str, Any]:
         self._normalize_clip_speed_range()
         self.trail.validate()
+        self.birth_sub_emitter.validate();self.death_sub_emitter.validate()
         value=asdict(self); value["scale_over_lifetime"]=self.scale_over_lifetime.to_dict(); value["color_over_lifetime"]=self.color_over_lifetime.to_dict(); value["opacity_over_lifetime"]=self.opacity_over_lifetime.to_dict(); value["motion"]=self.motion.to_dict(); return value
 
     @property
@@ -498,6 +531,8 @@ class ParticleEmitterSettings:
         values["color_over_lifetime"] = LifetimeColorModulation.from_dict(values.get("color_over_lifetime"))
         values["motion"] = ParticleMotionSettings.from_dict(values.get("motion"))
         values["trail"] = ParticleTrailSettings.from_dict(values.get("trail"))
+        values["birth_sub_emitter"] = ParticleSubEmitterEventSettings.from_dict(values.get("birth_sub_emitter"))
+        values["death_sub_emitter"] = ParticleSubEmitterEventSettings.from_dict(values.get("death_sub_emitter"))
         if "opacity_over_lifetime" in values:
             if any(key in values for key in ("opacity_start", "opacity_end", "easing")): raise ValueError("ambiguous opacity representation")
             values["opacity_over_lifetime"] = LifetimeScalarModulation.from_dict(values["opacity_over_lifetime"])

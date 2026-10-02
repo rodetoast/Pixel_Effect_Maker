@@ -24,7 +24,7 @@ class ParticlePreviewSnapshot:
     emitter_id: str; revision: int; width: int; height: int; fps: int; resource: object; settings: ParticleEmitterSettings; layer_space_transform: EffectLayerTransform3D; surface_transform: EffectLayerTransform3D; context_revision: int=0
     @classmethod
     def from_project(cls, project, emitter_id, revision, settings, context_revision=0):
-        if settings.resource_type=="resource_composition":resource=deepcopy(project)
+        if settings.resource_type=="resource_composition" or settings.birth_sub_emitter.enabled or settings.death_sub_emitter.enabled:resource=deepcopy(project)
         else:
             items=project.source_assets if settings.resource_type=="source_asset" else project.animation_clips
             resource=next(c for c in items if c.id==settings.clip_asset_id)
@@ -33,6 +33,12 @@ class ParticlePreviewSnapshot:
         surface=EffectLayerTransform3D() if layer is None else deepcopy(layer.surface_transform)
         return cls(emitter_id,revision,project.width,project.height,project.fps,resource,deepcopy(settings),layer_space,surface,context_revision)
 def render_particle_snapshot(snapshot):
+    if snapshot.settings.birth_sub_emitter.enabled or snapshot.settings.death_sub_emitter.enabled:
+        from app.services.effect_resource_layer_render_service import render_effect_resource_layer
+        project=snapshot.resource
+        layer=next(item for item in project.effect_resource_layers if item.id==snapshot.emitter_id)
+        layer.particle_settings=deepcopy(snapshot.settings)
+        return render_effect_resource_layer(project,layer)
     if snapshot.settings.resource_type=="resource_composition":project=snapshot.resource
     else:
         project=Project.create_default("Particle Preview",snapshot.width,snapshot.height,snapshot.fps,True)

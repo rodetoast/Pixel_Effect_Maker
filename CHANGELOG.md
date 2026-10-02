@@ -1,6 +1,17 @@
 # Changelog
 
-## v0.0.24 — Deterministic Particle Sprite Trail (unstaged / uncommitted)
+## v0.0.25 — Bounded Birth / Death Sub-emitter (unstaged / uncommitted)
+
+- FORMAT22 stable-ID Birth/Death targets, disabled/None by default; legacy <=21 defaults off without rewriting source files.
+- History-free invocation timing, L-1 Death origin, canonical relative child schedule and analytic Cyclic horizon/k bounds. No per-invocation RNG or recursive child events.
+- Shared current-frame copy-depth collection reuses target motion/appearance/Trail/Normal/Additive with current parent higher transforms and position-only inheritance.
+- Target Visibility/Solo/Lock/Group/Parent/high-level transforms/absolute Start/cyclic repetition do not control template invocation. Target normal timeline remains independent.
+- Combined parent/child 4096 visual and 8192 stamp limits, explicit rejection without truncation. Localized compact Inspector and one Undo per accepted edit; default None opens runtime selection with no saved mutation.
+- Stable rename/duplicate references; delete snapshot clears and Undo restores references. Target settings invalidate referencing parent caches/generated output; event previews retain read-only project/template context.
+- Synthetic Projectile Impact, Explosion Secondary Smoke, Firework, Birth Puff and Cyclic Death Splash diagnostic parity/evidence. Collision, recursion, variation, world-history, velocity/appearance inheritance remain unsupported.
+- Native Windows GUI manual QA: 수행하지 않음. No v25 stage/commit/tag/push/build/ZIP.
+
+## v0.0.24 — Deterministic Particle Sprite Trail (local checkpoint 2470af2)
 
 - Format 21 nested Trail settings: Enabled off, Duration 12, Interval 2, Opacity 0.75; strict validation and format 20 default-off migration without rewriting files.
 - History-free arbitrary-age sprite stamps share Linear/Orbit/Helix, Gravity/Drag/Noise, source playback, angular rotation and multi-point lifetime evaluators. No RNG draws or reseeding.

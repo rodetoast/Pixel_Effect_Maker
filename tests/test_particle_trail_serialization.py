@@ -35,7 +35,7 @@ def test_format20_missing_trail_defaults_disabled_no_rewrite_exact(tmp_path):
     payload["effect_resource_layers"][0]["particle_settings"].pop("trail")
     path=tmp_path/"legacy.peffect.json";path.write_text(json.dumps(payload),encoding="utf-8");before=path.read_bytes()
     loaded=load_project(path)
-    assert path.read_bytes()==before and loaded.format_version==FORMAT_VERSION==21
+    assert path.read_bytes()==before and loaded.format_version==FORMAT_VERSION==22
     actual=loaded.effect_resource_layers[0].as_particle_emitter()
     assert actual.settings.trail==Trail()
     for t in (0,1,5,6,14):assert np.array_equal(render_particle_frame(project,emitter,t),render_particle_frame(loaded,actual,t))
@@ -47,7 +47,7 @@ def test_format21_sentinel_roundtrip_exact(enabled,tmp_path):
     path=save_project(project,tmp_path/"trail");loaded=load_project(path)
     settings=loaded.effect_resource_layers[0].particle_settings
     assert settings==emitter.settings and settings.trail.to_dict()==dict(enabled=enabled,duration_frames=17,sample_interval_frames=3,opacity=.625)
-    assert loaded.to_dict()["format_version"]==21
+    assert loaded.to_dict()["format_version"]==22
     for t in (0,5,6,19,20):assert np.array_equal(render_particle_frame(project,emitter,t),render_particle_frame(loaded,loaded.effect_resource_layers[0].as_particle_emitter(),t))
 
 

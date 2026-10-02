@@ -1,5 +1,20 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## v0.0.25 Bounded Birth/Death Sub-emitter overlay
+
+좁은 deterministic Birth/Death sub-emitter의 Model/Inspector/Undo/Save/Render/Preview/
+Playback/Generated/PNG 경로는 자동 end-to-end 검증을 통과했다. **사용자 Windows GUI
+승인 전이므로 최종 COMPLETE 승인은 보류**한다. 전체 Event/Sub-emitter System은 PARTIAL.
+기존 Particle Resource Layer를 stable ID 템플릿으로 사용하며 one canonical schedule,
+position-only inheritance, analytic cyclic horizon, depth1/no recursive invocation 계약이다.
+Target 정상 timeline/visibility/solo/lock/high-level transform은 template invocation과 별개다.
+Target pattern/Noise identity는 이벤트마다 반복된다. Per-event variation은 MISSING.
+Collision/threshold/multiple targets/recursive child graph/world-history/scripting은 MISSING.
+True Force/Turbulence, Ribbon Mesh, Full Graph/Bezier도 여전히 MISSING이며 추가하지 않았다.
+기존 Trail 다음 Birth/Death roadmap과 일치한다. 다음은 사용자 GUI/성능 승인 후
+bounded deterministic per-event variation 설계 검토를 추천하며 이번에는 구현하지 않는다.
+Native GUI manual: **수행하지 않음**. [v25 보고](V0_0_25_SUB_EMITTER_REPORT.md).
+
 ## v0.0.24 Deterministic Sprite Trail overlay
 
 **Deterministic Particle Sprite Trail**의 좁은 Model/Inspector/Undo/Save/Render/Playback/PNG

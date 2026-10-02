@@ -26,7 +26,7 @@ from .effect_resource_layer import EffectResourceLayer, PLACEMENT_PARTICLE
 from .layer_group import LayerGroup,flatten_hierarchy,layer_node,parent_group,repair_hierarchy
 from .layer_parenting import repair_parent_links
 
-FORMAT_VERSION = 21
+FORMAT_VERSION = 22
 MAX_COMPACT_PROJECT_PIXEL_BYTES = 512 * 1024 * 1024
 
 
@@ -65,7 +65,19 @@ class Project:
         if not self.effect_layer_groups:self.effect_root_order=[layer_node(value) for value in leaf_ids]
         self.effect_layer_groups,self.effect_root_order=repair_hierarchy(leaf_ids,self.effect_layer_groups,self.effect_root_order)
         repair_parent_links(self.effect_resource_layers)
+        self.repair_sub_emitter_references()
         self.sync_effect_flat_order()
+
+    def repair_sub_emitter_references(self):
+        """Load/delete repair: clear invalid IDs, never retarget by name."""
+        by_id = {item.id: item for item in self.effect_resource_layers}
+        for layer in self.effect_resource_layers:
+            for event in (layer.particle_settings.birth_sub_emitter, layer.particle_settings.death_sub_emitter):
+                if event.target_layer_id is None: continue
+                target = by_id.get(event.target_layer_id)
+                if target is None or target.id == layer.id or target.placement_mode != PLACEMENT_PARTICLE:
+                    event.enabled = False
+                    event.target_layer_id = None
 
     def sync_effect_flat_order(self) -> None:
         by_id={item.id:item for item in self.effect_resource_layers};ordered=flatten_hierarchy(self.effect_layer_groups,self.effect_root_order)
@@ -416,4 +428,7 @@ class Project:
             for item in project.effect_resource_layers:
                 if item.generated_layer_id in by_id:by_id[item.generated_layer_id].visible=item.visible
         project.repair_effect_hierarchy()
+        from app.services.particle_sub_emitter_service import validate_project_sub_emitters
+        if any(event.enabled for layer in project.effect_resource_layers for event in (layer.particle_settings.birth_sub_emitter,layer.particle_settings.death_sub_emitter)):
+            validate_project_sub_emitters(project)
         return project

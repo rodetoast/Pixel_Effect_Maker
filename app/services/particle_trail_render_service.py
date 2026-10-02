@@ -30,6 +30,8 @@ class _SpriteView:
 
 @dataclass(slots=True)
 class _Stamp:
+    settings: object
+    clip: object
     instance: object
     order: object
     age: int
@@ -45,7 +47,7 @@ class _Stamp:
     position: object
 
 
-def render_particle_trails(project,emitter,frame,clip,instances,diagnostics,transform,affine):
+def render_particle_trails(project,emitter,frame,clip,instances,diagnostics,transform,affine,*,streams=None):
     # Local import avoids a renderer/service cycle. Existing pure evaluators and
     # the exact existing raster are shared, not reimplemented.
     from app.services import particle_render_service as r
@@ -54,36 +56,44 @@ def render_particle_trails(project,emitter,frame,clip,instances,diagnostics,tran
     settings=emitter.settings;trail=settings.trail
     output=r.empty_pixels(project.width,project.height)
     layer=(transform or EffectLayerTransform3D()).evaluated(frame)
-    motion=settings.motion.evaluated(frame)
     cyclic=settings.emission_cycle_mode==EMISSION_CYCLIC_STEADY
-    if cyclic:instances=iter_particle_cycle_copies(settings,instances,frame,visibility_extension_frames=trail.delta_max)
+    if streams is None:
+        if cyclic:instances=iter_particle_cycle_copies(settings,instances,frame,visibility_extension_frames=trail.delta_max)
+        streams=((settings,clip,instances),)
     stamps=[];points=[];groups=[]
-    for order,instance in enumerate(instances):
-        if cyclic:order=instance.copy_key
-        copy_age=frame-instance.birth_frame
-        if not 0 <= copy_age < instance.lifetime+trail.delta_max:continue
-        begin=len(stamps)
-        def append_stamp(age,delta,multiplier):
-            pixels=r.particle_clip_frame(clip,instance,age,project.fps)
-            if pixels is None:return
-            t=normalized_lifetime_age(age,instance.lifetime)
-            opacity=evaluate_lifetime_scalar_for_render(settings.opacity_over_lifetime,t)*multiplier
-            position=r.evaluate_particle_motion(settings,instance,age/instance.lifetime,frame,evaluated_motion=motion,particle_age=age)
-            x,y,scale,visible=r.project_particle_billboard(position,motion.perspective_strength,project.width,project.height)
-            if not visible:return
-            lifetime_scale=evaluate_lifetime_scalar_for_render(settings.scale_over_lifetime,t)
-            color=settings.color_over_lifetime
-            if color.enabled:
-                amount=eased_lifetime_amount(t,color.easing) if len(color.points)==2 else None
-                red=evaluate_lifetime_color_component(color,t,0,eased_amount=amount)
-                green=evaluate_lifetime_color_component(color,t,1,eased_amount=amount)
-                blue=evaluate_lifetime_color_component(color,t,2,eased_amount=amount)
-            else:red=green=blue=1.0
-            stamps.append(_Stamp(instance,order,age,copy_age,delta,pixels,opacity,scale,lifetime_scale,red,green,blue,position))
-            points.append((x,y,position.z))
-        for age,delta,multiplier in iter_trail_samples(trail,copy_age,instance.lifetime):append_stamp(age,delta,multiplier)
-        if copy_age < instance.lifetime:append_stamp(copy_age,0,1.0)
-        if len(stamps)>begin:groups.append((begin,len(stamps),order))
+    for settings,clip,instances in streams:
+        trail=settings.trail
+        motion=settings.motion.evaluated(frame)
+        for order,instance in enumerate(instances):
+            if hasattr(instance,"render_key"):order=instance.render_key
+            elif settings.emission_cycle_mode==EMISSION_CYCLIC_STEADY:order=instance.copy_key
+            copy_age=frame-instance.birth_frame
+            if not 0 <= copy_age < instance.lifetime+trail.delta_max:continue
+            begin=len(stamps)
+            def append_stamp(age,delta,multiplier):
+                pixels=r.particle_clip_frame(clip,instance,age,project.fps)
+                if pixels is None:return
+                t=normalized_lifetime_age(age,instance.lifetime)
+                opacity=evaluate_lifetime_scalar_for_render(settings.opacity_over_lifetime,t)*multiplier
+                position=r.evaluate_particle_motion(settings,instance,age/instance.lifetime,frame,evaluated_motion=motion,particle_age=age)
+                origin=getattr(instance,"event_origin",None)
+                if origin is not None:position=r.ParticleMotionPosition(position.x+origin.x,position.y+origin.y,position.z+origin.z)
+                x,y,scale,visible=r.project_particle_billboard(position,motion.perspective_strength,project.width,project.height)
+                if not visible:return
+                lifetime_scale=evaluate_lifetime_scalar_for_render(settings.scale_over_lifetime,t)
+                color=settings.color_over_lifetime
+                if color.enabled:
+                    amount=eased_lifetime_amount(t,color.easing) if len(color.points)==2 else None
+                    red=evaluate_lifetime_color_component(color,t,0,eased_amount=amount)
+                    green=evaluate_lifetime_color_component(color,t,1,eased_amount=amount)
+                    blue=evaluate_lifetime_color_component(color,t,2,eased_amount=amount)
+                else:red=green=blue=1.0
+                stamps.append(_Stamp(settings,clip,instance,order,age,copy_age,delta,pixels,opacity,scale,lifetime_scale,red,green,blue,position))
+                points.append((x,y,position.z))
+            if trail.enabled:
+                for age,delta,multiplier in iter_trail_samples(trail,copy_age,instance.lifetime):append_stamp(age,delta,multiplier)
+            if copy_age < instance.lifetime:append_stamp(copy_age,0,1.0)
+            if len(stamps)>begin:groups.append((begin,len(stamps),order))
     if not stamps:
         r.PARTICLE_RENDER_STATS["current_frame_renders"]+=1;return output
     xy,depths,perspectives,valid=project_local_points(np.asarray(points,dtype=np.float64),layer,project.width,project.height,post_affine=affine)
@@ -98,7 +108,7 @@ def render_particle_trails(project,emitter,frame,clip,instances,diagnostics,tran
     for group_depth,order,begin,end in ordered:
         for index in range(begin,end):
             if not valid[index]:continue
-            stamp=stamps[index];instance=stamp.instance
+            stamp=stamps[index];instance=stamp.instance;clip=stamp.clip
             x,y=map(float,xy[index]);z=float(depths[index])
             factor=instance.scale*stamp.lifetime_scale*stamp.motion_scale*float(perspectives[index])
             scale_x=factor*sx;scale_y=factor*sy
@@ -108,10 +118,10 @@ def render_particle_trails(project,emitter,frame,clip,instances,diagnostics,tran
                     stamp.age,stamp.age/instance.lifetime,r.particle_clip_frame_index(clip,instance,stamp.age,project.fps),
                     x,y,z,rotation,(scale_x+scale_y)*.5,stamp.opacity,(group_depth,order),
                     stamp.position.x,stamp.position.y,stamp.position.z,stamp.lifetime_scale,stamp.tint_r,stamp.tint_g,stamp.tint_b,
-                    instance.cycle_index if cyclic else None,instance.copy_key if cyclic else None,stamp.delta,stamp.copy_age))
+                    getattr(instance,"cycle_index",None),getattr(instance,"copy_key",None),stamp.delta,stamp.copy_age))
             r.render_transformed_source(output,_SpriteView(stamp.pixels,clip.pivot_x,clip.pivot_y),position_x=x,position_y=y,
                 rotation=rotation,scale_x=scale_x,scale_y=scale_y,horizontal_tilt=0,vertical_tilt=0,perspective=0,
-                opacity=stamp.opacity,tint_r=stamp.tint_r,tint_g=stamp.tint_g,tint_b=stamp.tint_b,blend_mode=settings.blend_mode)
+                opacity=stamp.opacity,tint_r=stamp.tint_r,tint_g=stamp.tint_g,tint_b=stamp.tint_b,blend_mode=stamp.settings.blend_mode)
     if layer.opacity<1:
         output[...,3]=np.rint(output[...,3].astype(np.float64)*layer.opacity).astype(np.uint8)
     r.PARTICLE_RENDER_STATS["current_frame_renders"]+=1

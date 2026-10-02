@@ -271,6 +271,7 @@ def _spawn_cache_key(settings: ParticleEmitterSettings, clip_length: int) -> tup
     values.pop("emission_cycle_mode",None);values.pop("emission_period_frames",None)
     values.pop("opacity_over_lifetime",None)
     values.pop("trail",None)
+    values.pop("birth_sub_emitter",None);values.pop("death_sub_emitter",None)
     return repr(values),int(clip_length)
 
 

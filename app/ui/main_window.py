@@ -734,6 +734,7 @@ class MainWindow(QMainWindow):
                 motion_only=self._is_particle_motion_only_change(current,value)
                 if motion_only:
                     current.__dict__.update(deepcopy(value).__dict__);invalidate_effect_resource_layer_base(current.id);self._sync_resource_layer_adapters()
+                    self._refresh_sub_emitter_dependents(current.id)
                     draft=self.particle_preview_manager.ensure_draft(current.as_particle_emitter());draft.settings=deepcopy(current.particle_settings);draft.revision+=1;draft.is_dirty=False;self.particle_preview_manager.sessions.pop(current.id,None)
                     if self.particle_properties.emitter_id==current.id:self.particle_properties.set_resource_layer(current,self.project);self.canvas.set_effect_guide(current.id,"particle_system",current.particle_settings)
                     self._queue_particle_motion_render(current);return
@@ -741,6 +742,7 @@ class MainWindow(QMainWindow):
                 current.__dict__.update(deepcopy(value).__dict__)
                 invalidate_effect_resource_layer_base(current.id)
                 generated=apply_effect_resource_layer(self.project,current)
+                self._refresh_sub_emitter_dependents(current.id)
                 self._dirty_particle_motion_layers.discard(current.id)
                 self._dirty_resource_transform_layers.discard(current.id)
                 self._sync_resource_layer_adapters()
@@ -1231,9 +1233,21 @@ class MainWindow(QMainWindow):
         if kind=="resource_composition":self.create_resource_layer_from_resource(identifier)
 
     def _sync_resource_layer_adapters(self) -> None:
+        references={item.id:(deepcopy(item.particle_settings.birth_sub_emitter),deepcopy(item.particle_settings.death_sub_emitter)) for item in self.project.effect_resource_layers}
+        self.project.repair_sub_emitter_references()
+        for item in self.project.effect_resource_layers:
+            if references[item.id]!=(item.particle_settings.birth_sub_emitter,item.particle_settings.death_sub_emitter):
+                invalidate_effect_resource_layer_base(item.id);apply_effect_resource_layer(self.project,item)
+                if hasattr(self,"particle_preview_manager"):self.particle_preview_manager.revert(item.as_particle_emitter())
         self.project.effect_composition_layers=[item.as_composition_layer() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_SINGLE]
         self.project.particle_emitters=[item.as_particle_emitter() for item in self.project.effect_resource_layers if item.placement_mode==PLACEMENT_PARTICLE]
         self._update_resource_layer_display_names()
+
+    def _refresh_sub_emitter_dependents(self,target_id):
+        for layer in self.project.effect_resource_layers:
+            if any(event.enabled and event.target_layer_id==target_id for event in (layer.particle_settings.birth_sub_emitter,layer.particle_settings.death_sub_emitter)):
+                invalidate_effect_resource_layer_base(layer.id);apply_effect_resource_layer(self.project,layer)
+                self.particle_preview_manager.revert(layer.as_particle_emitter())
 
     def _update_resource_layer_display_names(self) -> None:
         for item in self.project.effect_resource_layers:
@@ -2063,6 +2077,8 @@ class MainWindow(QMainWindow):
         else:self._clear_preview()
 
     def update_particle_draft(self, emitter_id: str, settings: ParticleEmitterSettings) -> None:
+        from app.services.particle_sub_emitter_service import validate_project_sub_emitters
+        validate_project_sub_emitters(self.project,candidate_id=emitter_id,candidate_settings=settings)
         if settings.emission_cycle_mode=="cyclic_steady" or settings.trail.enabled:settings.validate()
         unified=next((item for item in self.project.effect_resource_layers if item.id==emitter_id),None)
         if unified:
@@ -2083,6 +2099,7 @@ class MainWindow(QMainWindow):
         """Keep distinct lifetime commits separate while merging one control's repeats."""
         if before.emission_cycle_mode!=after.emission_cycle_mode or before.emission_period_frames!=after.emission_period_frames:return -1
         if before.trail!=after.trail:return -1
+        if before.birth_sub_emitter!=after.birth_sub_emitter or before.death_sub_emitter!=after.death_sub_emitter:return -1
         if before.scale_over_lifetime!=after.scale_over_lifetime or before.color_over_lifetime!=after.color_over_lifetime or before.opacity_over_lifetime!=after.opacity_over_lifetime:return -1
         left=before.to_dict();right=after.to_dict();left_scale=left.pop("scale_over_lifetime");right_scale=right.pop("scale_over_lifetime");left_color=left.pop("color_over_lifetime");right_color=right.pop("color_over_lifetime");left_easing=left.pop("easing",None);right_easing=right.pop("easing",None);left_blend=left.pop("blend_mode");right_blend=right.pop("blend_mode");left_gravity=(left.pop("gravity_enabled"),left.pop("gravity_strength"));right_gravity=(right.pop("gravity_enabled"),right.pop("gravity_strength"));left_drag=(left.pop("drag_enabled"),left.pop("drag_strength"));right_drag=(right.pop("drag_enabled"),right.pop("drag_strength"));left_noise=(left.pop("noise_enabled"),left.pop("noise_strength"),left.pop("noise_frequency"));right_noise=(right.pop("noise_enabled"),right.pop("noise_strength"),right.pop("noise_frequency"))
         scale_changed=[name for name in left_scale if left_scale[name]!=right_scale[name]]

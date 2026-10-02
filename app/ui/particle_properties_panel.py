@@ -108,6 +108,18 @@ class ParticlePropertiesPanel(QScrollArea):
         self.trail_enabled.toggled.connect(self._changed)
         for control in (self.trail_duration,self.trail_interval,self.trail_opacity):control.valueChanged.connect(self._changed)
         self._retranslate_trail();self._update_trail_status()
+        self._sub_project=None
+        self.sub_group=QGroupBox();self.sub_group.setMinimumWidth(0);self.sub_group.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+        self.sub_form=QFormLayout(self.sub_group);self.sub_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.birth_sub_enabled=QCheckBox();self.death_sub_enabled=QCheckBox()
+        self.birth_sub_target=self._combo([]);self.death_sub_target=self._combo([])
+        for name,control in (("Birth",self.birth_sub_enabled),("Target",self.birth_sub_target),("Death",self.death_sub_enabled),("Target",self.death_sub_target)):
+            self.sub_form.addRow(name,control)
+        self.sub_status=QLabel();self.sub_status.setWordWrap(True);self.sub_status.setMinimumWidth(0);self.sub_form.addRow(self.sub_status)
+        self.layout.insertWidget(self.layout.indexOf(self.lifetime_group),self.sub_group)
+        self.birth_sub_enabled.toggled.connect(self._changed);self.death_sub_enabled.toggled.connect(self._changed)
+        self.birth_sub_target.currentIndexChanged.connect(self._changed);self.death_sub_target.currentIndexChanged.connect(self._changed)
+        self._retranslate_sub();self._update_sub_status()
     def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _bounded(self,name):
@@ -120,6 +132,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self._group_records.append((title,g,f,records));self.layout.addWidget(g);return g
     def set_emitter(self, emitter: ParticleEmitter|None, project):
         self._loading=True; self.emitter_id=None if emitter is None else emitter.id; self.clip.clear()
+        self._sub_project=project;self._populate_sub_targets()
         t=self._localization.text if self._localization else lambda key:{"particle.resource_compositions":"Resource Compositions","resource.static":"Static Resources","resource.animated":"Animated Resources"}.get(key,key)
         self.clip.addItem(t("particle.resource_compositions"),None);self.clip.model().item(self.clip.count()-1).setEnabled(False);composition_heading=self.clip.count()-1
         [self.clip.addItem(c.name,("resource_composition",c.id)) for c in project.resource_compositions]
@@ -180,6 +193,9 @@ class ParticlePropertiesPanel(QScrollArea):
         color=s.color_over_lifetime;self.color_lifetime_enabled.setChecked(color.enabled);self._color_lifetime_start=tuple(color.start_rgb);self._color_lifetime_end=tuple(color.end_rgb);self.color_lifetime_easing.setCurrentIndex(max(0,self.color_lifetime_easing.findData(color.easing)));self._sync_color_buttons()
         self.scale_point_editor.set_curve(s.scale_over_lifetime);self.opacity_point_editor.set_curve(s.opacity_over_lifetime);self.color_point_editor.set_curve(s.color_over_lifetime)
         self.trail_enabled.setChecked(s.trail.enabled);self.trail_duration.setValue(s.trail.duration_frames);self.trail_interval.setValue(s.trail.sample_interval_frames);self.trail_opacity.setValue(s.trail.opacity);self._update_trail_status()
+        for event,enabled,target in ((s.birth_sub_emitter,self.birth_sub_enabled,self.birth_sub_target),(s.death_sub_emitter,self.death_sub_enabled,self.death_sub_target)):
+            target.setCurrentIndex(max(0,target.findData(event.target_layer_id)));enabled.setChecked(event.enabled)
+        self._update_sub_status()
         self._update_lifetime_enabled(); self._loading=False
         motion=s.motion
         motion_mapping={"motion_mode":motion.mode,"motion_center_x":motion.center_x,"motion_center_y":motion.center_y,"motion_center_z":motion.center_z,"motion_radius_start":motion.radius_start,"motion_radius_end":motion.radius_end,"motion_ellipse_x":motion.ellipse_scale_x,"motion_ellipse_y":motion.ellipse_scale_y,"motion_start_angle":motion.start_angle_degrees,"motion_turns":motion.turns,"motion_direction":motion.direction,"motion_phase_spread":motion.phase_spread_degrees,"motion_plane_rotation":motion.orbit_plane_rotation_degrees,"motion_helix_axis":motion.helix_axis,"motion_axis_start":motion.axis_start,"motion_axis_end":motion.axis_end,"motion_radius_easing":motion.radius_easing,"motion_angle_easing":motion.angle_easing,"motion_axis_easing":motion.axis_easing,"motion_perspective":motion.perspective_strength}
@@ -214,6 +230,9 @@ class ParticlePropertiesPanel(QScrollArea):
         result.emission_cycle_mode=str(v("emission_cycle_mode"));result.emission_period_frames=v("emission_period_frames")
         result.opacity_over_lifetime=deepcopy(self.opacity_point_editor.curve)
         result.trail=ParticleTrailSettings(self.trail_enabled.isChecked(),v("trail_duration"),v("trail_interval"),v("trail_opacity"))
+        from app.models.particle_emitter import ParticleSubEmitterEventSettings
+        result.birth_sub_emitter=ParticleSubEmitterEventSettings(self.birth_sub_enabled.isChecked(),self.birth_sub_target.currentData())
+        result.death_sub_emitter=ParticleSubEmitterEventSettings(self.death_sub_enabled.isChecked(),self.death_sub_target.currentData())
         return result
     def _gravity_enabled_changed(self,*args):
         self._update_gravity_enabled();self._changed()
@@ -295,16 +314,61 @@ class ParticlePropertiesPanel(QScrollArea):
                 else:self._motion_base_values[property_id]=float(control.value())
             if self.sender() in {self.motion_mode,self.motion_center_x,self.motion_center_y,self.motion_center_z,self.motion_radius_start,self.motion_radius_end,self.motion_ellipse_x,self.motion_ellipse_y,self.motion_start_angle,self.motion_turns,self.motion_direction,self.motion_phase_spread,self.motion_plane_rotation,self.motion_helix_axis,self.motion_axis_start,self.motion_axis_end,self.motion_radius_easing,self.motion_angle_easing,self.motion_axis_easing,self.motion_perspective}:self._motion_revision+=1
             candidate=self.settings()
+            if self.sender() in (self.birth_sub_enabled,self.death_sub_enabled):
+                event=candidate.birth_sub_emitter if self.sender()==self.birth_sub_enabled else candidate.death_sub_emitter
+                if event.enabled and event.target_layer_id is None:
+                    # Runtime selection prompt only: persistent enabled remains OFF.
+                    target=self.birth_sub_target if self.sender()==self.birth_sub_enabled else self.death_sub_target
+                    target.setEnabled(True)
+                    ko=bool(self._localization and self._localization.language=="ko")
+                    self.sub_status.setText("대상 Particle 레이어를 선택하세요. 선택 전에는 저장된 설정이 변경되지 않습니다." if ko else "Choose a target Particle Layer. Stored settings remain unchanged until selection.")
+                    return
             try:
                 candidate.trail.validate()
+                from app.services.particle_sub_emitter_service import validate_project_sub_emitters
+                if self._sub_project is not None:validate_project_sub_emitters(self._sub_project,candidate_id=self.emitter_id,candidate_settings=candidate)
                 if candidate.emission_cycle_mode=="cyclic_steady" or candidate.trail.enabled:candidate.validate()
             except ValueError as error:
                 if self._last_accepted_settings is not None:self.set_settings(self._last_accepted_settings)
+                if "sub-emitter" in str(error):self.sub_status.setText(self._sub_error_text(error));return
                 if "trail" in str(error) or candidate.trail.enabled:
                     self.trail_status.setText(self._trail_error_text(error));return
                 self.cycle_status.setText(self._cycle_error_text(error));return
             self._last_accepted_settings=deepcopy(candidate);self._update_cycle_status();self._update_trail_status()
+            self._update_sub_status()
             self.draft_changed.emit(self.emitter_id,candidate)
+    def _populate_sub_targets(self):
+        if not hasattr(self,"sub_group"):return
+        for combo in (self.birth_sub_target,self.death_sub_target):
+            old=combo.currentData();combo.clear();combo.addItem("—",None)
+            layers=[] if self._sub_project is None else [item for item in self._sub_project.effect_resource_layers if item.placement_mode=="particle" and item.id!=self.emitter_id]
+            for layer in layers:
+                name=layer.name
+                if sum(item.name==name for item in layers)>1:name+=f" ({layer.id[-4:]})"
+                combo.addItem(name,layer.id)
+            combo.setCurrentIndex(max(0,combo.findData(old)))
+    def _sub_error_text(self,error):
+        ko=bool(self._localization and self._localization.language=="ko")
+        return (("하위 방출 설정을 거부했습니다. 다른 Particle 레이어를 선택하고 부모/자식 수·수명·잔상 밀도를 줄이거나 반복 주기를 늘리세요. " if ko else "Rejected sub-emitter: select another Particle Layer; reduce parent/child count, lifetime/trail density or increase parent period. ")+str(error))
+    def _retranslate_sub(self):
+        if not hasattr(self,"sub_group"):return
+        ko=bool(self._localization and self._localization.language=="ko")
+        self.sub_group.setTitle("하위 방출기" if ko else "Sub-emitter")
+        tip=("부모의 생성/사망 시 다른 Particle 레이어의 source·방출·motion·Lifetime·Trail·Blend를 한 번 실행합니다. 대상의 절대 Start, Visibility/Solo/Lock, Group/Parent/Layer/Surface 변환과 cyclic 반복은 무시합니다. 하위 이벤트는 재귀 실행하지 않습니다. 위치만 상속하며 현재 부모 Layer/Parent/System/Surface 변환을 사용합니다. World 이력이 아닙니다." if ko else "Invoke another Particle Layer's source/emission/motion/lifetime/trail/blend once per birth/death. Target absolute start, Visibility/Solo/Lock, Group/Parent/Layer/Surface transforms and cyclic repetition are ignored. No recursive child events. Position only; current parent Layer/Parent/System/Surface context, not world history.")
+        death=(" 사망은 논리 수명 종료 첫 프레임에, 마지막 보이는 L-1 위치에서 발생합니다. 부모 잔상이 시점을 늦추지 않습니다." if ko else " Death occurs at birth+lifetime, from the last visible L-1 position; parent Trail does not delay it.")
+        for control,en,kr in ((self.birth_sub_enabled,"Birth — Enable","생성 시 — 사용"),(self.birth_sub_target,"Birth Target","생성 대상"),(self.death_sub_enabled,"Death — Enable","사망 시 — 사용"),(self.death_sub_target,"Death Target","사망 대상")):
+            self.sub_form.labelForField(control).setText(kr if ko else en);control.setToolTip(tip+(death if control in (self.death_sub_enabled,self.death_sub_target) else ""))
+    def _update_sub_status(self):
+        if not hasattr(self,"sub_group"):return
+        self.birth_sub_target.setEnabled(self.birth_sub_enabled.isChecked());self.death_sub_target.setEnabled(self.death_sub_enabled.isChecked())
+        if not (self.birth_sub_enabled.isChecked() or self.death_sub_enabled.isChecked()):self.sub_status.clear();return
+        if self._sub_project is not None:
+            from app.services.particle_sub_emitter_service import contribution_bounds
+            try:
+                visual,stamps,_=contribution_bounds(self.settings(),{item.id:item for item in self._sub_project.effect_resource_layers},self.emitter_id)
+                ko=bool(self._localization and self._localization.language=="ko")
+                self.sub_status.setText(("합산 가시 입자 {v}/4096, 잔상 {s}/8192. 실시간 보장 아님." if ko else "Combined visual copies {v}/4096; trails {s}/8192. Not a realtime guarantee.").format(v=visual,s=stamps))
+            except ValueError as error:self.sub_status.setText(self._sub_error_text(error))
     def _retranslate_trail(self):
         ko=bool(self._localization and self._localization.language=="ko")
         self.trail_group.setTitle("잔상 궤적" if ko else "Trail")
@@ -343,6 +407,7 @@ class ParticlePropertiesPanel(QScrollArea):
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
         self._localization=l;self._retranslate_trail();self._update_trail_status()
+        self._retranslate_sub();self._update_sub_status()
         for editor in self._point_editors:editor.retranslate(l.language=="ko")
         self._localization=l; t=l.text; self.title.setText(t("resource_layer.title"));self.common_form.labelForField(self.name).setText(t("resource_layer.name"));self.common_form.labelForField(self.parent_layer).setText(t("layer.parent"));self.mode_label.setText(t("resource_layer.placement_mode"));self.mode.setItemText(0,t("resource_layer.single"));self.mode.setItemText(1,t("resource_layer.particle"));self.mode_help.setText(t("resource_layer.single_help" if self.mode.currentData()=="single" else "resource_layer.particle_help"));apply_tooltip(self.mode,l,"tooltip.resource_layer.mode",status=False);self.transform_panel.retranslate_ui(l); self.randomize.setText(t("particle.randomize_seed")); self.refresh.setText(t("effects.refresh_preview")); self.bake.setText(t("effects.bake")); self.export.setText(t("effects.export_preview")); self.revert.setText(t("effects.revert"));self.blend_mode.setItemText(0,t("particle.blend_normal"));self.blend_mode.setItemText(1,t("particle.blend_additive"))
         group_keys={"Particle Resource":"particle.resource","Emission":"particle.emission","Spawn Shape":"particle.spawn_shape","Direction":"particle.direction","Motion Basic":"particle.motion_basic","Orbit Center":"particle.motion_center","Orbit Shape":"particle.motion_shape","Helix":"particle.motion_helix","Motion Interpolation":"particle.motion_interpolation","Motion Advanced":"particle.motion_advanced","Random Range":"particle.random_range","Rendering":"particle.rendering","Natural Motion":"particle.natural_motion","Over Lifetime":"particle.over_lifetime"}

@@ -148,10 +148,10 @@ def test_additive_current_full_baked_playback_and_png_are_identical(tmp_path):
 
 
 def test_format14_migrates_to_normal_and_current_format_round_trips_additive():
-    project,layer=_project(BLEND_ADDITIVE);payload=project.to_dict();assert payload["format_version"]==FORMAT_VERSION==21
+    project,layer=_project(BLEND_ADDITIVE);payload=project.to_dict();assert payload["format_version"]==FORMAT_VERSION==22
     loaded=Project.from_dict(payload);assert loaded.effect_resource_layers[0].particle_settings.blend_mode==BLEND_ADDITIVE
     payload["format_version"]=14;payload["effect_resource_layers"][0]["particle_settings"].pop("blend_mode")
-    migrated=Project.from_dict(payload);assert migrated.format_version==21 and migrated.effect_resource_layers[0].particle_settings.blend_mode==BLEND_NORMAL
+    migrated=Project.from_dict(payload);assert migrated.format_version==22 and migrated.effect_resource_layers[0].particle_settings.blend_mode==BLEND_NORMAL
 
 
 @pytest.mark.parametrize("value",["Additive","multiply","screen","",None,1])
