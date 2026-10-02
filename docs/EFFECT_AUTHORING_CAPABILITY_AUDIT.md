@@ -1,5 +1,21 @@
 # Pixel Effect Maker — Effect Authoring Capability Audit
 
+## Post-v0.0.25 Capability Recheck overlay — 2026-10-02
+
+현재 판정은 [Post-v25 재점검](POST_V0_0_25_EFFECT_CAPABILITY_RECHECK.md)을 참조한다.
+v25를 `01797ec946ec39c90de34c60253b7802c386c054` 로컬 체크포인트로 고정했다.
+버전0.0.25/FORMAT22 유지, 이번 audit의 production 변경0. 12종 합성 대표와
+9개 Trail interval 변형은 저장 후 logical 재렌더/Playback/PNG exact를 확인했다.
+5개 repetition diagnostic은 12회 invocation마다 canonical samples 및 같은 나이의
+원점 정규화 자식 RGBA가 동일했다. 반복은 확인됐지만 자연스러움/사용자 품질 승인 아님.
+기본형을 열지 못하는 결함으로 variation을 분류하지 않는다: 기본형 blocker0, 품질 개선3.
+선언한 advanced goal 집합에서 접촉4 / 연속 strip3 / 공간 force3의 구조적 gap이 남는다.
+다음 **1순위는 제한된 deterministic local flat-ground Contact/Kill + Contact sub-emitter**,
+2순위 Ribbon, 3순위 Force다. 임의/움직이는 terrain이나 bounce까지 포함한 충돌 엔진이 아니다.
+과거 per-event variation 추천은 이 overlay로 대체하되 이력은 삭제하지 않는다.
+Native GUI manual **수행하지 않음**; 아래 v25 최종 COMPLETE 유보도 유지한다.
+Audit 문서/diagnostic은 unstaged/uncommitted; tag/push/build/ZIP/새 구현 없음.
+
 ## v0.0.25 Bounded Birth/Death Sub-emitter overlay
 
 좁은 deterministic Birth/Death sub-emitter의 Model/Inspector/Undo/Save/Render/Preview/
