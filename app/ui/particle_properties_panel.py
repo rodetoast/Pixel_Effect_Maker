@@ -15,6 +15,7 @@ from .resource_layer_transform_panel import ResourceLayerTransformPanel
 from .hierarchy_display import layer_display_labels
 from .lifetime_point_editor import LifetimePointEditor
 from app.models.particle_emitter import ParticleTrailSettings
+from .inspector_components import InspectorForm, InspectorSection, InspectorViewState, InspectorWarning
 
 class ParticlePropertiesPanel(QScrollArea):
     draft_changed = Signal(str, object); refresh_requested = Signal(str); bake_requested = Signal(str, object)
@@ -96,26 +97,29 @@ class ParticlePropertiesPanel(QScrollArea):
                     row.labelItem.widget().hide();row.labelItem.widget().setParent(body)
                     widget.hide();widget.setParent(body)
             records[:]=[(name,widget) for name,widget in records if widget not in hidden]
-        self.trail_group=QGroupBox();self.trail_group.setMinimumWidth(0);self.trail_group.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
-        self.trail_form=QFormLayout(self.trail_group);self.trail_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.inspector_view_state=InspectorViewState()
+        self.trail_group=InspectorSection("trail",self.inspector_view_state)
+        self.trail_form=InspectorForm(self.trail_group.body)
         self.trail_enabled=QCheckBox();self.trail_duration=self._i(2,240);self.trail_duration.setValue(12)
         self.trail_interval=self._i(1,239);self.trail_interval.setValue(2)
         self.trail_opacity=self._n(0,1);self.trail_opacity.setDecimals(6);self.trail_opacity.setValue(.75)
         for name,control in (("Enabled",self.trail_enabled),("Duration",self.trail_duration),("Sample Every",self.trail_interval),("Opacity",self.trail_opacity)):
             self.trail_form.addRow(name,control)
-        self.trail_status=QLabel();self.trail_status.setWordWrap(True);self.trail_status.setMinimumWidth(0);self.trail_form.addRow(self.trail_status)
+        self.trail_status=InspectorWarning();self.trail_form.addRow(self.trail_status)
+        self.trail_status.message_changed.connect(self._sync_pilot_sections)
         self.layout.insertWidget(self.layout.indexOf(self.lifetime_group),self.trail_group)
         self.trail_enabled.toggled.connect(self._changed)
         for control in (self.trail_duration,self.trail_interval,self.trail_opacity):control.valueChanged.connect(self._changed)
         self._retranslate_trail();self._update_trail_status()
         self._sub_project=None
-        self.sub_group=QGroupBox();self.sub_group.setMinimumWidth(0);self.sub_group.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
-        self.sub_form=QFormLayout(self.sub_group);self.sub_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.sub_group=InspectorSection("sub_emitter",self.inspector_view_state)
+        self.sub_form=InspectorForm(self.sub_group.body)
         self.birth_sub_enabled=QCheckBox();self.death_sub_enabled=QCheckBox()
         self.birth_sub_target=self._combo([]);self.death_sub_target=self._combo([])
         for name,control in (("Birth",self.birth_sub_enabled),("Target",self.birth_sub_target),("Death",self.death_sub_enabled),("Target",self.death_sub_target)):
             self.sub_form.addRow(name,control)
-        self.sub_status=QLabel();self.sub_status.setWordWrap(True);self.sub_status.setMinimumWidth(0);self.sub_form.addRow(self.sub_status)
+        self.sub_status=InspectorWarning();self.sub_form.addRow(self.sub_status)
+        self.sub_status.message_changed.connect(self._sync_pilot_sections)
         self.layout.insertWidget(self.layout.indexOf(self.lifetime_group),self.sub_group)
         self.birth_sub_enabled.toggled.connect(self._changed);self.death_sub_enabled.toggled.connect(self._changed)
         self.birth_sub_target.currentIndexChanged.connect(self._changed);self.death_sub_target.currentIndexChanged.connect(self._changed)
@@ -132,6 +136,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self._group_records.append((title,g,f,records));self.layout.addWidget(g);return g
     def set_emitter(self, emitter: ParticleEmitter|None, project):
         self._loading=True; self.emitter_id=None if emitter is None else emitter.id; self.clip.clear()
+        for section in (self.trail_group,self.sub_group):section.set_context("particle",self.emitter_id)
         self._sub_project=project;self._populate_sub_targets()
         t=self._localization.text if self._localization else lambda key:{"particle.resource_compositions":"Resource Compositions","resource.static":"Static Resources","resource.animated":"Animated Resources"}.get(key,key)
         self.clip.addItem(t("particle.resource_compositions"),None);self.clip.model().item(self.clip.count()-1).setEnabled(False);composition_heading=self.clip.count()-1
@@ -330,9 +335,9 @@ class ParticlePropertiesPanel(QScrollArea):
                 if candidate.emission_cycle_mode=="cyclic_steady" or candidate.trail.enabled:candidate.validate()
             except ValueError as error:
                 if self._last_accepted_settings is not None:self.set_settings(self._last_accepted_settings)
-                if "sub-emitter" in str(error):self.sub_status.setText(self._sub_error_text(error));return
+                if "sub-emitter" in str(error):self.sub_status.set_message(self._sub_error_text(error),"error");return
                 if "trail" in str(error) or candidate.trail.enabled:
-                    self.trail_status.setText(self._trail_error_text(error));return
+                    self.trail_status.set_message(self._trail_error_text(error),"error");return
                 self.cycle_status.setText(self._cycle_error_text(error));return
             self._last_accepted_settings=deepcopy(candidate);self._update_cycle_status();self._update_trail_status()
             self._update_sub_status()
@@ -367,8 +372,8 @@ class ParticlePropertiesPanel(QScrollArea):
             try:
                 visual,stamps,_=contribution_bounds(self.settings(),{item.id:item for item in self._sub_project.effect_resource_layers},self.emitter_id)
                 ko=bool(self._localization and self._localization.language=="ko")
-                self.sub_status.setText(("합산 가시 입자 {v}/4096, 잔상 {s}/8192. 실시간 보장 아님." if ko else "Combined visual copies {v}/4096; trails {s}/8192. Not a realtime guarantee.").format(v=visual,s=stamps))
-            except ValueError as error:self.sub_status.setText(self._sub_error_text(error))
+                self.sub_status.set_message(("합산 가시 입자 {v}/4096, 잔상 {s}/8192. 실시간 보장 아님." if ko else "Combined visual copies {v}/4096; trails {s}/8192. Not a realtime guarantee.").format(v=visual,s=stamps),"info")
+            except ValueError as error:self.sub_status.set_message(self._sub_error_text(error),"error")
     def _retranslate_trail(self):
         ko=bool(self._localization and self._localization.language=="ko")
         self.trail_group.setTitle("잔상 궤적" if ko else "Trail")
@@ -391,7 +396,25 @@ class ParticlePropertiesPanel(QScrollArea):
         settings=self.settings()
         ko=bool(self._localization and self._localization.language=="ko")
         copies=settings.cyclic_active_copy_bound() if settings.emission_cycle_mode=="cyclic_steady" else settings.particle_count_max
-        self.trail_status.setText(("최대 가시 입자 {copies}, 잔상 샘플 {stamps}/8192. 실시간 속도 보장은 아닙니다." if ko else "Maximum visual copies {copies}, trail samples {stamps}/8192. Not a realtime guarantee.").format(copies=copies,stamps=settings.trail_stamp_bound()))
+        self.trail_status.set_message(("최대 가시 입자 {copies}, 잔상 샘플 {stamps}/8192. 실시간 속도 보장은 아닙니다." if ko else "Maximum visual copies {copies}, trail samples {stamps}/8192. Not a realtime guarantee.").format(copies=copies,stamps=settings.trail_stamp_bound()),"info")
+    def _sync_pilot_sections(self,*args):
+        """Derived presentation only: no settings/validation/command mutation."""
+        ko=bool(self._localization and self._localization.language=="ko")
+        off="꺼짐" if ko else "Off"
+        if hasattr(self,"trail_status"):
+            enabled=self.trail_enabled.isChecked()
+            for control in (self.trail_duration,self.trail_interval,self.trail_opacity):
+                self.trail_form.set_field_visible(control,enabled)
+            summary=(f"{self.trail_duration.value()}f · "+("간격 " if ko else "every ")+f"{self.trail_interval.value()}f · {self.trail_opacity.value():g}") if enabled else off
+            self.trail_group.set_language(ko);self.trail_group.set_summary(summary)
+            self.trail_group.set_warning(self.trail_status.text(),self.trail_status.severity)
+        if hasattr(self,"sub_status"):
+            active=[]
+            for name,enabled,target in (("생성" if ko else "Birth",self.birth_sub_enabled,self.birth_sub_target),("사망" if ko else "Death",self.death_sub_enabled,self.death_sub_target)):
+                checked=enabled.isChecked();self.sub_form.set_field_visible(target,checked)
+                if checked:active.append(name+" → "+(target.currentText() if target.currentData() is not None else ("대상 선택" if ko else "Choose target")))
+            self.sub_group.set_language(ko);self.sub_group.set_summary(" · ".join(active) or off)
+            self.sub_group.set_warning(self.sub_status.text(),self.sub_status.severity)
     def _cycle_error_text(self,error):
         key="particle.cycle_error_birth" if "birth offset" in str(error) else "particle.cycle_error_limit" if "active particles" in str(error) else "particle.cycle_error"
         return self._localization.text(key) if self._localization else str(error)
