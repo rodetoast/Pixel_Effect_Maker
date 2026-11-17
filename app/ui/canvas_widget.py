@@ -9,6 +9,7 @@ from time import perf_counter
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QPolygonF, QWheelEvent
 from PySide6.QtWidgets import QWidget
+from .layout_metrics import GIZMO_OUTLINE_WIDTH, GIZMO_HANDLE_RADIUS, GIZMO_ACTIVE_HANDLE_RADIUS, GIZMO_HIT_RADIUS
 
 from app.models.project import Project
 from app.models.effect_composition_layer import EffectCompositionLayer
@@ -152,6 +153,7 @@ class CanvasWidget(QWidget):
 
     def set_effect_guides_visible(self, visible: bool) -> None:
         self.show_effect_guides = bool(visible)
+        if not visible:self._guide_hover=None;self._resource_transform_hover=None;self.setToolTip("")
         self.update()
 
     def set_resource_layer_transform(self, identifier=None, transform=None, *, mode="move") -> None:
@@ -593,18 +595,18 @@ class CanvasWidget(QWidget):
             painter.drawText(
                 badge, Qt.AlignmentFlag.AlignCenter, self.preview_badge_text
             )
-        if not self.playback_mode and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
+        if not self.playback_mode and self.show_effect_guides and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._paint_gizmo(painter)
-        if not self.playback_mode and proxy is not None and proxy.active and len(proxy.projected_quad)==4:
+        if not self.playback_mode and self.show_effect_guides and proxy is not None and proxy.active and len(proxy.projected_quad)==4:
             painter.setPen(QPen(QColor("#74c0fc"),1,Qt.PenStyle.DashLine));painter.setBrush(Qt.BrushStyle.NoBrush);painter.drawPolygon(proxy.projected_quad)
         # Guides and gizmos are a lightweight GUI-thread overlay.  Exact/proxy
         # frame installation must never hide them during direct manipulation.
         if not self.playback_mode and self.show_effect_guides and self.effect_guide_id and self.effect_guide_settings is not None:
             self._paint_effect_guide(painter)
-        if not self.playback_mode and self.multi_resource_transform_context is not None:
+        if not self.playback_mode and self.show_effect_guides and self.multi_resource_transform_context is not None:
             painter.setPen(QPen(QColor("#74c0fc"),2));painter.setBrush(Qt.BrushStyle.NoBrush)
             for _identifier,origin_point in self.multi_resource_transform_context.origins:painter.drawEllipse(self.canvas_to_widget(*origin_point),6,6)
-        if not self.playback_mode and self.resource_transform_id and self.resource_transform is not None:
+        if not self.playback_mode and self.show_effect_guides and self.resource_transform_id and self.resource_transform is not None:
             self._paint_resource_transform_gizmo(painter)
         if hasattr(event,"rect") and event.rect()!=self.rect():self.interaction_stats["partial_paints"]+=1
         else:self.interaction_stats["full_paints"]+=1
@@ -628,49 +630,57 @@ class CanvasWidget(QWidget):
         return x, y
 
     def _paint_gizmo(self, painter: QPainter) -> None:
+        painter.save()
         x, y = self._gizmo_center(); center = self.canvas_to_widget(x, y)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(QColor("#51cf66"), 2)); painter.setBrush(QColor("#20242b"))
-        painter.drawEllipse(center, 6, 6)
+        painter.setPen(QPen(QColor("#51cf66"), GIZMO_OUTLINE_WIDTH)); painter.setBrush(Qt.BrushStyle.NoBrush)
+        radius=GIZMO_ACTIVE_HANDLE_RADIUS if self._gizmo_drag else GIZMO_HANDLE_RADIUS
+        painter.drawEllipse(center, radius, radius)
         s = self.gizmo_settings
         if self.gizmo_mode == "rotate":
             angle = float(s.rotation_end if self.gizmo_edit_end else s.rotation_start)
             end = center + QPointF(math.cos(math.radians(angle)) * 48, math.sin(math.radians(angle)) * 48)
-            painter.drawLine(center, end); painter.drawEllipse(end, 5, 5)
+            painter.drawLine(center, end); painter.drawEllipse(end, radius, radius)
         elif self.gizmo_mode == "scale":
             sx = abs(float(s.scale_x_end if self.gizmo_edit_end else s.scale_x_start)); sy = abs(float(s.scale_y_end if self.gizmo_edit_end else s.scale_y_start))
             rect = QRect(round(center.x() - 24*sx), round(center.y() - 24*sy), round(48*sx), round(48*sy))
-            painter.drawRect(rect); painter.drawRect(rect.right()-4, rect.bottom()-4, 8, 8)
+            painter.drawRect(rect); painter.drawRect(rect.right()-radius, rect.bottom()-radius, radius*2, radius*2)
         elif self.gizmo_mode == "distribution":
             if getattr(s, "distribution", "Point") == "Line":
                 end = self.canvas_to_widget(s.line_end_x, s.line_end_y); painter.drawLine(center, end); painter.drawEllipse(end, 5, 5)
             elif getattr(s, "distribution", "Point") == "Circle":
                 radius = max(0.0, float(s.radius)) * self.zoom; painter.drawEllipse(center, radius, radius)
+        painter.restore()
 
     def _paint_resource_transform_gizmo(self,painter):
         p=self.resource_transform_handle_positions();center=p.get("center")
         if center is None:return
+        painter.save();painter.setBrush(Qt.BrushStyle.NoBrush)
+        active=self._resource_transform_drag or self._resource_transform_hover
+        radius=GIZMO_ACTIVE_HANDLE_RADIUS if active else GIZMO_HANDLE_RADIUS
         painter.setRenderHint(QPainter.RenderHint.Antialiasing,True);mode=self.resource_transform_mode
         if mode=="move":
             for name,color in (("x","#ff6b6b"),("y","#51cf66"),("z","#4dabf7")):
                 if self.multi_resource_transform_context is not None and name=="z":continue
-                axis_point=p.get("projected_z") if name=="z" else p[name];painter.setPen(QPen(QColor(color),3));painter.drawLine(center,axis_point)
+                axis_point=p.get("projected_z") if name=="z" else p[name];painter.setPen(QPen(QColor(color),2 if active==name else GIZMO_OUTLINE_WIDTH));painter.drawLine(center,axis_point)
                 if name=="z" and p[name]!=axis_point:painter.setPen(QPen(QColor(color),2,Qt.PenStyle.DashLine));painter.drawLine(axis_point,p[name])
-                painter.drawEllipse(p[name],5,5);painter.drawText(p[name]+QPointF(7,-5),name.upper())
-            painter.setPen(QPen(QColor("#ffffff"),2));painter.drawEllipse(center,5,5)
+                painter.drawEllipse(p[name],radius,radius);painter.drawText(p[name]+QPointF(7,-5),name.upper())
+            painter.setPen(QPen(QColor("#ffffff"),GIZMO_OUTLINE_WIDTH));painter.drawEllipse(center,radius,radius)
         elif mode.startswith("rotate_"):
-            axis=mode[-1];color={"rotate_x":"#ff6b6b","rotate_y":"#51cf66","rotate_z":"#4dabf7"}[mode];painter.setPen(QPen(QColor(color),3));ring=self._resource_rotation_ring(axis)
+            axis=mode[-1];color={"rotate_x":"#ff6b6b","rotate_y":"#51cf66","rotate_z":"#4dabf7"}[mode];painter.setPen(QPen(QColor(color),2 if active else GIZMO_OUTLINE_WIDTH));ring=self._resource_rotation_ring(axis)
             if len(ring)>1:painter.drawPolyline(ring)
-            painter.drawLine(center,p[mode]);painter.drawEllipse(p[mode],5,5);painter.drawText(p[mode]+QPointF(7,-5),axis.upper())
+            painter.drawLine(center,p[mode]);painter.drawEllipse(p[mode],radius,radius);painter.drawText(p[mode]+QPointF(7,-5),axis.upper())
         elif mode=="scale":
-            painter.setPen(QPen(QColor("#ffd43b"),2));painter.drawRect(QRectF(center-QPointF(38,38),center+QPointF(38,38)));painter.drawRect(QRectF(p["scale"]-QPointF(5,5),p["scale"]+QPointF(5,5)))
+            painter.setPen(QPen(QColor("#ffd43b"),2 if active else GIZMO_OUTLINE_WIDTH));painter.drawRect(QRectF(center-QPointF(38,38),center+QPointF(38,38)));painter.drawRect(QRectF(p["scale"]-QPointF(radius,radius),p["scale"]+QPointF(radius,radius)))
         elif mode=="pivot":
             painter.setPen(QPen(QColor("#e599f7"),2));q=p["pivot"];painter.drawLine(q-QPointF(8,0),q+QPointF(8,0));painter.drawLine(q-QPointF(0,8),q+QPointF(0,8))
+        painter.restore()
 
     def _hit_resource_transform(self,position):
+        if not self.show_effect_guides:return None
         points=self.resource_transform_handle_positions();mode=self.resource_transform_mode
         names=(("x","y","center") if self.multi_resource_transform_context is not None else ("x","y","z","center")) if mode=="move" else (("rotate_z",) if self.multi_resource_transform_context is not None and mode.startswith("rotate_") else (mode,)) if mode.startswith("rotate_") else (mode,)
-        return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=12),None)
+        return next((name for name in names if name in points and math.hypot(points[name].x()-position.x(),points[name].y()-position.y())<=GIZMO_HIT_RADIUS),None)
 
     def _start_resource_transform_drag(self,handle,event,event_started):
         self._resource_transform_drag=handle;self._resource_transform_before=deepcopy(self.resource_transform);self._resource_transform_start=event.position();self._resource_transform_changed=False;self.resource_transform_changed_fields=();self.resource_transform_started.emit(self.resource_transform_id);self.setFocus();event.accept();self._record_interaction("mouse_press_total",event_started)
@@ -734,6 +744,7 @@ class CanvasWidget(QWidget):
         points = self._guide_points()
         if not points:
             return
+        painter.save();painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         guide_pen = QPen(QColor("#4dabf7"), 2, Qt.PenStyle.DashLine)
         painter.setPen(guide_pen)
@@ -748,7 +759,9 @@ class CanvasWidget(QWidget):
                 painter.drawLine(points["motion_center"],points["radius_start"]);painter.drawLine(points["motion_center"],points["radius_end"])
                 if "axis_end" in points:painter.drawLine(points["motion_center"],points["axis_end"])
                 for name,point in points.items():
-                    painter.setPen(QPen(QColor("#ffd43b") if name==self._guide_hover else QColor("#51cf66"),2));painter.setBrush(QColor("#20242b"));painter.drawEllipse(point,6,6)
+                    active=name in {self._guide_hover,self._guide_handle};radius=GIZMO_ACTIVE_HANDLE_RADIUS if active else GIZMO_HANDLE_RADIUS
+                    painter.setPen(QPen(QColor("#ffd43b") if active else QColor("#51cf66"),2 if active else GIZMO_OUTLINE_WIDTH));painter.drawEllipse(point,radius,radius)
+                painter.restore()
                 return
             origin, endpoint = points["origin"], points["endpoint"]
             painter.drawLine(origin, endpoint)
@@ -772,9 +785,11 @@ class CanvasWidget(QWidget):
             if settings.resource_type == "resource_composition":
                 self._paint_ghosts(painter, settings.resource_id, origin, endpoint)
         for name, point in points.items():
-            painter.setPen(QPen(QColor("#ffd43b") if name == self._guide_hover else QColor("#51cf66"), 2))
-            painter.setBrush(QColor("#20242b"))
-            painter.drawEllipse(point, 6, 6)
+            active=name in {self._guide_hover,self._guide_handle};radius=GIZMO_ACTIVE_HANDLE_RADIUS if active else GIZMO_HANDLE_RADIUS
+            painter.setPen(QPen(QColor("#ffd43b") if active else QColor("#51cf66"), 2 if active else GIZMO_OUTLINE_WIDTH))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(point, radius, radius)
+        painter.restore()
 
     def _paint_ghosts(self, painter: QPainter, composition_id: str, start: QPointF, end: QPointF) -> None:
         if self.project is None:
@@ -829,7 +844,7 @@ class CanvasWidget(QWidget):
         painter.restore()
 
     def _hit_guide_handle(self, position: QPointF) -> str | None:
-        if self.effect_guide_locked:return None
+        if self.effect_guide_locked or not self.show_effect_guides:return None
         candidates = self._guide_points()
         if not candidates:
             return None
@@ -861,7 +876,7 @@ class CanvasWidget(QWidget):
                 self._record_interaction("mouse_press_total",event_started)
                 return
         if transform_handle:self._start_resource_transform_drag(transform_handle,event,event_started);return
-        if event.button() == Qt.MouseButton.LeftButton and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
+        if event.button() == Qt.MouseButton.LeftButton and self.show_effect_guides and self.gizmo_generator_id and self.gizmo_settings is not None and not self.gizmo_locked:
             self._gizmo_drag = True; self._gizmo_before = deepcopy(self.gizmo_settings); event.accept(); return
         if event.button() == Qt.MouseButton.LeftButton:
             layer_index = self._layer_at(event.position())

@@ -17,7 +17,8 @@ def test_effect_library_prioritizes_resource_layer_space(tmp_path):
     assert library.asset_list.maximumHeight()<=92 and library.clip_list.maximumHeight()<=104
     assert library.composition_group.minimumHeight()>=250 and library.composition_list.minimumHeight()>=150
     assert library.composition_group.height()>=library.clip_group.height()
-    assert library.add_composition_button.property("commandRole")=="secondary"
+    assert library.add_composition_button.property("commandRole")=="primary"
+    assert library.composition_top_separator is None
     assert library.remove_composition_button.property("commandRole")=="danger"
     assert library.lock_composition_button.property("commandRole")=="toggle"
     _close(window)

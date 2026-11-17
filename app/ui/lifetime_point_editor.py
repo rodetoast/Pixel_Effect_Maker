@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from PySide6.QtCore import Signal, QSignalBlocker
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QListWidget, QPushButton, QLabel, QColorDialog, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QListWidget, QPushButton, QLabel, QColorDialog, QSizePolicy, QLayout
 
 from app.models.particle_emitter import LifetimeScalarModulation, LifetimeColorModulation, LifetimeScalarPoint, LifetimeColorPoint, LIFETIME_POINT_MAX
 from app.models.resource_composition import EASINGS
@@ -24,11 +24,17 @@ class LifetimePointEditor(QWidget):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 4, 0, 4)
+        # This compound editor is a spanning QFormLayout field. Propagate its
+        # changing intrinsic height instead of allowing the parent to compress
+        # the list/form/buttons into an old QWidgetItem height-for-width cache.
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self.title = QLabel(); layout.addWidget(self.title)
         self.list = QListWidget(); self.list.setMinimumWidth(0); self.list.setMaximumHeight(112)
         self.list.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self.list)
-        self.form = QFormLayout(); self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.form = QFormLayout(); self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.form.setVerticalSpacing(6)
         self.time = ScrollSafeDoubleSpinBox(); self.time.setRange(0, 100); self.time.setDecimals(4); self.time.setSingleStep(.1); self.time.setSuffix(" %")
         self.value = ScrollSafeDoubleSpinBox(); self.value.setRange(0, 1 if channel == "opacity" else 16); self.value.setDecimals(6)
         self.color = QPushButton()
@@ -42,6 +48,12 @@ class LifetimePointEditor(QWidget):
         for button in (self.add, self.remove): button.setMinimumWidth(0); button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed); buttons.addWidget(button)
         layout.addLayout(buttons)
         self.status = QLabel(); self.status.setWordWrap(True); self.status.setMinimumWidth(0); layout.addWidget(self.status)
+        for label in (self.title,self.status,*[self.form.labelForField(w) for w in (self.time,self.color if channel=="color" else self.value,self.easing)]):
+            label.setMinimumWidth(0)
+            # QFormLayout uses the label's horizontal size hint even in
+            # WrapAllRows; Ignored collapses its label column to zero width.
+            label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred)
+            label.setWordWrap(True)
         self.list.currentRowChanged.connect(self._select)
         self.time.valueChanged.connect(lambda value: self.edit_point("time", value / 100))
         self.value.valueChanged.connect(lambda value: self.edit_point("value", value))

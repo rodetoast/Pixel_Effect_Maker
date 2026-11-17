@@ -239,6 +239,7 @@ class ResourceEditorWidget(QWidget):
         if self.resource:self._push_value(self.resource.id,"asset_pivot",[self.resource.pivot_x,self.resource.pivot_y],[x,y],"Asset Pivot",512)
 
     def _composition_meta(self,before,after):
+        if before.get("fps")!=after.get("fps"):self.stop()
         names={item.name for item in self.project.resource_compositions if item is not self.composition};base=self.composition.name;number=2
         while self.composition.name in names:self.composition.name=f"{base} ({number})";number+=1
         after=dict(after);after["name"]=self.composition.name

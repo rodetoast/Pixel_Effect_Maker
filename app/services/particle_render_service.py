@@ -220,7 +220,9 @@ def _spawn_position(settings: ParticleEmitterSettings, rng: random.Random) -> tu
 
 def particle_clip_frame_index(clip: AnimationClipAsset, instance: ParticleInstance, age: int, effect_fps: int | None = None) -> int | None:
     if clip.source_format == "composition":
-        index = math.floor(age / max(1, effect_fps or clip.fps) * clip.fps * instance.clip_playback_speed) + instance.clip_start_frame
+        # Multiply integer frame units before dividing: at e.g. 11 FPS,
+        # (15 / 11) * 11 is 14.999999999999998 and incorrectly repeats a frame.
+        index = math.floor(age * clip.fps / max(1, effect_fps or clip.fps) * instance.clip_playback_speed) + instance.clip_start_frame
         if clip.playback_mode == "loop": index %= len(clip.frames)
         elif index >= len(clip.frames):
             if clip.playback_mode == "once": return None

@@ -45,7 +45,8 @@ def test_panel_groups_commands_around_stretch_layer_list(tmp_path):
     assert [panel.composition_top_toolbar.property("commandGroup"), panel.composition_hierarchy_toolbar.property("commandGroup"), panel.composition_state_toolbar.property("commandGroup")] == ["create_edit", "hierarchy", "state_order"]
     assert layout.stretch(layout.indexOf(panel.composition_list)) == 1
     assert panel.composition_list.minimumHeight() >= 150
-    assert len(panel.composition_group.findChildren(QFrame, "resourceLayerCommandSeparator")) == 2
+    assert len(panel.composition_group.findChildren(QFrame, "resourceLayerCommandSeparator")) == 1
+    assert panel.composition_top_separator is None  # Duplicate/Delete separated by spacing, not a divider.
     assert not hasattr(panel, "move_composition_up") and not hasattr(panel, "move_composition_down")
     assert all(button.text() not in {"L", "S"} for button in panel.composition_group.findChildren(QPushButton))
     _close(window)

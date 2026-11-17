@@ -62,14 +62,17 @@ def test_effect_editor_system_and_surface_are_inside_advanced(tmp_path):
     _, _, panel = effect_context(tmp_path)
     transform = panel.transform_panel
     assert transform.system_group.parentWidget() is transform.advanced_body
-    assert transform.surface_group.parentWidget() is transform.advanced_body
-    assert panel.layout.indexOf(transform) > panel.layout.indexOf(panel.motion_basic_group)
+    assert transform.surface_group.parentWidget() is panel.workflow.surface_section.body
+    assert transform.advanced_body.isAncestorOf(panel.workflow.surface_section)
+    assert panel.layout.indexOf(panel.workflow.sections["transform"]) > panel.layout.indexOf(panel.workflow.sections["motion"])
     panel.close()
 
 
 def test_advanced_section_defaults_enabled_and_visible(tmp_path):
     _, _, panel = effect_context(tmp_path)
     assert panel.transform_panel.is_advanced_expanded()
+    assert not panel.workflow.sections["transform"].is_expanded()
+    panel.workflow.jump("transform")
     assert panel.transform_panel.advanced_body.isVisibleTo(panel)
     panel.close()
 
@@ -86,6 +89,9 @@ def test_surface_transform_marks_nonidentity_legacy_state(tmp_path):
     assert not panel.transform_panel.advanced_status.isVisibleTo(panel)
     layer.surface_transform.rotation_y = 12
     panel.set_resource_layer(layer, project); APP.processEvents()
+    assert "Surface" in panel.workflow.sections["transform"].summary.text()
+    assert "Nonidentity" in panel.workflow.surface_section.summary.text()
+    panel.workflow.jump("transform")
     assert panel.transform_panel.advanced_status.isVisibleTo(panel)
     assert "applied" in panel.transform_panel.advanced_status.text().lower()
     panel.close()

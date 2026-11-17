@@ -27,6 +27,7 @@ from app.models.project import Project
 from app.models.layer_group import LayerGroup
 from app.models.layer_parenting import would_create_parent_cycle
 from app.models.source_asset import SourceAsset
+from app.services.effect_group_service import effect_group_reasons, effect_group_reason_text
 from app.ui.tooltip_helper import apply_tooltip
 from app.ui.hierarchy_display import (
     DROP_AFTER, DROP_BEFORE, DROP_INTO, build_hierarchy_rows, classify_drop_zone,
@@ -200,7 +201,7 @@ class EffectLibraryPanel(QWidget):
         self.duplicate_composition_button=QPushButton("Duplicate");self.duplicate_composition_button.setObjectName("duplicateEffectLayerButton");self.remove_composition_button=QPushButton("Delete")
         self.lock_composition_button=QPushButton("Lock");self.lock_composition_button.setCheckable(True);self.solo_composition_button=QPushButton("Solo");self.solo_composition_button.setCheckable(True)
         self.order_composition_button=QPushButton("Order");self.order_composition_button.setObjectName("resourceLayerOrderButton");self.order_composition_menu=QMenu(self.order_composition_button);self.order_front_action=self.order_composition_menu.addAction("Bring Forward");self.order_back_action=self.order_composition_menu.addAction("Send Back");self.order_composition_button.setMenu(self.order_composition_menu)
-        self.composition_top_separator=self._toolbar_separator();top_layout.addWidget(self.add_composition_button,1);top_layout.addWidget(self.duplicate_composition_button);top_layout.addWidget(self.composition_top_separator);top_layout.addWidget(self.remove_composition_button);top_layout.addSpacing(1)
+        self.composition_top_separator=None;top_layout.addWidget(self.add_composition_button,1);top_layout.addWidget(self.duplicate_composition_button);top_layout.addSpacing(6);top_layout.addWidget(self.remove_composition_button);top_layout.addSpacing(1)
         self.composition_hierarchy_toolbar=QWidget();self.composition_hierarchy_toolbar.setObjectName("resourceLayerHierarchyToolbar");self.composition_hierarchy_toolbar.setProperty("commandGroup","hierarchy")
         hierarchy_layout=QHBoxLayout(self.composition_hierarchy_toolbar);hierarchy_layout.setContentsMargins(0,0,0,0);hierarchy_layout.setSpacing(4);hierarchy_layout.addWidget(self.group_composition_button,1);hierarchy_layout.addWidget(self.ungroup_composition_button,1)
         self.composition_state_toolbar=QWidget();self.composition_state_toolbar.setObjectName("resourceLayerStateOrderToolbar");self.composition_state_toolbar.setProperty("commandGroup","state_order")
@@ -211,6 +212,10 @@ class EffectLibraryPanel(QWidget):
         for button in (self.add_composition_button,self.group_composition_button,self.ungroup_composition_button,self.duplicate_composition_button,self.order_composition_button):button.setProperty("commandRole","secondary")
         for button in (self.lock_composition_button,self.solo_composition_button):button.setProperty("commandRole","toggle")
         for button in (self.delete_asset_button,self.delete_generator_button,self.remove_composition_button):button.setProperty("commandRole","danger")
+        from .layout_metrics import ACTION_PRIMARY_STYLE, ACTION_DANGER_STYLE
+        self.add_composition_button.setProperty("commandRole","primary")
+        self.add_composition_button.setStyleSheet(ACTION_PRIMARY_STYLE)
+        self.remove_composition_button.setStyleSheet(ACTION_DANGER_STYLE)
         layout.addWidget(self.composition_group, 4)
 
         self.particle_group = QGroupBox("Particle Systems")
@@ -385,6 +390,7 @@ class EffectLibraryPanel(QWidget):
             font=item.font();font.setBold(getattr(display,"kind","")=="group" or identifier==primary);item.setFont(font)
             if identifier==primary:self.composition_list.setCurrentRow(row)
         self.composition_list.blockSignals(blocked);count=len(self._selected_resource_ids);self.composition_selection_label.setText((self._localization.text("layer.selection_count").format(count=count) if hasattr(self,"_localization") else f"{count} layers selected") if count>1 else "")
+        self._sync_composition_controls()
 
     def _format_resource_row(self,display):
         marker="▌" if display.primary else "•" if display.selected else " ";visible="●" if display.visible else "○";lock="L" if display.own_locked else "L*" if display.inherited_locked else " ";solo="S" if display.solo else " ";metrics=self.composition_list.fontMetrics()
@@ -485,7 +491,10 @@ class EffectLibraryPanel(QWidget):
         if isinstance(getattr(self,"_resource_layers",{}).get(identifier),LayerGroup):self.group_expanded_requested.emit(identifier)
 
     def _composition_command_states(self,primary=None):
-        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];primary=primary or next((value for value in selected if value.id==self._primary_resource_id),selected[0] if selected else None);locked=any(value.id in self.composition_list.locked_ids for value in selected);states=context_action_states("group" if isinstance(primary,LayerGroup) else "leaf",len(selected),locked,bool(getattr(primary,"parent_id",None)));states["group"]=len(selected)>=2 and all(not isinstance(value,LayerGroup) for value in selected);states["ungroup"]=len(selected)==1 and isinstance(selected[0],LayerGroup) and not locked;return states
+        selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];primary=primary or next((value for value in selected if value.id==self._primary_resource_id),selected[0] if selected else None);locked=any(value.id in self.composition_list.locked_ids for value in selected);states=context_action_states("group" if isinstance(primary,LayerGroup) else "leaf",len(selected),locked,bool(getattr(primary,"parent_id",None)))
+        reasons=effect_group_reasons(self._project,self._selected_resource_ids) if hasattr(self,"_project") else ("count","select_group")
+        states["group"]=reasons[0] is None;states["ungroup"]=reasons[1] is None
+        return states
 
     def _sync_composition_controls(self):
         selected=[getattr(self,"_resource_layers",{}).get(value) for value in self._selected_resource_ids];selected=[value for value in selected if value];enabled=bool(selected);states=self._composition_command_states();all_locked=enabled and all(value.locked for value in selected);all_solo=enabled and all(value.solo for value in selected)
@@ -493,6 +502,11 @@ class EffectLibraryPanel(QWidget):
         if not hasattr(self,"_localization"):return
         t=self._localization.text;tips={self.duplicate_composition_button:"tooltip.resource_layer.duplicate" if states["duplicate"] else "tooltip.resource_layer.select_for_command",self.remove_composition_button:"tooltip.resource_layer.remove" if states["delete"] else ("layer.locked_delete" if enabled else "tooltip.resource_layer.select_for_command"),self.group_composition_button:"tooltip.group.create" if states["group"] else "tooltip.group.create_disabled",self.ungroup_composition_button:"tooltip.group.ungroup" if states["ungroup"] else "tooltip.group.ungroup_disabled",self.lock_composition_button:"tooltip.layer.lock" if enabled else "tooltip.resource_layer.select_for_command",self.solo_composition_button:"tooltip.layer.solo" if enabled else "tooltip.resource_layer.select_for_command",self.order_composition_button:"tooltip.resource_layer.order" if states["reorder"] else ("layer.batch.locked_block" if enabled else "tooltip.resource_layer.select_for_command")}
         for widget,key in tips.items():widget.setToolTip(t(key));widget.setStatusTip(t(key));widget.setAccessibleDescription(t(key))
+        if hasattr(self,"_project"):
+            for widget,reason in zip((self.group_composition_button,self.ungroup_composition_button),effect_group_reasons(self._project,self._selected_resource_ids)):
+                if reason:
+                    message=effect_group_reason_text(reason,self._localization.language=="ko")
+                    widget.setToolTip(message);widget.setStatusTip(message);widget.setAccessibleDescription(message)
 
     def _request_create_clip(self) -> None:
         identifier = self.current_generator_id()

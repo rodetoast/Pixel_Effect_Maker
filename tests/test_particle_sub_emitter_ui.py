@@ -180,8 +180,8 @@ def test_a_b_target_sentinels_selection_language_scrub_and_disabled_state(tmp_pa
 def test_compact_sub_group_localized_layout(tmp_path,language,width,factor):
     win,parent,target,other=window(tmp_path,"both");panel=win.particle_properties
     localization=LocalizationService(QSettings(str(tmp_path/"compact.ini"),QSettings.Format.IniFormat));localization.set_language(language);panel.retranslate_ui(localization)
-    group=panel.sub_group;font=group.font();font.setPointSizeF(font.pointSizeF()*factor);group.setFont(font);group.setFixedWidth(width);group.show();group.layout().activate();APP.processEvents()
-    assert panel.layout.indexOf(panel.trail_group)<panel.layout.indexOf(group)<panel.layout.indexOf(panel.lifetime_group)
+    group=panel.sub_group;group.set_expanded(True);font=group.font();font.setPointSizeF(font.pointSizeF()*factor);group.setFont(font);group.setFixedWidth(width);group.show();win.show();APP.processEvents();APP.processEvents()
+    assert panel.layout.indexOf(panel.workflow.sections["look"])<panel.layout.indexOf(panel.trail_group)<panel.layout.indexOf(group)<panel.layout.indexOf(panel.workflow.sections["rendering"])
     for control in (panel.birth_sub_enabled,panel.birth_sub_target,panel.death_sub_enabled,panel.death_sub_target):
         label=panel.sub_form.labelForField(control)
         assert label.fontMetrics().horizontalAdvance(label.text())<=label.width()

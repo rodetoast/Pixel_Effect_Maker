@@ -21,6 +21,7 @@ from app.ui.particle_properties_panel import ParticlePropertiesPanel
 from app.ui.project_settings_dialog import ProjectSettingsDialog
 from app.ui.resource_editor_v2.composition_inspector import LayerInspector
 from app.ui.resource_editor_v2.new_resource_dialog import NewResourceDialog
+from tests.spinbox_repeat_support import verify_native_repeat
 
 
 APP = QApplication.instance() or QApplication([])
@@ -59,8 +60,8 @@ def wheel(spinbox, delta):
 @pytest.fixture
 def dialog(tmp_path):
     _, language = localization(tmp_path); value = NewResourceDialog(source_asset(), language); value.show(); APP.processEvents()
-    yield value
-    value.close()
+    try:yield value
+    finally:value.close();value.deleteLater();APP.processEvents()
 
 
 @pytest.mark.parametrize("name", ["width", "height", "fps", "duration", "frames"])
@@ -85,7 +86,7 @@ def test_selected_text_and_fast_clicks_do_not_block_native_buttons(dialog):
 
 def test_mouse_press_hold_uses_qt_native_auto_repeat(dialog):
     spinbox=dialog.width;spinbox.setValue(91);point=button_center(spinbox,QStyle.SubControl.SC_SpinBoxUp)
-    QTest.mousePress(spinbox,Qt.MouseButton.LeftButton,pos=point);QTest.qWait(800);QTest.mouseRelease(spinbox,Qt.MouseButton.LeftButton,pos=point)
+    verify_native_repeat(spinbox,point)
     assert spinbox.value() >= 93
 
 

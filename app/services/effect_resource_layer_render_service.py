@@ -60,7 +60,8 @@ def _base_key(project, layer: EffectResourceLayer) -> tuple:
     while current.parent_id in by_id and current.parent_id not in visited:
         visited.add(current.parent_id);current=by_id[current.parent_id];value=current.layer_space_transform if current.advanced_transform_enabled else EffectLayerTransform3D();parenting.append((current.id,current.parent_id,current.parent_offset,current.advanced_transform_enabled,repr(value.to_dict())))
     parenting=tuple(parenting)
-    return (id(project),layer.placement_mode,repr(settings),repr(transform.to_dict()),parenting,project.width,project.height,project.fps,_resource_revisions(project),template_dependencies(project,layer))
+    output_extent=len(project.frames) if layer.placement_mode != PLACEMENT_PARTICLE else None
+    return (id(project),layer.placement_mode,repr(settings),repr(transform.to_dict()),parenting,project.width,project.height,project.fps,_resource_revisions(project),template_dependencies(project,layer),output_extent)
 
 
 def _layer_space_transform(layer: EffectResourceLayer) -> EffectLayerTransform3D:

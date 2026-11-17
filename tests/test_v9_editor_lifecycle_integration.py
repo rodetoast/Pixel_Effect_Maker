@@ -8,7 +8,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 import numpy as np
-from PySide6.QtCore import QPointF,QSettings,QThreadPool
+from PySide6.QtCore import QElapsedTimer,QPointF,QSettings,QThreadPool
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication,QFileDialog
 
 from app.services import effect_resource_layer_render_service,particle_render_service,resource_composition_render_service
@@ -30,7 +31,22 @@ def window_for(tmp_path,project,name="window"):
 
 
 def finish(window):
-    window.set_playing(False);window.dirty=False;window._non_undo_dirty=False;window.close();APP.processEvents()
+    window.set_playing(False);window.dirty=False;window._non_undo_dirty=False;window.close();window.deleteLater();APP.processEvents()
+
+
+def settle_idle_prewarms(timeout=2500):
+    """Await actual queued/worker completion, not an elapsed sleep or pool alone."""
+    clock=QElapsedTimer();clock.start()
+    while clock.elapsed()<timeout:
+        APP.processEvents()
+        managers=[w.interactive_proxy_prewarm for w in APP.topLevelWidgets() if isinstance(w,MainWindow)]
+        # Closed managers no longer drain cancelled results, but their workers
+        # must still finish (pool condition) before taking global statistics.
+        if (all(m._pending is None and not m._timer.isActive() and not m._active_revisions for m in managers if m._poll.isActive())
+                and QThreadPool.globalInstance().activeThreadCount()==0):
+            return
+        QTest.qWait(1)
+    raise AssertionError('idle prewarm completion deadline exceeded')
 
 
 def select_resource_layer_editor(window,composition,layer):
@@ -40,15 +56,29 @@ def select_resource_layer_editor(window,composition,layer):
 
 def test_ui_navigation_state_does_not_dirty_project(tmp_path):
     project,_,composition,resource_layer,effect=production_project(tmp_path,"orbit",animated=True);window=window_for(tmp_path,project)
-    editor=select_resource_layer_editor(window,composition,resource_layer);QThreadPool.globalInstance().waitForDone(2500);APP.processEvents();generation=window.effect_playback.generation
-    render_stats=dict(particle_render_service.PARTICLE_RENDER_STATS);before=project.to_dict()
-    editor.composition_canvas.zoom=2.0;editor.composition_canvas.pan_offset=QPointF(17,-9);editor.controller.set_frame(8);editor._apply_state(editor.controller.state)
-    window.select_resource_layer(effect.id);panel=window.particle_properties.transform_panel
-    window.canvas.zoom=1.5;window.canvas.pan_offset=QPointF(-12,7);APP.processEvents()
-    assert not window.dirty and not window._non_undo_dirty
-    assert window.effect_playback.generation==generation and particle_render_service.PARTICLE_RENDER_STATS==render_stats
-    assert project.to_dict()==before
-    finish(window)
+    try:
+        editor=select_resource_layer_editor(window,composition,resource_layer)
+        settle_idle_prewarms()
+        before_selection=project.to_dict();initial_generation=window.effect_playback.generation
+        initial_stats=dict(particle_render_service.PARTICLE_RENDER_STATS)
+        # Initial selection intentionally prepares an idle gizmo proxy. Include
+        # that setup in the baseline, then measure navigation, not first prewarm.
+        window.select_resource_layer(effect.id)
+        assert particle_render_service.PARTICLE_RENDER_STATS==initial_stats, 'selection synchronously rendered particles'
+        settle_idle_prewarms();generation=window.effect_playback.generation
+        assert project.to_dict()==before_selection and generation==initial_generation
+        assert not window.dirty and not window._non_undo_dirty
+        render_stats=dict(particle_render_service.PARTICLE_RENDER_STATS);before=project.to_dict()
+        editor.composition_canvas.zoom=2.0;editor.composition_canvas.pan_offset=QPointF(17,-9);editor.controller.set_frame(8);editor._apply_state(editor.controller.state)
+        window.select_resource_layer(effect.id)
+        window.canvas.zoom=1.5;window.canvas.pan_offset=QPointF(-12,7)
+        settle_idle_prewarms()
+        assert not window.dirty and not window._non_undo_dirty
+        assert window.effect_playback.generation==generation
+        assert particle_render_service.PARTICLE_RENDER_STATS==render_stats, 'navigation changed particle render statistics'
+        assert project.to_dict()==before
+    finally:
+        finish(window)
 
 
 def test_undo_redo_across_resource_and_effect_edits(tmp_path):

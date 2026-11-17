@@ -7,7 +7,7 @@ than reimplementing input, ranges, commit, or wheel semantics.
 from PySide6.QtCore import QEvent, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QApplication, QAbstractSpinBox, QComboBox, QGroupBox, QHBoxLayout,
-    QLabel, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
+    QLabel, QLayout, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from .layout_metrics import (INSPECTOR_ROW_SPACING, INSPECTOR_SECTION_MARGIN,
     INSPECTOR_SECTION_SPACING, SECTION_HEADER_HEIGHT, SPACING_SM, inspector_color)
@@ -34,6 +34,7 @@ class InspectorWarning(QLabel):
         self.setWordWrap(True)
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setWordWrap(True)  # Set after policy: retain Qt's height-for-width flag.
 
     def set_message(self, text, severity="warning"):
         if severity not in {"info", "warning", "error"}:
@@ -52,22 +53,17 @@ class InspectorWarning(QLabel):
         self.set_message("")
 
     def _apply_palette(self):
+        if getattr(self,"_applying_palette",False):return
+        self._applying_palette=True
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.WindowText,
                          inspector_color("state_" + self.severity, palette))
         self.setPalette(palette)
+        self._applying_palette=False
 
-
-class _SectionLayout(QVBoxLayout):
-    def activate(self):
-        # Support explicit layout of an inspector embedded in a hidden stack,
-        # as well as normal visible event-driven Qt layout.
-        result = super().activate()
-        for widget in self.parentWidget().findChildren(QWidget):
-            if widget.layout() is not None:
-                widget.layout().activate()
-                widget.layout().setGeometry(widget.rect())
-        return result
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if event.type()==QEvent.Type.PaletteChange:self._apply_palette()
 
 
 class InspectorSection(QGroupBox):
@@ -84,19 +80,21 @@ class InspectorSection(QGroupBox):
         self._ko = False
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        root = _SectionLayout(self)
+        root = QVBoxLayout(self)
+        root.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         root.setContentsMargins(*(INSPECTOR_SECTION_MARGIN,) * 4)
         root.setSpacing(INSPECTOR_SECTION_SPACING)
         header = QHBoxLayout()
         header.setSpacing(SPACING_SM)
         self.disclosure = QToolButton()
         self.disclosure.setObjectName(section_id + "Disclosure")
-        self.disclosure.setCheckable(True)
+        self.disclosure.setCheckable(False)  # Disclosure is not a selected/enabled feature.
         self.disclosure.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.disclosure.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.disclosure.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.disclosure.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.disclosure.setMinimumWidth(0)
-        self.disclosure.toggled.connect(self.set_expanded)
+        self.disclosure.setAutoRaise(True)
+        self.disclosure.clicked.connect(lambda: self.set_expanded(not self._expanded))
         self.badge = QLabel()
         self.badge.setObjectName(section_id + "WarningBadge")
         self.badge.hide()
@@ -106,8 +104,10 @@ class InspectorSection(QGroupBox):
         self.summary = QLabel()
         self.summary.setObjectName(section_id + "Summary")
         self.summary.setWordWrap(True)
+        self.summary.setForegroundRole(QPalette.ColorRole.PlaceholderText)
         self.summary.setMinimumWidth(0)
         self.summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.summary.setWordWrap(True)
         root.addWidget(self.summary)
         self.body = QWidget()
         self.body.setMinimumWidth(0)
@@ -120,7 +120,7 @@ class InspectorSection(QGroupBox):
 
     def setTitle(self, title):
         self._title = title
-        self.disclosure.setText(title)
+        self.disclosure.setText({"Transform / Advanced":"Transform", "Lifetime / Look":"Lifetime", "Sub-emitter":"Events"}.get(title,title))
         self._update_accessibility()
 
     def set_language(self, ko):
@@ -150,6 +150,7 @@ class InspectorSection(QGroupBox):
             self.disclosure.setChecked(self._expanded)
         self.disclosure.setArrowType(Qt.ArrowType.DownArrow if self._expanded else Qt.ArrowType.RightArrow)
         self.body.setVisible(self._expanded)
+        self._reflow()
         self.view_state.remember(*self._context, self.section_id, self._expanded)
         self._update_accessibility()
         if changed:
@@ -164,7 +165,40 @@ class InspectorSection(QGroupBox):
     def set_summary(self, text):
         self.summary.setText(text)
         self.summary.setToolTip(text)
+        self._reflow()
         self._update_accessibility()
+
+    def _reflow(self):
+        # Qt owns content rectangles, title insets and height-for-width. Never
+        # overwrite descendant layouts with widget.rect() or cache pixel heights.
+        if self.body.layout() is not None:self.body.layout().invalidate()
+        self.layout().invalidate()
+        self.updateGeometry()
+        parent = self.parentWidget()
+        if parent is not None and parent.layout() is not None:
+            owner = parent.layout()
+            index = owner.indexOf(self)
+            if index >= 0 and hasattr(owner, "insertWidget"):
+                # Reparenting/disclosure can leave QWidgetItemV2's HFW cache
+                # describing the old body. Rebuild only this layout item, not
+                # the editor, values or signal bindings.
+                owner.removeWidget(self)
+                owner.insertWidget(index, self)
+            owner.invalidate()
+
+    def heightForWidth(self, width):
+        # QGroupBox's inherited HFW cache can still describe a collapsed body.
+        # Expose the live layout contract to the owning QBoxLayout instead.
+        layout = self.layout()
+        return max(self.minimumSizeHint().height(), layout.totalHeightForWidth(width)) if layout else super().heightForWidth(width)
+
+    def event(self, event):
+        result = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest:
+            # Child show/hide reaches us asynchronously. Notify our owner after
+            # Qt has recomputed this layout, not just before the child request.
+            self.updateGeometry()
+        return result
 
     def set_warning(self, text, severity):
         # Info is a distinct badge, not a falsely reported configuration error.
@@ -173,11 +207,15 @@ class InspectorSection(QGroupBox):
         self.badge.setToolTip(text)
         self.badge.setAccessibleName(text)
         self.setProperty("messageSeverity", severity if text else "")
+        self._reflow()
 
     def _update_accessibility(self):
+        # A stylesheet can otherwise freeze QToolButton's application font and
+        # stop it following the Inspector's per-widget font/DPI scale.
+        self.disclosure.setFont(self.font())
         action = ("접기" if self._expanded else "펼치기") if self._ko else ("Collapse" if self._expanded else "Expand")
         self.disclosure.setAccessibleName(f"{self._title} · {action}")
-        self.disclosure.setToolTip(action)
+        self.disclosure.setToolTip(self._title + " · " + action)
         self.disclosure.setAccessibleDescription(self.summary.text())
         self.disclosure.setMinimumHeight(max(SECTION_HEADER_HEIGHT,
             self.disclosure.fontMetrics().height() + INSPECTOR_SECTION_MARGIN * 2))
@@ -186,6 +224,8 @@ class InspectorSection(QGroupBox):
         super().changeEvent(event)
         if event.type() == QEvent.Type.FontChange and hasattr(self, "disclosure"):
             self._update_accessibility()
+            if hasattr(self, "summary"):
+                self._reflow()
 
 
 class InspectorRow(QWidget):
@@ -197,9 +237,12 @@ class InspectorRow(QWidget):
         self.label.setWordWrap(True)
         self.label.setBuddy(editor)
         self.label.setMinimumWidth(0)
+        self.label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.label.setWordWrap(True)
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(INSPECTOR_ROW_SPACING)
         editor.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -240,6 +283,7 @@ class InspectorForm(QVBoxLayout):
     """Pilot row collection with labelForField compatibility for current callers."""
     def __init__(self, parent):
         super().__init__(parent)
+        self.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self.setContentsMargins(0, 0, 0, 0)
         self.setSpacing(INSPECTOR_ROW_SPACING)
         self.rows = {}

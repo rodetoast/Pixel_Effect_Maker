@@ -1,5 +1,7 @@
 # Roadmap
 
+> 현재 실행 상태·의존성·보류 작업은 [Persistent Work Queue](tasks/WORK_QUEUE.md)를 기준으로 관리한다. 아래 v0.0.03 기준 장기 계획은 역사적 방향이며 현재 구현 완료 상태와 다를 수 있다. 차이와 최신 검증 기준은 queue에 기록한다.
+
 이 문서는 향후 개발 계획이며 구현 완료 목록이 아닙니다. 현재 로컬 기준은 **v0.0.03 + Unreleased effect foundation**입니다.
 
 ## v0.0.xx — 초기 기반 안정화

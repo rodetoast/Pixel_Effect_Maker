@@ -42,10 +42,10 @@ def test_trail_compact_form_tooltips_and_large_font(tmp_path,language,width,font
     localization=LocalizationService(QSettings(str(tmp_path/"layout.ini"),QSettings.Format.IniFormat))
     localization.set_language(language)
     panel.retranslate_ui(localization)
-    group=panel.trail_group
+    group=panel.trail_group;group.set_expanded(True)
     font=group.font();font.setPointSizeF(font.pointSizeF()*font_factor);group.setFont(font)
-    group.setFixedWidth(width);group.show();group.layout().activate();APP.processEvents()
-    assert panel.layout.indexOf(group)<panel.layout.indexOf(panel.lifetime_group)
+    group.setFixedWidth(width);group.show();win.show();APP.processEvents();APP.processEvents()
+    assert panel.layout.indexOf(panel.workflow.sections["look"])<panel.layout.indexOf(group)<panel.layout.indexOf(panel.workflow.sections["events"])
     for control in (panel.trail_enabled,panel.trail_duration,panel.trail_interval,panel.trail_opacity):
         label=panel.trail_form.labelForField(control)
         assert label.text() and control.toolTip()

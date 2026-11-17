@@ -218,6 +218,10 @@ class InteractiveProxyPrewarmManager(QObject):
         if self._pending is not None or self._active_revisions:self.collector.cancellations+=1
         self._cancelled.set();self._revision+=1;self._pending=None;self._timer.stop()
 
+    def close(self) -> None:
+        self.cancel()
+        self._poll.stop()
+
     def _start(self) -> None:
         token=self._pending;self._pending=None
         if token is None or token.request_revision!=self._revision:return

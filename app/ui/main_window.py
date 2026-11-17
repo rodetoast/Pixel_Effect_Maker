@@ -114,6 +114,7 @@ from .layout_metrics import (
 )
 from .timeline_multi_key import TimelineKey, PASTE_COLLISION, PASTE_OUT_OF_RANGE, build_timeline_clipboard_payload, delete_keys, duplicate_timeline_keys_atomic, move_keys_atomic, paste_timeline_keys_atomic, read_timeline_clipboard_payload, set_keys_easing, write_timeline_clipboard_payload
 from app.models.layer_group import LayerGroup,group_node,layer_node
+from app.services.effect_group_service import effect_group_reasons
 
 
 class MainWindow(QMainWindow):
@@ -1354,6 +1355,7 @@ class MainWindow(QMainWindow):
         return self._effect_layer_locked(next((item for item in self.project.effect_resource_layers if item.id==identifier),None))
 
     def create_effect_group_selected(self):
+        if effect_group_reasons(self.project,self.effect_layer_selection.selected_ids)[0] is not None:return None
         selected=set(self.effect_layer_selection.selected_ids);root=self.project.effect_root_order;indices=[i for i,node in enumerate(root) if node["type"]=="layer" and node["id"] in selected]
         if len(indices)<2 or len(indices)!=len(selected) or indices!=list(range(min(indices),max(indices)+1)) or any(self._effect_node_structurally_locked(root[index]["id"]) for index in indices):return None
         before=self._effect_batch_snapshot();existing={group.name for group in self.project.effect_layer_groups};name="Group";number=2
@@ -1383,6 +1385,7 @@ class MainWindow(QMainWindow):
 
     def ungroup_effect(self,identifier=None):
         identifier=identifier or self.effect_layer_selection.primary_id;group=self.project.effect_group_by_id(identifier)
+        if effect_group_reasons(self.project,{identifier})[1] is not None:return False
         if group is None or self._effect_node_structurally_locked(group.id):return False
         before=self._effect_batch_snapshot();index=next(i for i,node in enumerate(self.project.effect_root_order) if node["id"]==group.id);self.project.effect_root_order[index:index+1]=[layer_node(value) for value in group.children];self.project.effect_layer_groups.remove(group);self.effect_expanded_group_ids.discard(group.id);self.project.sync_effect_flat_order();selected=list(reversed(group.children));primary=selected[0] if selected else (self._effect_ui_root_ids()[0] if self._effect_ui_root_ids() else None);self.effect_layer_selection.restore({"selected_ids":selected or ([primary] if primary else []),"primary_id":primary,"anchor_id":primary},self._effect_ui_ids(False));return self._push_effect_batch(before,"Ungroup Effect Layers")
 
@@ -1550,6 +1553,8 @@ class MainWindow(QMainWindow):
     def resource_composition_changed(self,identifier: str) -> None:
         """Invalidate only previews that consume the edited composition."""
         if not self.resource_editor._applying_command:self._mark_dirty()
+        affected=self.particle_preview_manager.invalidate_resource("resource_composition",identifier)
+        if self.active_preview_generator_id in affected:self._clear_preview()
         for emitter in self.project.particle_emitters:
             if emitter.settings.resource_type=="resource_composition" and emitter.settings.resource_id==identifier:
                 self.particle_preview_manager.sessions.pop(emitter.id,None)
@@ -2571,9 +2576,11 @@ class MainWindow(QMainWindow):
             except CanvasResizeError as exc:
                 QMessageBox.critical(self, self.localization.text("error.canvas_resize"), str(exc))
                 return False
+        fps_changed = self.project.fps != values.fps
         self.project.name = values.name
         self.project.fps = values.fps
         self.project.loop = values.loop
+        if fps_changed:self._refresh_resource_timing_outputs()
         if self.play_timer.isActive():
             self.play_timer.setInterval(max(1, round(1000 / values.fps)))
         self._mark_dirty()
@@ -2830,9 +2837,27 @@ class MainWindow(QMainWindow):
     def set_fps(self, value: int) -> None:
         if self.project.fps != value:
             self.project.fps = value
+            self._refresh_resource_timing_outputs()
             self._mark_dirty()
         self.play_timer.setInterval(max(1, round(1000 / value)))
         self._refresh_playback_status()
+
+    def _refresh_resource_timing_outputs(self) -> None:
+        """FPS changes must update stored seek/export pixels as well as playback.
+
+        Exact playback samples with project.fps already. Ordinary seek and the
+        generated/export path otherwise retained the pre-change raster frames.
+        No keyframes, resource timing, or user-painted pixels are retimed here.
+        """
+        self.particle_preview_manager.reset_context(preserve_drafts=True)
+        self._clear_preview()
+        unified={layer.id for layer in self.project.effect_resource_layers}
+        for layer in self.project.effect_resource_layers:
+            apply_effect_resource_layer(self.project,layer)
+        for layer in self.project.effect_composition_layers:
+            if layer.id not in unified:
+                apply_effect_composition_layer(self.project,layer,render_effect_composition_layer(self.project,layer))
+        self.canvas.update()
 
     def _playback_preview_identity(self) -> tuple:
         frames=self.canvas.preview_frames
@@ -3016,6 +3041,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self._confirm_unapplied_previews() and self._confirm_discard():
+            # Closing a QWidget does not destroy its child timers. A delayed
+            # idle prewarm must not submit rendering after the window closes.
+            self.play_timer.stop()
+            self.resource_editor.stop()
+            self.interactive_proxy_prewarm.close()
             self.preview_manager.close()
             self.effect_playback.close()
             self.interactive_gizmo_renderer.close()

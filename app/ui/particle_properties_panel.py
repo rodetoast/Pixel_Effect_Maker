@@ -3,7 +3,7 @@ from __future__ import annotations
 from random import SystemRandom
 from PySide6.QtCore import QSignalBlocker, Signal, Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLayout, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget
 from copy import deepcopy
 from app.models.particle_emitter import ParticleEmitter, ParticleEmitterSettings, ParticleMotionSettings, LifetimeColorModulation, LifetimeScalarModulation, DRAG_STRENGTH_MAX, GRAVITY_STRENGTH_MAX, LIFETIME_SCALE_MAX, NOISE_STRENGTH_MAX, NOISE_FREQUENCY_MAX
 from app.models.blend_mode import BLEND_ADDITIVE, BLEND_NORMAL
@@ -36,7 +36,7 @@ class ParticlePropertiesPanel(QScrollArea):
         self.emission_mode=self._combo(("burst","over_time")); self.count_min=self._i(0,4096); self.count_max=self._i(0,4096); self.emission_duration=self._i(1,512)
         self.emission_cycle_mode=self._combo(("one_shot","cyclic_steady"));self.emission_period_frames=self._i(1,512);self.emission_period_frames.setValue(24)
         self.emission_cycle_mode.setItemText(0,"One Shot");self.emission_cycle_mode.setItemText(1,"Cyclic Steady");self.emission_period_frames.setSuffix(" frames");self.emission_period_frames.setEnabled(False)
-        self.cycle_status=QLabel();self.cycle_status.setWordWrap(True);self.cycle_status.setMinimumWidth(0);self.cycle_status.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+        self.cycle_status=InspectorWarning()
         self._last_accepted_settings=None
         self.spawn_shape=self._combo(("point","line","circle","box")); self.origin_x=self._n(-4096,4096); self.origin_y=self._n(-4096,4096); self.line_end_x=self._n(-4096,4096); self.line_end_y=self._n(-4096,4096); self.radius=self._n(0,4096); self.box_width=self._n(0,4096); self.box_height=self._n(0,4096); self.start_angle=self._n(-3600,3600); self.end_angle=self._n(-3600,3600)
         self.direction_mode=self._combo(("fixed","radial_outward")); self.direction_degrees=self._n(-3600,3600); self.direction_spread_degrees=self._n(0,360)
@@ -124,6 +124,12 @@ class ParticlePropertiesPanel(QScrollArea):
         self.birth_sub_enabled.toggled.connect(self._changed);self.death_sub_enabled.toggled.connect(self._changed)
         self.birth_sub_target.currentIndexChanged.connect(self._changed);self.death_sub_target.currentIndexChanged.connect(self._changed)
         self._retranslate_sub();self._update_sub_status()
+        from .particle_inspector_workflow import ParticleInspectorWorkflow
+        self.workflow=ParticleInspectorWorkflow(self)
+        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,"workflow"):self.workflow.layout_navigation()
     def _i(self,a,b): w=ScrollSafeSpinBox(); w.setRange(a,b);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _n(self,a,b): w=ScrollSafeDoubleSpinBox(); w.setRange(a,b); w.setDecimals(3);w.setMinimumWidth(70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed); return w
     def _bounded(self,name):
@@ -132,9 +138,10 @@ class ParticlePropertiesPanel(QScrollArea):
     def _group(self,title,rows):
         g=QGroupBox(title);g.setMinimumWidth(0);g.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred);f=QFormLayout(g);f.setContentsMargins(7,8,7,7);f.setHorizontalSpacing(6);f.setVerticalSpacing(4);f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow);f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows);records=[];motion_group=title in {"Motion Basic","Orbit Center","Orbit Shape","Helix","Motion Interpolation","Motion Advanced"}
         for name,w in rows:
-            w.setMinimumWidth(0 if isinstance(w,(QComboBox,QCheckBox,QPushButton)) else 70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);f.addRow(name,w);label=f.labelForField(w);label.setMinimumWidth(130 if motion_group else 0);label.setMaximumWidth(130);label.setWordWrap(not motion_group);label.setBuddy(w);label.setVisible(True);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Fixed);records.append((name,w))
+            w.setMinimumWidth(0 if isinstance(w,(QComboBox,QCheckBox,QPushButton)) else 70);w.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);f.addRow(name,w);label=f.labelForField(w);label.setMinimumWidth(130 if motion_group else 0);label.setMaximumWidth(130 if motion_group else 16777215);label.setBuddy(w);label.setVisible(True);label.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Preferred);label.setWordWrap(not motion_group);records.append((name,w))
         self._group_records.append((title,g,f,records));self.layout.addWidget(g);return g
     def set_emitter(self, emitter: ParticleEmitter|None, project):
+        if hasattr(self,"workflow"):self.workflow.begin_context(None if emitter is None else emitter.id)
         self._loading=True; self.emitter_id=None if emitter is None else emitter.id; self.clip.clear()
         for section in (self.trail_group,self.sub_group):section.set_context("particle",self.emitter_id)
         self._sub_project=project;self._populate_sub_targets()
@@ -168,6 +175,7 @@ class ParticlePropertiesPanel(QScrollArea):
             if layer.resource_composition_id:
                 self.clip.clear();[self.clip.addItem(item.name,("resource_composition",item.id)) for item in project.resource_compositions];self.clip.setCurrentIndex(max(0,self.clip.findData(("resource_composition",layer.resource_composition_id))))
         self._loading=False
+        if hasattr(self,"workflow"):self.workflow.sync()
     def _mode_changed(self,*args):
         mode=str(self.mode.currentData());self.mode_help.setText(self._localization.text("resource_layer.single_help" if mode=="single" else "resource_layer.particle_help") if self._localization else ("Place one resource directly in the Effect Composition." if mode=="single" else "Emit multiple instances of the same resource with direction, speed, and lifetime."))
         if not self._loading and self.resource_layer_id:self.mode_changed.emit(self.resource_layer_id,mode)
@@ -338,7 +346,7 @@ class ParticlePropertiesPanel(QScrollArea):
                 if "sub-emitter" in str(error):self.sub_status.set_message(self._sub_error_text(error),"error");return
                 if "trail" in str(error) or candidate.trail.enabled:
                     self.trail_status.set_message(self._trail_error_text(error),"error");return
-                self.cycle_status.setText(self._cycle_error_text(error));return
+                self.cycle_status.set_message(self._cycle_error_text(error),"error");return
             self._last_accepted_settings=deepcopy(candidate);self._update_cycle_status();self._update_trail_status()
             self._update_sub_status()
             self.draft_changed.emit(self.emitter_id,candidate)
@@ -415,6 +423,7 @@ class ParticlePropertiesPanel(QScrollArea):
                 if checked:active.append(name+" → "+(target.currentText() if target.currentData() is not None else ("대상 선택" if ko else "Choose target")))
             self.sub_group.set_language(ko);self.sub_group.set_summary(" · ".join(active) or off)
             self.sub_group.set_warning(self.sub_status.text(),self.sub_status.severity)
+        if hasattr(self,"workflow"):self.workflow.sync()
     def _cycle_error_text(self,error):
         key="particle.cycle_error_birth" if "birth offset" in str(error) else "particle.cycle_error_limit" if "active particles" in str(error) else "particle.cycle_error"
         return self._localization.text(key) if self._localization else str(error)
@@ -424,9 +433,9 @@ class ParticlePropertiesPanel(QScrollArea):
         if not cyclic:self.cycle_status.clear();return
         settings=self.settings()
         try:settings.validate()
-        except ValueError as error:self.cycle_status.setText(self._cycle_error_text(error));return
+        except ValueError as error:self.cycle_status.set_message(self._cycle_error_text(error),"error");return
         text=self._localization.text("particle.cycle_active") if self._localization else "Maximum active particles: {count}. Layer/parent/global animation must also be periodic for a seamless effect."
-        self.cycle_status.setText(text.format(count=settings.cyclic_active_copy_bound()))
+        self.cycle_status.set_message(text.format(count=settings.cyclic_active_copy_bound()),"info")
     def _randomize(self): self.seed.setValue(SystemRandom().randint(-2147483647,2147483647))
     def retranslate_ui(self,l):
         self._localization=l;self._retranslate_trail();self._update_trail_status()
@@ -462,3 +471,4 @@ class ParticlePropertiesPanel(QScrollArea):
         for widget,key in ((self.randomize,"tooltip.particle.randomize"),(self.refresh,"tooltip.particle.preview"),(self.bake,"tooltip.particle.bake"),(self.export,"tooltip.particle.export"),(self.revert,"tooltip.particle.revert")):apply_tooltip(widget,l,key)
         if hasattr(self,"_heading_indexes"):
             for index,key in zip(self._heading_indexes,("particle.resource_compositions","resource.static","resource.animated")):self.clip.setItemText(index,t(key))
+        if hasattr(self,"workflow"):self.workflow.sync()

@@ -91,11 +91,16 @@ def test_particle_inspector_large_font_150_percent(tmp_path):
 def test_every_effect_property_keeps_a_visible_text_label(tmp_path,panel_type,mode,language,width):
     project,layer=context(mode);panel=panel_type();panel.retranslate_ui(localization(tmp_path,language));panel.set_resource_layer(layer,project);show_and_assert_fits(panel,width,1.5)
     panel.transform_panel.set_advanced_expanded(True);APP.processEvents()
+    if isinstance(panel,ParticlePropertiesPanel):
+        for section in panel.workflow.sections.values():section.set_expanded(True)
+        APP.processEvents()
     forms=[panel.transform_panel.form]
     if isinstance(panel,CompositionLayerPropertiesPanel):forms.extend((panel.common_form,panel.form))
-    else:forms.append(panel.common_form);forms.extend(record[2] for record in panel._group_records if record[1].isVisible())
+    else:forms.append(panel.common_form);forms.extend(record[2] for record in panel._group_records if record[2].parentWidget().isVisible())
     for form in forms:
         for row in range(form.rowCount()):
+            # UX-2 hides irrelevant/OFF details as complete label+editor rows.
+            if isinstance(panel,ParticlePropertiesPanel) and not form.isRowVisible(row):continue
             label_item=form.itemAt(row,QFormLayout.ItemRole.LabelRole)
             if label_item is None:continue
             label=label_item.widget()

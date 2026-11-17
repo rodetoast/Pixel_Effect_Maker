@@ -62,6 +62,15 @@ class ParticlePreviewManager(QObject):
     def update(self,project,emitter,settings,immediate=False):
         draft=self.ensure_draft(emitter); draft.settings=deepcopy(settings); draft.revision+=1; draft.is_dirty=(draft.settings!=emitter.settings); self.sessions.pop(emitter.id,None); self._project=project; self._pending=(emitter.id,draft.revision); self.state_changed.emit(emitter.id,"settings_changed"); self._timer.start(0 if immediate else 250); return draft
     def schedule(self,project,emitter_id): self._project=project; draft=self.drafts[emitter_id]; self._pending=(emitter_id,draft.revision); self._timer.start(0)
+    def invalidate_resource(self,resource_type,resource_id):
+        """Reject stale resource snapshots without losing edited draft settings."""
+        affected=set()
+        for emitter_id,draft in self.drafts.items():
+            if draft.settings.resource_type==resource_type and draft.settings.resource_id==resource_id:
+                draft.revision+=1;self.sessions.pop(emitter_id,None);affected.add(emitter_id)
+        if self._pending is not None and self._pending[0] in affected:
+            self._timer.stop();self._pending=None
+        return affected
     def _start(self):
         if not self._pending or self._project is None:return
         emitter_id,revision=self._pending; self._pending=None; draft=self.drafts.get(emitter_id)
@@ -82,4 +91,7 @@ class ParticlePreviewManager(QObject):
             else: self.sessions[emitter_id]=ParticlePreviewSession(emitter_id,revision,frames); self.state_changed.emit(emitter_id,"ready"); self.preview_ready.emit(emitter_id,revision,frames)
     def revert(self,emitter): self.drafts[emitter.id]=ParticleDraft(emitter.id,deepcopy(emitter.settings)); self.sessions.pop(emitter.id,None); return self.drafts[emitter.id]
     def mark_applied(self,emitter): self.drafts[emitter.id]=ParticleDraft(emitter.id,deepcopy(emitter.settings)); self.sessions.pop(emitter.id,None)
-    def reset_context(self): self._context_revision+=1; self._timer.stop(); self._pending=None; self.drafts.clear(); self.sessions.clear(); self._project=None
+    def reset_context(self, *, preserve_drafts=False):
+        self._context_revision+=1; self._timer.stop(); self._pending=None
+        if not preserve_drafts:self.drafts.clear()
+        self.sessions.clear(); self._project=None

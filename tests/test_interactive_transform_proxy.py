@@ -17,6 +17,7 @@ from app.services.effect_resource_layer_render_service import render_effect_reso
 from app.services import effect_resource_layer_render_service as render_service
 from app.services.settings_service import ShortcutSettingsService
 from app.ui.main_window import MainWindow
+from tests.gizmo_sync_support import GizmoSyncObservation
 
 
 APP=QApplication.instance() or QApplication([])
@@ -178,17 +179,22 @@ class LayoutCounter(QObject):
         return False
 
 
-def test_gizmo_updates_only_changed_inspector_field_without_layout(tmp_path,monkeypatch):
-    window,layer,_=context(tmp_path,"inspector");panel=window.composition_layer_properties.transform_panel;window._set_resource_transform_gizmo(layer.id,"rotate_y");records=[];original=panel.set_transform_fields
-    monkeypatch.setattr(panel,"set_transform_fields",lambda item,frame,names:records.append(tuple(names)) or original(item,frame,names))
+def test_gizmo_updates_only_changed_inspector_field_without_layout(tmp_path,monkeypatch,record_property):
+    window,layer,_=context(tmp_path,"inspector");panel=window.composition_layer_properties.transform_panel;window._set_resource_transform_gizmo(layer.id,"rotate_y")
+    probe=GizmoSyncObservation(window,layer,panel,monkeypatch);records=probe.records
     counter=LayoutCounter();panel.installEventFilter(counter);APP.processEvents();counter.count=0
     handle=window.canvas.resource_transform_handle_positions()["rotate_y"].toPoint();QTest.mousePress(window.canvas,Qt.MouseButton.LeftButton,pos=handle)
-    for value in range(20):QTest.mouseMove(window.canvas,handle+QPoint(value+1,value%5))
-    QTest.qWait(40);APP.processEvents()
-    # The fixed-width revolution display may issue one bounded geometry request
-    # per axis, but it must not relayout for every pointer move.
-    assert records and all(names==("rotation_y",) for names in records) and counter.count<=3
-    QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=handle+QPoint(20,0));close(window)
+    try:
+        for value in range(20):QTest.mouseMove(window.canvas,handle+QPoint(value+1,value%5))
+        assert probe.wait(1000),probe.snapshot()
+        # Keep the changed-field and bounded geometry contracts; do not accept
+        # an unrelated refresh just because an arbitrary sleep has elapsed.
+        assert records and all(names==("rotation_y",) for names in records) and counter.count<=3
+        assert probe.values_match and probe.transient_changed and not probe.snapshot()["document_changed"]
+    finally:
+        record_property("gizmo_sync",{**probe.snapshot(),"layout_requests":counter.count})
+        probe.disconnect()
+        QTest.mouseRelease(window.canvas,Qt.MouseButton.LeftButton,pos=handle+QPoint(20,0));close(window)
 
 
 def test_playback_prepares_exact_cache_without_materializing_sequence_and_clears_proxy(tmp_path,monkeypatch):

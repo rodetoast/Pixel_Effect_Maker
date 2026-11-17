@@ -28,7 +28,7 @@ def window_context(tmp_path):
 
 def test_motion_mode_hides_irrelevant_groups():
     panel=ParticlePropertiesPanel();project=__import__("app.models.project",fromlist=["Project"]).Project.create_default();composition=ResourceComposition("c");project.resource_compositions.append(composition);layer=EffectResourceLayer("p",composition.id,placement_mode=PLACEMENT_PARTICLE)
-    panel.set_resource_layer(layer,project);assert panel.direction_group.isEnabled() and panel.motion_basic_group.isVisibleTo(panel) and not panel.motion_shape_group.isVisibleTo(panel)
+    panel.set_resource_layer(layer,project);panel.workflow.jump("motion");assert panel.direction_group.isEnabled() and panel.motion_basic_group.isVisibleTo(panel) and not panel.motion_shape_group.isVisibleTo(panel)
     panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("orbit"));assert not panel.direction_group.isEnabled() and panel.motion_shape_group.isVisibleTo(panel) and not panel.motion_helix_group.isVisibleTo(panel)
     panel.motion_mode.setCurrentIndex(panel.motion_mode.findData("helix"));assert panel.motion_shape_group.isVisibleTo(panel) and panel.motion_helix_group.isVisibleTo(panel)
 

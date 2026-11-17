@@ -40,16 +40,24 @@ class CompositionInspector(QWidget):
         super().__init__(parent); layout=QVBoxLayout(self);layout.setContentsMargins(10,10,10,10);layout.setSpacing(8); self.title=QLabel();self.title.setObjectName("resourceInspectorTitle");self.title.setStyleSheet("font-size: 15px; font-weight: bold;"); self.name=QLineEdit(); self.info=QLabel();self.info.setObjectName("resourceInformationSummary");self.info.setWordWrap(True); self.pivot_x=ScrollSafeDoubleSpinBox(); self.pivot_y=ScrollSafeDoubleSpinBox(); [widget.setRange(-4096,4096) for widget in (self.pivot_x,self.pivot_y)];self.metadata_group=QGroupBox();self.metadata_group.setObjectName("resourceInformationSection");metadata_layout=QVBoxLayout(self.metadata_group);metadata_layout.setContentsMargins(8,10,8,8);metadata_layout.setSpacing(7); self.form=QFormLayout();self.form.setLabelAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter);self.form.setHorizontalSpacing(8);self.form.setVerticalSpacing(5); self.form.addRow(" ",self.name); self.form.addRow(" ",self.pivot_x); self.form.addRow(" ",self.pivot_y); self.center=QPushButton();self.center.setProperty("commandRole","secondary"); self.use=QPushButton(); self.use.setObjectName("useResourceInEffectButton"); self.use.setDefault(True);self.use.setMinimumHeight(36);self.use.setProperty("commandRole","primary")
         metadata_layout.addWidget(self.info);metadata_layout.addLayout(self.form);metadata_layout.addWidget(self.center);cta_separator=QFrame();cta_separator.setFrameShape(QFrame.Shape.HLine);cta_separator.setFrameShadow(QFrame.Shadow.Sunken);cta_separator.setObjectName("resourceInspectorCtaSeparator");layout.addWidget(self.title);layout.addWidget(self.metadata_group);layout.addWidget(cta_separator);layout.addWidget(self.use);layout.addStretch(); self.composition=None; self._loading=False; self.localization=None
         self.name.editingFinished.connect(self._apply); self.pivot_x.valueChanged.connect(self._apply); self.pivot_y.valueChanged.connect(self._apply); self.center.clicked.connect(self._center); self.use.clicked.connect(self.use_requested)
+        self.fps=ScrollSafeSpinBox();self.fps.setRange(1,120);self.fps.setKeyboardTracking(False)
+        self.form.addRow("Resource FPS",self.fps);self.fps.valueChanged.connect(self._apply)
 
     def set_composition(self,composition):
         self.composition=composition; self._loading=True
+        if composition:self.fps.setValue(composition.fps)
+        if self.localization:
+            self.form.labelForField(self.fps).setText(self.localization.text("timing.resource_fps"))
+            apply_tooltip(self.fps,self.localization,"timing.resource_fps_help",status=False)
         if composition:
             self.name.setText(composition.name); playback=self.localization.text("v2.loop" if composition.loop else "v2.hold") if self.localization else ""; template=self.localization.text("v2.comp_info") if self.localization else "{width} × {height} · {fps} FPS · {frames}"; self.info.setText(template.format(width=composition.width,height=composition.height,fps=composition.fps,frames=composition.frame_count,playback=playback)); self.pivot_x.setValue(composition.pivot_x); self.pivot_y.setValue(composition.pivot_y)
         self._loading=False
+        if composition:self.info.setText(self.info.text()+f" · {composition.frame_count/composition.fps:.3f} s")
 
     def _apply(self,*args):
         if self._loading or not self.composition:return
         before={"name":self.composition.name,"pivot_x":self.composition.pivot_x,"pivot_y":self.composition.pivot_y};after={"name":self.name.text().strip() or self.composition.name,"pivot_x":self.pivot_x.value(),"pivot_y":self.pivot_y.value()}
+        before["fps"]=self.composition.fps;after["fps"]=self.fps.value()
         for key,value in after.items():setattr(self.composition,key,value)
         if before!=after:self.changed.emit(before,after)
 

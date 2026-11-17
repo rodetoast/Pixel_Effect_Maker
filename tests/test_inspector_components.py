@@ -95,7 +95,7 @@ def test_selection_roundtrip_preserves_settings_and_per_layer_view_state(scene):
     panel.sub_group.set_expanded(False)
     panel.trail_group.set_expanded(False)
     panel.set_resource_layer(target, win.project)
-    assert panel.sub_group.is_expanded()
+    assert not panel.sub_group.is_expanded()  # UX-2 defaults Events closed.
     panel.sub_group.set_expanded(False)
     panel.trail_group.set_expanded(True)
     panel.set_resource_layer(parent, win.project)

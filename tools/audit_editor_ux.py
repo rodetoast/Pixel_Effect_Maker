@@ -87,8 +87,10 @@ def metrics(panel):
                          "checkable_not_necessarily_collapsible": group.isCheckable()})
     overflow = []
     for control in visible:
-        rect = control.rect().translated(control.mapTo(body, QPoint()))
-        if rect.left() < 0 or rect.right() >= QWidget.width(body):
+        # UX-2 has a fixed navigation sibling outside the scrolling body.
+        owner = body if body.isAncestorOf(control) else panel
+        rect = control.rect().translated(control.mapTo(owner, QPoint()))
+        if rect.left() < 0 or rect.right() >= QWidget.width(owner):
             overflow.append(control.objectName() or type(control).__name__)
     scrolls = [panel] if isinstance(panel, QScrollArea) else panel.findChildren(QScrollArea)
     return {"class": type(panel).__name__, "size": size(panel.size()),
