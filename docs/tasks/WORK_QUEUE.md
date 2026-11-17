@@ -108,3 +108,10 @@ Phase1.5는 독립 POC 개선의 구현·자동 검증만 완료했다. 사용�
 - 2026-10-29 DEVEX-1 완료. `python tools/diagnose_editor.py --check all`은 core126 cases / 4 PASS / 0 FAIL·SKIP·ERROR; `--list`, 각 범주, optional UI screenshot, bounded metadata trace, timeout ERROR2, 기존 output 거부2를 확인했다. 보고서: `C:\Dev\pem_devex_all_verified\report.json` 및 `docs/DEVEX1_DIAGNOSTICS.md`.
 - 최종 full: `python -m pytest -q --basetemp=C:\Dev\pem_devex_full_verified --tb=short` → 1922 passed, 1 skipped, 1 warning / 186.49s. SKIP은 symlink 생성 권한, warning은 기존 pytest cache ACL이다. compileall, app --version/--check, run_app.bat --check, git diff --check 통과. v0.0.25/FORMAT22 및 보호 PNG SHA256 유지.
 - 이 완료는 UX2-VERIFY/Timing/Aseprite/Timeline/Effect 후속 작업 완료가 아니다. production 변경·DevEx 구현은 미커밋으로 남기며 이 파일만 documentation checkpoint 대상이다.
+
+
+## 2026-11-17 개발 맥락 지속 보존 규칙
+
+- RECORD-POLICY / DONE: 기존 작업 큐·보류 항목을 유지하고 AGENTS.md에 새 세션 진입 문서와 결정/검증/버전/commit/push 기록 규칙 추가. 제품 코드·아이콘·기획 내용은 변경하지 않음.
+- 검증: 문서 링크 존재·기존 바이트 보존·명시 문서만 격리 커밋 확인. 제품 자동/GUI 회귀는 이번 문서 작업에서 실행하지 않음. 기존 native QA 및 체크포인트 의존성은 그대로이며 과거 사실을 완료로 변경하지 않음.
+- 원격 보존: 이 정책 추가분은 rodetoast 인증/공개 범위/브랜치 검토 후 push 전까지 로컬 상태임. 운영 Release·Latest 권한을 부여하지 않음.
